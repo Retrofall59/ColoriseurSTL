@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.4 (build 4)
+
+**Changement d'architecture important** : le traitement tourne maintenant dans un vrai service
+Android en premier plan (`ColorisationService`), plus dans un simple thread attaché à l'écran.
+Concrètement : le traitement continue même si tu quittes complètement l'application (retirée de
+la liste des tâches récentes) - ce que même le correctif de la v0.3 ne couvrait pas (il protégeait
+contre un écran recréé, pas contre une appli totalement fermée). Une vraie notification Android
+accompagne le traitement (obligatoire pour ce type de service) avec la progression en direct.
+
+Portage des fonctions de la version Windows :
+- Case à cocher par fichier pour exclure un fichier avant de lancer, "Tout cocher/décocher"
+- Estimation du coût affichée (20 crédits/figurine, confirmé à l'usage)
+- Vérification de la clé API et du solde avant de lancer (distingue clé invalide de panne réseau)
+- Annulation en cours de traitement
+- Relancer uniquement les fichiers en échec
+- Historique des lots consultable (date, réussites, échecs, crédits réels consommés)
+- Barre de progression visuelle
+
+**⚠️ Changement le plus risqué de tout ce projet** : l'architecture par service en premier plan
+n'a jamais pu être testée ici (nécessite un vrai appareil - permissions runtime, comportement du
+gestionnaire de notifications, cycle de vie du service selon la version d'Android). Compilation
+complète vérifiée (zéro avertissement dans le code du projet), mais c'est la pièce la plus
+complexe tentée sur ce projet et la confiance réelle viendra du premier test terrain. Point
+particulier à surveiller : l'icône de la notification utilise le logo de l'appli en couleur plutôt
+qu'une silhouette blanche simple (convention Android pour la barre de statut) - pourrait
+s'afficher bizarrement selon la version d'Android, purement cosmétique si c'est le cas.
+
 ## v0.3 (build 3)
 
 - Corrige : la galerie de résultats (et celle des fichiers de départ) disparaissait entièrement

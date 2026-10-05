@@ -9,27 +9,35 @@ PowerShell/Windows du même nom, déjà validée en conditions réelles.
 - **Un compte Meshy PRO est obligatoire.** Le plan Free n'a pas accès à l'API Meshy.
 - **Une clé API Meshy est nécessaire** (gratuite à générer une fois Pro, sur meshy.ai/settings/api),
   à renseigner dans l'écran Paramètres.
-- **Chaque figurine consomme des crédits Meshy** (environ 40 crédits pour les deux étapes,
-  Retexture puis Multi-Color Print).
+- **Chaque figurine consomme environ 20 crédits Meshy** (confirmé à l'usage, pour les deux étapes
+  Retexture et Multi-Color Print).
 - **Cette appli a besoin d'Internet**, contrairement aux quatre lecteurs RFID de la même série qui
   sont volontairement 100% hors ligne — changement de philosophie assumé, pas un oubli.
 
 ## ⚠️ Statut
 
-**Compilation complète vérifiée** (stubs des bibliothèques Android reconstruits, même discipline
-que les autres projets), mais **jamais testée sur un vrai appareil Android** à ce stade — c'est
-un portage de la version Windows (elle-même testée avec succès), pas une appli construite et
-validée de zéro comme les quatre lecteurs RFID. Premier vrai test à faire.
+**v0.1 à v0.3 confirmées fonctionnelles sur un vrai appareil**, deux bugs réels trouvés et
+corrigés en conditions réelles (rotation d'écran, galerie qui disparaissait après un visualiseur
+externe). **La v0.4 change d'architecture** (service en premier plan plutôt qu'un simple thread) —
+compilation complète vérifiée (zéro avertissement dans le code du projet), mais cette
+architecture précise n'a pas encore été testée sur un appareil. Voir le CHANGELOG pour le détail.
 
 ## Fonctionnalités
 
-- Choix d'un dossier (recherche récursive dans les sous-dossiers) ou de fichiers individuels
+- Choix d'un dossier (recherche récursive dans les sous-dossiers) ou de fichiers individuels,
+  avec case à cocher par fichier pour en exclure certains avant de lancer
 - Choix du dossier de sortie (Storage Access Framework, persiste entre les lancements)
 - Galerie de vraies vignettes pour les STL de départ (rendu fait maison, même moteur que la
   version Windows : lecture binaire/ASCII, projection isométrique, ombrage simple) et pour les
   résultats colorisés (image d'aperçu fournie directement par Meshy)
-- Menu de styles prédéfinis + prompt personnalisable
-- Traitement en arrière-plan (l'appli reste utilisable pendant le traitement)
+- Menu de styles prédéfinis + prompt personnalisable (le dernier prompt libre est mémorisé)
+- **Le traitement tourne dans un vrai service Android en premier plan** : continue même si
+  l'appli est complètement fermée, avec une notification système affichant la progression
+- Vérification de la clé API et du solde Meshy avant de lancer
+- Estimation du coût affichée avant de lancer
+- Annulation en cours de traitement
+- Relance uniquement des fichiers en échec, sans retraiter tout le lot
+- Historique des lots consultable (date, réussites, échecs, crédits réels consommés)
 - Clé API stockée chiffrée (EncryptedSharedPreferences, équivalent Android du chiffrement par
   compte Windows utilisé côté PowerShell)
 

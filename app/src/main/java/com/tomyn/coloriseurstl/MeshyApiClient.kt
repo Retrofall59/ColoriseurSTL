@@ -23,6 +23,30 @@ object MeshyApiClient {
 
     class ErreurApi(message: String) : Exception(message)
 
+    enum class StatutCle { VALIDE, INVALIDE, INCONNU }
+    data class VerificationCle(val statut: StatutCle, val solde: Int?)
+
+    /**
+     * Verifie la cle ET recupere le solde en un seul appel (meme endpoint /balance) :
+     *   VALIDE   -> solde contient le vrai solde
+     *   INVALIDE -> cle refusee par Meshy (HTTP 401/403), bloquant
+     *   INCONNU  -> echec pour une autre raison (reseau, timeout...), pas bloquant en soi
+     */
+    fun verifierCleEtSolde(cleApi: String): VerificationCle {
+        return try {
+            val reponse = requete("GET", "/balance", cleApi)
+            VerificationCle(StatutCle.VALIDE, reponse.optInt("balance", 0))
+        } catch (e: ErreurApi) {
+            if (e.message?.startsWith("HTTP 401") == true || e.message?.startsWith("HTTP 403") == true) {
+                VerificationCle(StatutCle.INVALIDE, null)
+            } else {
+                VerificationCle(StatutCle.INCONNU, null)
+            }
+        } catch (e: Exception) {
+            VerificationCle(StatutCle.INCONNU, null)
+        }
+    }
+
     data class ResultatTache(val statut: String, val progres: Int, val json: JSONObject)
 
     interface EcouteurAvancement {

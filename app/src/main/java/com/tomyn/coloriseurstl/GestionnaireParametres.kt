@@ -4,6 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Contrairement aux lecteurs RFID (aucun secret a proteger), cette appli stocke une vraie cle
@@ -52,5 +56,35 @@ object GestionnaireParametres {
 
     fun ecrireDossierSortieUri(context: Context, uri: String) {
         prefs(context).edit().putString(CLE_DOSSIER_SORTIE, uri).apply()
+    }
+
+    // --- Historique des lots : stockage simple, non chiffre (rien de sensible dedans),
+    // dans l'espace prive de l'appli (pas besoin de Storage Access Framework pour ca). ---
+
+    data class EntreeHistorique(val date: String, val fichiers: Int, val reussites: Int, val echecs: Int, val credits: Int)
+
+    private fun fichierHistorique(context: Context) = File(context.filesDir, "historique_lots.csv")
+
+    fun ajouterHistoriqueLot(context: Context, fichiers: Int, reussites: Int, echecs: Int, credits: Int) {
+        val date = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date())
+        val ligne = "$date;$fichiers;$reussites;$echecs;$credits\n"
+        try { fichierHistorique(context).appendText(ligne) } catch (e: Exception) { }
+    }
+
+    fun lireHistoriqueLots(context: Context): List<EntreeHistorique> {
+        val fichier = fichierHistorique(context)
+        if (!fichier.exists()) return emptyList()
+        return try {
+            fichier.readLines().mapNotNull { ligne ->
+                val champs = ligne.split(";")
+                if (champs.size >= 5) {
+                    EntreeHistorique(champs[0], champs[1].toIntOrNull() ?: 0, champs[2].toIntOrNull() ?: 0, champs[3].toIntOrNull() ?: 0, champs[4].toIntOrNull() ?: 0)
+                } else null
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    fun viderHistoriqueLots(context: Context) {
+        try { fichierHistorique(context).delete() } catch (e: Exception) { }
     }
 }
