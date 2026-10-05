@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2 (build 2)
+
+**Confirmé fonctionnel sur un vrai appareil** (premier retour terrain positif).
+
+- Corrige : une rotation d'écran pendant le traitement coupait la progression et perdait tout
+  l'état (galerie, journal) — Android détruisait et recréait l'activité par défaut, alors que le
+  thread de traitement continuait en fond à mettre à jour une interface qui n'existait plus.
+  `android:configChanges` empêche maintenant la recréation de l'activité à la rotation.
+
 ## v0.1 (build 1)
 
 Portage Android de la version PowerShell/Windows "Coloriser-STL", déjà validée en conditions
