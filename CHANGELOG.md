@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5 (build 5)
+
+**v0.4 confirmée fonctionnelle sur un vrai appareil** (service en premier plan, premier retour
+positif).
+
+- Bouton "Annuler" directement sur la notification de progression, pas besoin de rouvrir l'appli.
+- Vérification de l'espace disque avant de lancer un lot (estimation approximative sur le
+  stockage principal de l'appareil - Storage Access Framework ne permet pas de connaître
+  précisément l'espace libre d'un dossier choisi via SAF, limite honnête à connaître).
+- Message ponctuel (une seule fois) invitant à exempter l'appli de l'optimisation de batterie sur
+  les téléphones à la gestion énergétique agressive (Xiaomi, Huawei...), qui peuvent arrêter un
+  service en premier plan malgré les garanties normales d'Android.
+
 ## v0.4 (build 4)
 
 **Changement d'architecture important** : le traitement tourne maintenant dans un vrai service

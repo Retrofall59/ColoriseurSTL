@@ -21,6 +21,7 @@ object GestionnaireParametres {
     private const val CLE_PROMPT_PERSONNALISE = "dernier_prompt_personnalise"
     private const val CLE_NB_COULEURS = "nb_couleurs"
     private const val CLE_DOSSIER_SORTIE = "dossier_sortie_uri"
+    private const val CLE_MESSAGE_BATTERIE_VU = "message_batterie_vu"
 
     private fun prefs(context: Context): SharedPreferences {
         val cleMaitresse = MasterKey.Builder(context)
@@ -86,5 +87,11 @@ object GestionnaireParametres {
 
     fun viderHistoriqueLots(context: Context) {
         try { fichierHistorique(context).delete() } catch (e: Exception) { }
+    }
+
+    fun messageBatterieDejaVu(context: Context): Boolean = prefs(context).getBoolean(CLE_MESSAGE_BATTERIE_VU, false)
+
+    fun marquerMessageBatterieVu(context: Context) {
+        prefs(context).edit().putBoolean(CLE_MESSAGE_BATTERIE_VU, true).apply()
     }
 }

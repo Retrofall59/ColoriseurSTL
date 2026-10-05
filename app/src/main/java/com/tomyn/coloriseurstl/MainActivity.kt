@@ -148,6 +148,7 @@ class MainActivity : AppCompatActivity() {
         configurerMenuPrompt()
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
+        proposerExemptionBatterieSiNecessaire()
 
         btnLancer.setOnClickListener {
             val fichiersInclus = fichiersSource.filter { f -> caseACocherParUri[f.uri]?.isChecked != false }
@@ -192,6 +193,28 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         manipulateurSondage.removeCallbacks(sondagePeriodique)
+    }
+
+    /**
+     * Certains telephones (Xiaomi, Huawei, et d'autres marques avec une gestion de batterie tres
+     * agressive) peuvent tuer un service en premier plan malgre les garanties normales d'Android.
+     * Pas un bug cote appli dans ce cas - juste un reglage a exempter manuellement. Affiche une
+     * seule fois (pas a chaque lancement), et n'ouvre que l'ecran general des parametres batterie
+     * (pas de demande directe d'exemption via une permission speciale, pour rester simple).
+     */
+    private fun proposerExemptionBatterieSiNecessaire() {
+        if (GestionnaireParametres.messageBatterieDejaVu(this)) return
+        GestionnaireParametres.marquerMessageBatterieVu(this)
+        AlertDialog.Builder(this)
+            .setTitle("Un conseil pour les gros lots")
+            .setMessage("Sur certains téléphones (Xiaomi, Huawei...), la gestion de batterie peut arrêter le traitement en arrière-plan même pendant un lot en cours. Si ça arrive, exempte ColoriserSTL de l'optimisation de batterie dans les réglages.")
+            .setPositiveButton("Ouvrir les réglages batterie") { _, _ ->
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (e: Exception) { /* ecran absent sur certains appareils : pas bloquant */ }
+            }
+            .setNegativeButton("Plus tard", null)
+            .show()
     }
 
     private fun demanderPermissionNotificationsSiNecessaire() {

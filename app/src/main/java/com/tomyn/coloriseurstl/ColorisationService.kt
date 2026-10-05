@@ -8,7 +8,9 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Environment
 import android.os.IBinder
+import android.os.StatFs
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
 
@@ -39,6 +41,9 @@ class ColorisationService : Service() {
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
         const val ACTION_ANNULER = "com.tomyn.coloriseurstl.ANNULER"
+        // Estimation large (les .3mf colorises observes jusqu'ici restent en dessous), par
+        // prudence plutot que de sous-estimer et tomber a court en plein milieu du lot.
+        private const val ESTIMATION_OCTETS_PAR_FICHIER = 20L * 1024 * 1024
     }
 
     private var threadTraitement: Thread? = null
@@ -95,6 +100,24 @@ class ColorisationService : Service() {
 
         if (racineSortie == null) {
             EtatTraitement.ecrireJournal("ERREUR : dossier de sortie inaccessible.")
+            terminerService(0)
+            return
+        }
+
+        // Verification d'espace disque AVANT de commencer, pour eviter exactement la situation
+        // rencontree sur la version Windows ("espace insuffisant") en plein milieu d'un lot.
+        // Limite honnete : Storage Access Framework ne donne pas d'API simple pour connaitre
+        // l'espace libre d'un DOSSIER PRECIS choisi via SAF - cette verification approxime avec
+        // l'espace libre du stockage principal de l'appareil, qui couvre le cas courant (dossier
+        // choisi dans le stockage interne) mais pas forcement un cas plus rare (carte SD externe,
+        // fournisseur de stockage distant). Mieux vaut une estimation approximative que rien.
+        val espaceLibreApprox = Environment.getExternalStorageDirectory()?.let { StatFs(it.path).availableBytes } ?: Long.MAX_VALUE
+        val espaceEstimeNecessaire = uris.size.toLong() * ESTIMATION_OCTETS_PAR_FICHIER
+        if (espaceLibreApprox < espaceEstimeNecessaire) {
+            EtatTraitement.ecrireJournal(
+                "ERREUR : espace disque insuffisant (estimation approximative - ${espaceLibreApprox / 1024 / 1024} Mo libres, " +
+                "~${espaceEstimeNecessaire / 1024 / 1024} Mo estimes necessaires pour ${uris.size} fichier(s))."
+            )
             terminerService(0)
             return
         }
@@ -199,6 +222,15 @@ class ColorisationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Bouton "Annuler" directement sur la notification : pas besoin de rouvrir l'appli pour
+        // arreter un traitement en cours, meme fonctionnement que le bouton dans l'appli (envoie
+        // la meme action au service, deja geree dans onStartCommand).
+        val intentAnnuler = Intent(this, ColorisationService::class.java).apply { action = ACTION_ANNULER }
+        val pendingIntentAnnuler = PendingIntent.getService(
+            this, 0, intentAnnuler,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, ID_CANAL)
             .setContentTitle("Colorisation en cours ($courant/$total)")
             .setContentText(texte)
@@ -207,6 +239,7 @@ class ColorisationService : Service() {
             .setOnlyAlertOnce(true)
             .setProgress(total, courant, false)
             .setContentIntent(pendingIntentOuvrir)
+            .addAction(0, "Annuler", pendingIntentAnnuler)
             .build()
     }
 
