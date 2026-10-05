@@ -27,6 +27,23 @@ import androidx.documentfile.provider.DocumentFile
 class MainActivity : AppCompatActivity() {
 
     private data class FichierSource(val uri: Uri, val nom: String)
+    private data class ResultatColorise(val uri: Uri, val nom: String, val apercu: Bitmap?)
+
+    /**
+     * Survit a la destruction/recreation de l'activite (rattache a la classe, pas a l'instance
+     * d'activite) - necessaire car un visualiseur 3D externe gourmand en memoire peut faire tuer
+     * notre activite en arriere-plan par Android pour liberer de la RAM, meme avec configChanges
+     * deja en place (qui ne couvre que les changements de configuration, pas ce cas). Au retour,
+     * l'activite est recreee de zero : sans cette liste conservee ici, toute la galerie de
+     * resultats (jamais sauvegardee nulle part ailleurs) disparaissait a chaque fois - signale en
+     * conditions reelles. Si Android va jusqu'a tuer le PROCESSUS entier (pas juste l'activite,
+     * cas plus rare, memoire tres contrainte), meme ceci ne suffirait pas - persistance disque
+     * a envisager seulement si \u00e7a se reproduit malgre ce correctif.
+     */
+    companion object {
+        private var fichiersSourcePersistants: List<FichierSource> = emptyList()
+        private var resultatsPersistants: MutableList<ResultatColorise> = mutableListOf()
+    }
 
     private lateinit var texteSourceChoisie: TextView
     private lateinit var texteDossierSortie: TextView
@@ -110,6 +127,23 @@ class MainActivity : AppCompatActivity() {
                 texteDossierSortie.text = nomAffichableDossier(uri)
             } catch (e: Exception) { /* uri invalide : on laisse l'utilisateur en choisir un nouveau */ }
         }
+
+        // Reconstruit les deux galeries si l'activite vient d'etre recreee (rotation deja geree
+        // a part via configChanges, mais une activite en arriere-plan peut aussi etre tuee par
+        // Android pour liberer de la memoire - ex. en ouvrant un visualiseur 3D externe gourmand
+        // - sans que cela declenche configChanges). Les donnees survivent dans le companion
+        // object ; seule l'affichage a disparu avec l'ancienne instance d'activite.
+        if (fichiersSourcePersistants.isNotEmpty()) {
+            fichiersSource = fichiersSourcePersistants
+            afficherGalerieFichiers()
+        }
+        if (resultatsPersistants.isNotEmpty()) {
+            for (resultat in resultatsPersistants) {
+                galerieResultats.addView(creerVignette(resultat.nom, resultat.apercu) {
+                    ouvrirDansAppliExterne(resultat.uri)
+                })
+            }
+        }
     }
 
     private fun configurerSelecteurCouleurs() {
@@ -186,6 +220,7 @@ class MainActivity : AppCompatActivity() {
         }
         texteSourceChoisie.text = "Dossier : ${racine.name} (${trouves.size} fichier(s) .stl)"
         fichiersSource = trouves
+        fichiersSourcePersistants = trouves
         afficherGalerieFichiers()
     }
 
@@ -206,6 +241,7 @@ class MainActivity : AppCompatActivity() {
         }
         texteSourceChoisie.text = "${fichiers.size} fichier(s) choisi(s) individuellement"
         fichiersSource = fichiers
+        fichiersSourcePersistants = fichiers
         afficherGalerieFichiers()
     }
 
@@ -313,6 +349,7 @@ class MainActivity : AppCompatActivity() {
         btnLancer.isEnabled = false
         texteJournal.text = ""
         galerieResultats.removeAllViews()
+        resultatsPersistants.clear()
         afficherOnglet(2)
 
         val racineSortie = DocumentFile.fromTreeUri(this, dossierSortie)
@@ -359,6 +396,7 @@ class MainActivity : AppCompatActivity() {
                         } catch (e: Exception) { null }
                     } else null
 
+                    resultatsPersistants.add(ResultatColorise(fichierSortie.uri, nomSortie, apercu))
                     runOnUiThread {
                         galerieResultats.addView(creerVignette(nomSortie, apercu) {
                             ouvrirDansAppliExterne(fichierSortie.uri)

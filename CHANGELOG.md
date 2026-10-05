@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3 (build 3)
+
+- Corrige : la galerie de résultats (et celle des fichiers de départ) disparaissait entièrement
+  après avoir ouvert un fichier dans un visualiseur 3D externe puis être revenu dans l'appli —
+  signalé en conditions réelles, reproductible à chaque fois. Cause différente du bug de rotation
+  (déjà corrigé en v0.2) : un visualiseur externe gourmand en mémoire peut faire tuer notre
+  activité en arrière-plan par Android pour libérer de la RAM, ce que `configChanges` ne couvre
+  pas (il ne gère que les changements de configuration, pas les arrêts pour cause de mémoire).
+  Les deux galeries sont maintenant reconstruites automatiquement au retour, à partir de données
+  conservées indépendamment de l'instance d'écran détruite.
+- Un vrai bug de compilation trouvé et corrigé pendant l'écriture de ce correctif (visibilité
+  Kotlin : une propriété publique ne peut pas exposer un type privé) - détecté par la compilation
+  réelle avant livraison, pas par relecture seule.
+
 ## v0.2 (build 2)
 
 **Confirmé fonctionnel sur un vrai appareil** (premier retour terrain positif).
