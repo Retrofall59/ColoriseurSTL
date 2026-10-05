@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent_violet">#7C4DFF</color>
+    <color name="accent_violet_fonce">#4527A0</color>
+    <color name="fond_clair">#F5F7F7</color>
+    <color name="carte_blanc">#FFFFFF</color>
+    <color name="texte_principal">#1A1A1A</color>
+    <color name="texte_secondaire">#5C5C5C</color>
+    <color name="bordure_legere">#E2E2E2</color>
+</resources>

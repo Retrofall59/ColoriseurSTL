@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.ColoriseurSTL" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">@color/accent_violet</item>
+        <item name="android:windowBackground">@color/fond_clair</item>
+    </style>
+</resources>
