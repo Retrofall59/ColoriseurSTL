@@ -6,6 +6,7 @@ import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -32,6 +33,12 @@ class SettingsActivity : AppCompatActivity() {
                 btnVoirCle.text = "Afficher"
             }
             editCleApi.setSelection(editCleApi.text.length)
+        }
+
+        val switchWifi = findViewById<Switch>(R.id.switchWifiUniquement)
+        switchWifi.isChecked = GestionnaireParametres.lireWifiUniquement(this)
+        switchWifi.setOnCheckedChangeListener { _, coche ->
+            GestionnaireParametres.ecrireWifiUniquement(this, coche)
         }
 
         findViewById<Button>(R.id.btnEnregistrer).setOnClickListener {

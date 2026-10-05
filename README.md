@@ -38,6 +38,10 @@ architecture précise n'a pas encore été testée sur un appareil. Voir le CHAN
 - Annulation en cours de traitement
 - Relance uniquement des fichiers en échec, sans retraiter tout le lot
 - Historique des lots consultable (date, réussites, échecs, crédits réels consommés)
+- Réglage "Wi-Fi uniquement" pour éviter de consommer du forfait data sans y penser
+- Appui long sur un résultat pour le partager directement (Bluetooth, cloud, messagerie...)
+- Bouton "Annuler" directement sur la notification de progression
+- Vérification d'espace disque avant de lancer (estimation approximative)
 - Clé API stockée chiffrée (EncryptedSharedPreferences, équivalent Android du chiffrement par
   compte Windows utilisé côté PowerShell)
 

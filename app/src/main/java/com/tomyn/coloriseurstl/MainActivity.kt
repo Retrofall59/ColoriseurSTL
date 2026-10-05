@@ -2,6 +2,8 @@ package com.tomyn.coloriseurstl
 
 import android.Manifest
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
@@ -332,7 +334,10 @@ class MainActivity : AppCompatActivity() {
 
     // --- Galeries (vignettes) ---
 
-    private fun creerVignette(nom: String, image: Bitmap?, avecCaseACocher: Uri? = null, surClic: (() -> Unit)? = null): View {
+    private fun creerVignette(
+        nom: String, image: Bitmap?, avecCaseACocher: Uri? = null,
+        surClic: (() -> Unit)? = null, surClicLong: (() -> Unit)? = null
+    ): View {
         val densite = resources.displayMetrics.density
         fun px(dp: Int) = (dp * densite).toInt()
 
@@ -372,7 +377,20 @@ class MainActivity : AppCompatActivity() {
         panneau.addView(etiquette)
 
         if (surClic != null) panneau.setOnClickListener { surClic() }
+        if (surClicLong != null) panneau.setOnLongClickListener { surClicLong(); true }
         return panneau
+    }
+
+    private fun partagerFichier(uri: Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND)
+            intent.type = "application/octet-stream"
+            intent.putExtra(Intent.EXTRA_STREAM, uri)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(intent, "Partager le résultat"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Impossible de partager ce fichier.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun afficherGalerieFichiers() {
@@ -443,8 +461,25 @@ class MainActivity : AppCompatActivity() {
 
     // --- Lancement de la colorisation (via le service en premier plan) ---
 
+    /**
+     * "Wi-Fi uniquement" verifie en realite l'absence de facturation au volume
+     * (NET_CAPABILITY_NOT_METERED), pas litteralement le Wi-Fi - couvre aussi un partage de
+     * connexion illimite ou une connexion filaire, et exclut un Wi-Fi d'hotel/avion facture au
+     * volume si l'appareil le signale comme tel.
+     */
+    private fun connexionFactureeAuVolume(): Boolean {
+        val gestionnaireReseau = getSystemService(ConnectivityManager::class.java) ?: return false
+        val reseauActif = gestionnaireReseau.activeNetwork ?: return true
+        val capacites = gestionnaireReseau.getNetworkCapabilities(reseauActif) ?: return true
+        return !capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
     private fun lancerColorisation(fichiersAtraiter: List<Pair<Uri, String>>) {
         if (EtatTraitement.enCours) return
+        if (GestionnaireParametres.lireWifiUniquement(this) && connexionFactureeAuVolume()) {
+            Toast.makeText(this, "Connexion facturée au volume détectée - lancement bloqué (réglage \"Wi-Fi uniquement\" dans Paramètres).", Toast.LENGTH_LONG).show()
+            return
+        }
         val cleApi = GestionnaireParametres.lireCleApi(this)
         if (cleApi.isBlank()) {
             Toast.makeText(this, "Clé API Meshy manquante : configure-la dans Paramètres.", Toast.LENGTH_LONG).show()
@@ -541,7 +576,8 @@ class MainActivity : AppCompatActivity() {
         if (resultats.size > nombreResultatsAffiches) {
             for (i in nombreResultatsAffiches until resultats.size) {
                 val r = resultats[i]
-                galerieResultats.addView(creerVignette(r.nom, r.apercu, null) { ouvrirDansAppliExterne(r.uri) })
+                galerieResultats.addView(creerVignette(r.nom, r.apercu, null,
+                    { ouvrirDansAppliExterne(r.uri) }, { partagerFichier(r.uri) }))
             }
             nombreResultatsAffiches = resultats.size
         }

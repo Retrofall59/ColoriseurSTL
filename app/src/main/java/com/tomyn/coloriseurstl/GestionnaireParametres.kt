@@ -22,6 +22,7 @@ object GestionnaireParametres {
     private const val CLE_NB_COULEURS = "nb_couleurs"
     private const val CLE_DOSSIER_SORTIE = "dossier_sortie_uri"
     private const val CLE_MESSAGE_BATTERIE_VU = "message_batterie_vu"
+    private const val CLE_WIFI_UNIQUEMENT = "wifi_uniquement"
 
     private fun prefs(context: Context): SharedPreferences {
         val cleMaitresse = MasterKey.Builder(context)
@@ -93,5 +94,11 @@ object GestionnaireParametres {
 
     fun marquerMessageBatterieVu(context: Context) {
         prefs(context).edit().putBoolean(CLE_MESSAGE_BATTERIE_VU, true).apply()
+    }
+
+    fun lireWifiUniquement(context: Context): Boolean = prefs(context).getBoolean(CLE_WIFI_UNIQUEMENT, false)
+
+    fun ecrireWifiUniquement(context: Context, valeur: Boolean) {
+        prefs(context).edit().putBoolean(CLE_WIFI_UNIQUEMENT, valeur).apply()
     }
 }

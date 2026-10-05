@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6 (build 6)
+
+- Nouveau réglage **"Wi-Fi uniquement"** (Paramètres) : bloque le lancement d'un lot si la
+  connexion active est facturée au volume (vérifie techniquement l'absence de la capacité
+  NOT_METERED, pas littéralement le Wi-Fi - couvre aussi un partage de connexion illimité ou une
+  connexion filaire, et exclut un Wi-Fi facturé au volume si l'appareil le signale comme tel).
+- **Appui long sur une vignette de résultat** : ouvre le vrai menu de partage Android (Bluetooth,
+  cloud, messagerie...) plutôt que seulement l'ouverture dans un visualiseur.
+- Corrigé : le texte "À propos" affichait encore l'ancien chiffre de 40 crédits/figurine au lieu
+  de 20 (confirmé depuis).
+
 ## v0.5 (build 5)
 
 **v0.4 confirmée fonctionnelle sur un vrai appareil** (service en premier plan, premier retour
