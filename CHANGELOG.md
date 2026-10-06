@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.10 (build 10)
+
+- Corrigé un manque réel dans le manifest : la permission `ACCESS_NETWORK_STATE` n'était pas
+  déclarée alors que la fonction "Wi-Fi uniquement" (v0.6) en a besoin - pouvait provoquer un
+  plantage immédiat au clic sur "Lancer" si ce réglage était actif, sans message d'erreur.
+  Fonction rendue défensive en plus (ne peut plus planter l'appli pour ce simple contrôle de
+  confort, quoi qu'il arrive).
+- Signalé en conditions réelles : l'appli plantait dès le clic sur "Lancer", avec Meshy comme
+  avec Tripo - cause probable identifiée et corrigée, mais pas encore reconfirmée en conditions
+  réelles après ce correctif précis.
+
 ## v0.9 (build 9)
 
 **Intégration Tripo portée depuis la version Windows**, où le pipeline a été confirmé

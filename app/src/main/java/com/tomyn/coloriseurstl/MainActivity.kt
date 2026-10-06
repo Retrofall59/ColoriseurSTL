@@ -508,10 +508,16 @@ class MainActivity : AppCompatActivity() {
      * volume si l'appareil le signale comme tel.
      */
     private fun connexionFactureeAuVolume(): Boolean {
-        val gestionnaireReseau = getSystemService(ConnectivityManager::class.java) ?: return false
-        val reseauActif = gestionnaireReseau.activeNetwork ?: return true
-        val capacites = gestionnaireReseau.getNetworkCapabilities(reseauActif) ?: return true
-        return !capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        // Ne doit jamais faire planter l'appli pour un simple controle de confort - permission
+        // ACCESS_NETWORK_STATE ajoutee au manifest, mais on reste defensif ici au cas ou.
+        return try {
+            val gestionnaireReseau = getSystemService(ConnectivityManager::class.java) ?: return false
+            val reseauActif = gestionnaireReseau.activeNetwork ?: return true
+            val capacites = gestionnaireReseau.getNetworkCapabilities(reseauActif) ?: return true
+            !capacites.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun lancerColorisation(fichiersAtraiter: List<Pair<Uri, String>>) {

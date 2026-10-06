@@ -5,6 +5,11 @@
          appeler l'API Meshy - a bien signaler dans le README/forum, c'est un vrai changement. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Necessaire pour ConnectivityManager.getNetworkCapabilities() (fonction "Wi-Fi
+         uniquement") - oubliee lors de l'ajout de cette fonction, corrige ici. Sans elle, l'appel
+         peut lever une SecurityException non rattrapee des que ce reglage est actif. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- Service en premier plan : le traitement continue meme si l'appli est quittee ou mise en
          arriere-plan longtemps. "dataSync" est le type le plus proche de la realite (appels
          reseau + ecriture de fichiers), requis explicitement depuis Android 14 (API 34). -->
