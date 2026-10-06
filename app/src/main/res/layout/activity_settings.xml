@@ -93,6 +93,62 @@
 
         </androidx.cardview.widget.CardView>
 
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/carte_blanc">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Clé API Tripo (optionnelle, fournisseur de secours)"
+                    android:textColor="@color/texte_principal"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="Utile si Meshy est à court de crédits. Solde API séparé de Tripo Studio - vérifie sur platform.tripo3d.ai/billing"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/editCleApiTripo"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:inputType="textPassword"
+                        android:hint="Colle ta clé API Tripo ici" />
+
+                    <Button
+                        android:id="@+id/btnVoirCleTripo"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Afficher"
+                        android:textAllCaps="false" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
         <Button
             android:id="@+id/btnEnregistrer"
             android:layout_width="match_parent"
@@ -184,7 +240,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp"
-                    android:text="Contrairement aux lecteurs RFID de cette série, cette appli a besoin d'Internet pour appeler l'API Meshy, et consomme des crédits Meshy (environ 20 par figurine)."
+                    android:text="Contrairement aux lecteurs RFID de cette série, cette appli a besoin d'Internet. Deux fournisseurs possibles (Meshy ou Tripo, au choix) - renseigne la clé d'au moins l'un des deux. Environ 20 crédits Meshy par figurine."
                     android:textColor="@color/texte_secondaire"
                     android:textSize="12sp" />
 

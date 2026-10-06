@@ -66,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ongletFichiers: Button
     private lateinit var ongletResultats: Button
     private lateinit var ongletAvancement: Button
+    private lateinit var menuFournisseur: Spinner
 
     private var fichiersSource: List<FichierSource> = emptyList()
     private var uriDossierSortie: Uri? = null
@@ -120,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         menuPrompt = findViewById(R.id.menuPrompt)
         editPrompt = findViewById(R.id.editPrompt)
         selecteurCouleurs = findViewById(R.id.selecteurCouleurs)
+        menuFournisseur = findViewById(R.id.menuFournisseur)
         btnLancer = findViewById(R.id.btnLancer)
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
@@ -151,6 +153,7 @@ class MainActivity : AppCompatActivity() {
 
         configurerSelecteurCouleurs()
         configurerMenuPrompt()
+        configurerMenuFournisseur()
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
         proposerExemptionBatterieSiNecessaire()
@@ -193,6 +196,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         manipulateurSondage.post(sondagePeriodique)
+        mettreAJourMenuFournisseur()
     }
 
     override fun onPause() {
@@ -269,6 +273,39 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
+    }
+
+    /**
+     * Ne propose que les fournisseurs dont une cle est renseignee (Paramètres) - jamais de
+     * fournisseur exige en particulier, voir mettreAJourMenuFournisseur appele aussi au retour
+     * de l'ecran Paramètres (onResume) au cas ou les cles auraient change entretemps.
+     */
+    private fun configurerMenuFournisseur() {
+        mettreAJourMenuFournisseur()
+        menuFournisseur.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val choix = menuFournisseur.selectedItem?.toString()
+                if (choix == "Meshy" || choix == "Tripo") {
+                    GestionnaireParametres.ecrireFournisseurChoisi(this@MainActivity, choix)
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun mettreAJourMenuFournisseur() {
+        val fournisseurs = mutableListOf<String>()
+        if (GestionnaireParametres.lireCleApi(this).isNotBlank()) fournisseurs.add("Meshy")
+        if (GestionnaireParametres.lireCleApiTripo(this).isNotBlank()) fournisseurs.add("Tripo")
+        if (fournisseurs.isEmpty()) fournisseurs.add("(aucune clé renseignée)")
+
+        val adaptateur = ArrayAdapter(this, android.R.layout.simple_spinner_item, fournisseurs)
+        adaptateur.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        menuFournisseur.adapter = adaptateur
+
+        val dernierChoix = GestionnaireParametres.lireFournisseurChoisi(this)
+        val index = fournisseurs.indexOf(dernierChoix)
+        menuFournisseur.setSelection(if (index >= 0) index else 0)
     }
 
     private fun configurerOnglets() {
@@ -483,10 +520,27 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Connexion facturée au volume détectée - lancement bloqué (réglage \"Wi-Fi uniquement\" dans Paramètres).", Toast.LENGTH_LONG).show()
             return
         }
-        val cleApi = GestionnaireParametres.lireCleApi(this)
-        if (cleApi.isBlank()) {
-            Toast.makeText(this, "Clé API Meshy manquante : configure-la dans Paramètres.", Toast.LENGTH_LONG).show()
+
+        // Au moins une des deux cles est obligatoire, peu importe laquelle - jamais une
+        // exigence specifique sur Meshy precisement.
+        val cleMeshy = GestionnaireParametres.lireCleApi(this)
+        val cleTripo = GestionnaireParametres.lireCleApiTripo(this)
+        if (cleMeshy.isBlank() && cleTripo.isBlank()) {
+            Toast.makeText(this, "Aucune clé API renseignée (Meshy ou Tripo, au moins une est nécessaire).", Toast.LENGTH_LONG).show()
             startActivity(Intent(this, SettingsActivity::class.java))
+            return
+        }
+        val fournisseur = menuFournisseur.selectedItem?.toString()
+        if (fournisseur != "Meshy" && fournisseur != "Tripo") {
+            Toast.makeText(this, "Choisis un fournisseur (Meshy ou Tripo) avant de lancer.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (fournisseur == "Meshy" && cleMeshy.isBlank()) {
+            Toast.makeText(this, "Meshy est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (fournisseur == "Tripo" && cleTripo.isBlank()) {
+            Toast.makeText(this, "Tripo est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
             return
         }
         if (fichiersAtraiter.isEmpty()) {
@@ -504,17 +558,25 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Verification cle+solde : seulement pour Meshy. Cote Tripo, desactivee - l'endpoint
+        // devine (/user/balance, jamais confirme) provoquait un blocage de l'appli sur la
+        // version Windows ; rien d'essentiel perdu, le vrai pipeline n'est pas touche, les
+        // erreurs eventuelles remontent normalement depuis le service pendant le traitement.
+        if (fournisseur == "Tripo") {
+            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur)
+            return
+        }
+
         btnLancer.isEnabled = false
-        // Verification cle+solde = appel reseau, jamais sur le thread principal.
         Thread {
-            val verif = MeshyApiClient.verifierCleEtSolde(cleApi)
+            val verif = MeshyApiClient.verifierCleEtSolde(cleMeshy)
             runOnUiThread {
                 btnLancer.isEnabled = true
                 when (verif.statut) {
                     MeshyApiClient.StatutCle.INVALIDE -> {
                         AlertDialog.Builder(this)
                             .setTitle("Clé API invalide")
-                            .setMessage("La clé API semble invalide ou expirée (refusée par Meshy). Vérifie-la dans Paramètres.")
+                            .setMessage("La clé API Meshy semble invalide ou expirée. Vérifie-la dans Paramètres.")
                             .setPositiveButton("OK", null)
                             .show()
                     }
@@ -522,7 +584,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("Vérification impossible")
                             .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt) }
+                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur) }
                             .setNegativeButton("Annuler", null)
                             .show()
                     }
@@ -532,11 +594,11 @@ class MainActivity : AppCompatActivity() {
                             AlertDialog.Builder(this)
                                 .setTitle("Solde potentiellement insuffisant")
                                 .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt) }
+                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur) }
                                 .setNegativeButton("Annuler", null)
                                 .show()
                         } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt)
+                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur)
                         }
                     }
                 }
@@ -544,13 +606,14 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String) {
+    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String) {
         val intent = Intent(this, ColorisationService::class.java).apply {
             putParcelableArrayListExtra(ColorisationService.EXTRA_URIS, ArrayList(fichiersAtraiter.map { it.first }))
             putStringArrayListExtra(ColorisationService.EXTRA_NOMS, ArrayList(fichiersAtraiter.map { it.second }))
             putExtra(ColorisationService.EXTRA_PROMPT, prompt)
             putExtra(ColorisationService.EXTRA_MAX_COULEURS, selecteurCouleurs.value)
             putExtra(ColorisationService.EXTRA_DOSSIER_SORTIE_URI, dossierSortie.toString())
+            putExtra(ColorisationService.EXTRA_FOURNISSEUR, fournisseur)
         }
         galerieResultats.removeAllViews()
         nombreResultatsAffiches = 0

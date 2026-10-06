@@ -35,6 +35,22 @@ class SettingsActivity : AppCompatActivity() {
             editCleApi.setSelection(editCleApi.text.length)
         }
 
+        val editCleApiTripo = findViewById<EditText>(R.id.editCleApiTripo)
+        editCleApiTripo.setText(GestionnaireParametres.lireCleApiTripo(this))
+
+        val btnVoirCleTripo = findViewById<Button>(R.id.btnVoirCleTripo)
+        btnVoirCleTripo.setOnClickListener {
+            val masquee = editCleApiTripo.inputType and InputType.TYPE_TEXT_VARIATION_PASSWORD != 0
+            if (masquee) {
+                editCleApiTripo.inputType = InputType.TYPE_CLASS_TEXT
+                btnVoirCleTripo.text = "Masquer"
+            } else {
+                editCleApiTripo.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                btnVoirCleTripo.text = "Afficher"
+            }
+            editCleApiTripo.setSelection(editCleApiTripo.text.length)
+        }
+
         val switchWifi = findViewById<Switch>(R.id.switchWifiUniquement)
         switchWifi.isChecked = GestionnaireParametres.lireWifiUniquement(this)
         switchWifi.setOnCheckedChangeListener { _, coche ->
@@ -43,7 +59,8 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnEnregistrer).setOnClickListener {
             GestionnaireParametres.ecrireCleApi(this, editCleApi.text.toString().trim())
-            Toast.makeText(this, "Clé API enregistrée.", Toast.LENGTH_SHORT).show()
+            GestionnaireParametres.ecrireCleApiTripo(this, editCleApiTripo.text.toString().trim())
+            Toast.makeText(this, "Clés API enregistrées.", Toast.LENGTH_SHORT).show()
         }
 
         findViewById<TextView>(R.id.texteVersion).text = try {

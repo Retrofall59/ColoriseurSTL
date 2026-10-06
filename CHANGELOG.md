@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.9 (build 9)
+
+**Intégration Tripo portée depuis la version Windows**, où le pipeline a été confirmé
+fonctionnel jusqu'à l'étape de texturation (réservation d'upload, envoi du fichier, création de
+tâche, suivi de progression - tous confirmés avec de vraies clés/crédits sur de vrais fichiers).
+La toute dernière étape (conversion en 3MF) n'a pas encore été vue aboutir : les échecs
+rencontrés venaient d'erreurs internes au serveur Tripo lui-même, pas d'un problème dans nos
+appels.
+
+- Deux clés API possibles dans Paramètres (Meshy, Tripo), chacune optionnelle individuellement -
+  au moins une des deux est obligatoire, peu importe laquelle.
+- Menu "Fournisseur à utiliser" sur l'écran principal, ne propose que ceux dont une clé est
+  renseignée.
+- Nouveau client `TripoApiClient.kt` : réservation d'upload, envoi du fichier (upload avec
+  longueur fixe explicite plutôt qu'un envoi fragmenté - évite le problème rencontré côté
+  Windows avec Invoke-WebRequest, corrigé là-bas avec WebClient), texturation, conversion en 3MF
+  coloré (couleur par sommet, pas de palette fixe comme Meshy).
+- Vérification de clé/solde désactivée côté Tripo (même choix que Windows : l'endpoint deviné
+  posait problème, pas essentiel au fonctionnement réel).
+
+## v0.8 (build 8)
+
+- **Corrigé : aperçu en "nuage de points" sur les maillages très denses.** Bug réel trouvé et
+  corrigé côté Windows sur un vrai fichier (~2 millions de faces), même correctif porté ici à
+  l'identique : l'ancien allègement ("un triangle sur N dans l'ordre du fichier") laissait des
+  trous partout sur un maillage dense, car des triangles voisins sur la surface ne sont pas
+  forcément voisins dans le fichier. Remplacé par une répartition en grille spatiale 3D, et le
+  seuil de déclenchement est monté à 5 millions de triangles (un maillage de ~2M s'est rendu en
+  entier en 14,6 secondes sur Windows, sans besoin de réduction).
+- Pas de changement lié à Tripo dans cette version : son intégration n'a pas encore eu de test
+  réussi de bout en bout côté Windows (tâches qui échouent côté serveur Tripo pour une raison
+  encore inconnue), donc volontairement pas encore portée ici, comme convenu.
+- Le correctif ci-dessus n'a pu être compilé et vérifié que par recoupement avec la version
+  Windows (où il a été testé en vrai sur de vrais fichiers) - comme toujours, le rendu graphique
+  Android lui-même reste impossible à exécuter en dehors d'un appareil réel depuis cet
+  environnement.
+
 ## v0.7 (build 7)
 
 - **Nouveaux formats acceptés** : en plus du `.stl`, l'appli accepte maintenant `.obj`, `.fbx`,

@@ -37,6 +37,7 @@ class ColorisationService : Service() {
         const val EXTRA_DOSSIER_SORTIE_URI = "dossier_sortie_uri"
         const val EXTRA_HORODATAGE = "horodatage"
         const val EXTRA_REESSAI_SEULEMENT = "reessai_seulement"
+        const val EXTRA_FOURNISSEUR = "fournisseur"
 
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
@@ -76,6 +77,7 @@ class ColorisationService : Service() {
         val maxCouleurs = intent.getIntExtra(EXTRA_MAX_COULEURS, 4)
         val dossierSortieUri = Uri.parse(intent.getStringExtra(EXTRA_DOSSIER_SORTIE_URI))
         val avecHorodatage = intent.getBooleanExtra(EXTRA_HORODATAGE, false)
+        val fournisseur = intent.getStringExtra(EXTRA_FOURNISSEUR) ?: "Meshy"
 
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
@@ -83,7 +85,7 @@ class ColorisationService : Service() {
         EtatTraitement.totalFichiersLot = uris.size
 
         threadTraitement = Thread {
-            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage)
+            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur)
         }
         threadTraitement?.start()
 
@@ -92,9 +94,9 @@ class ColorisationService : Service() {
 
     private fun traiterLot(
         uris: List<Uri>, noms: List<String>, prompt: String, maxCouleurs: Int,
-        dossierSortieUri: Uri, avecHorodatage: Boolean
+        dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String
     ) {
-        val cleApi = GestionnaireParametres.lireCleApi(this)
+        val cleApi = if (fournisseur == "Tripo") GestionnaireParametres.lireCleApiTripo(this) else GestionnaireParametres.lireCleApi(this)
         val racineSortie = DocumentFile.fromTreeUri(this, dossierSortieUri)
         var reussites = 0
 
@@ -141,20 +143,43 @@ class ColorisationService : Service() {
                     throw Exception("fichier de ${octets.size / 1024 / 1024} Mo, limite Meshy = 50 Mo - non envoye")
                 }
 
-                EtatTraitement.ecrireJournal("  Envoi a l'API Retexture...")
-                val resultat = MeshyApiClient.coloriser(
-                    octets, prompt, maxCouleurs, cleApi,
-                    object : MeshyApiClient.EcouteurAvancement {
-                        override fun surProgres(etape: String, statut: String, progres: Int) {
-                            if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
-                            EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
-                            mettreAJourNotification(i + 1, uris.size, "$nom - $etape")
-                        }
-                    }
-                )
-                EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
+                var urlApercu = ""
+                val octetsResultat: ByteArray
+                val creditsConsommes: Int
 
-                val octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)
+                if (fournisseur == "Tripo") {
+                    EtatTraitement.ecrireJournal("  Envoi a l'API Texture (Tripo)...")
+                    val extension = nom.substringAfterLast(".", "")
+                    val resultat = TripoApiClient.coloriser(
+                        octets, extension, prompt, cleApi,
+                        object : TripoApiClient.EcouteurAvancement {
+                            override fun surProgres(etape: String, statutBrut: String, progres: Int) {
+                                if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                                EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
+                                mettreAJourNotification(i + 1, uris.size, "$nom - $etape")
+                            }
+                        }
+                    )
+                    EtatTraitement.ecrireJournal("  Termine.")
+                    octetsResultat = TripoApiClient.telecharger(resultat.url3mf)
+                    creditsConsommes = resultat.creditsConsommes
+                } else {
+                    EtatTraitement.ecrireJournal("  Envoi a l'API Retexture...")
+                    val resultat = MeshyApiClient.coloriser(
+                        octets, prompt, maxCouleurs, cleApi,
+                        object : MeshyApiClient.EcouteurAvancement {
+                            override fun surProgres(etape: String, statut: String, progres: Int) {
+                                if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                                EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                                mettreAJourNotification(i + 1, uris.size, "$nom - $etape")
+                            }
+                        }
+                    )
+                    EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
+                    octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)
+                    urlApercu = resultat.urlApercu
+                    creditsConsommes = resultat.creditsConsommes
+                }
                 val suffixe = if (avecHorodatage) {
                     "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
                 } else "_colorise"
@@ -166,15 +191,17 @@ class ColorisationService : Service() {
 
                 EtatTraitement.ecrireJournal("  -> Enregistre : $nomSortie")
 
-                val apercu = if (resultat.urlApercu.isNotEmpty()) {
+                // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
+                // reste a null dans ce cas, l'appelant affiche alors le placeholder habituel.
+                val apercu = if (urlApercu.isNotEmpty()) {
                     try {
-                        val octetsApercu = MeshyApiClient.telecharger(resultat.urlApercu)
+                        val octetsApercu = MeshyApiClient.telecharger(urlApercu)
                         BitmapFactory.decodeByteArray(octetsApercu, 0, octetsApercu.size)
                     } catch (e: Exception) { null }
                 } else null
 
                 EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu))
-                EtatTraitement.creditsReelsLot += resultat.creditsConsommes
+                EtatTraitement.creditsReelsLot += creditsConsommes
                 reussites++
             } catch (e: Exception) {
                 if (e.message == "ANNULATION_DEMANDEE") {

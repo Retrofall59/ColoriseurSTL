@@ -18,6 +18,8 @@ object GestionnaireParametres {
 
     private const val FICHIER = "coloriseurstl_parametres_chiffre"
     private const val CLE_API_MESHY = "cle_api_meshy"
+    private const val CLE_API_TRIPO = "cle_api_tripo"
+    private const val CLE_FOURNISSEUR = "fournisseur_choisi"
     private const val CLE_PROMPT_PERSONNALISE = "dernier_prompt_personnalise"
     private const val CLE_NB_COULEURS = "nb_couleurs"
     private const val CLE_DOSSIER_SORTIE = "dossier_sortie_uri"
@@ -39,6 +41,20 @@ object GestionnaireParametres {
 
     fun ecrireCleApi(context: Context, cle: String) {
         prefs(context).edit().putString(CLE_API_MESHY, cle).apply()
+    }
+
+    // --- Tripo : fournisseur de secours, optionnel independamment de Meshy - voir MainActivity
+    // pour la logique "au moins une des deux cles est obligatoire, peu importe laquelle". ---
+    fun lireCleApiTripo(context: Context): String = prefs(context).getString(CLE_API_TRIPO, "") ?: ""
+
+    fun ecrireCleApiTripo(context: Context, cle: String) {
+        prefs(context).edit().putString(CLE_API_TRIPO, cle).apply()
+    }
+
+    fun lireFournisseurChoisi(context: Context): String = prefs(context).getString(CLE_FOURNISSEUR, "") ?: ""
+
+    fun ecrireFournisseurChoisi(context: Context, fournisseur: String) {
+        prefs(context).edit().putString(CLE_FOURNISSEUR, fournisseur).apply()
     }
 
     fun lireDernierPromptPersonnalise(context: Context): String =

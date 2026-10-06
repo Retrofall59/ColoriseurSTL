@@ -33,7 +33,14 @@ object RenduStl {
     // que par zone de la surface) laisse des trous un peu partout plutot qu'une vraie silhouette
     // pleine - observe en conditions reelles sur la version Windows. Mieux vaut un rendu un peu
     // plus lent mais complet.
-    private const val MAX_TRIANGLES = 300_000
+    // Plafond releve tres haut (teste en conditions reelles sur la version Windows : un maillage
+    // de pres de 2 millions de triangles s'est rendu en entier en 14,6 secondes, parfaitement
+    // plein). Au-dela, grille spatiale plutot que l'ancienne methode "un triangle sur N dans
+    // l'ordre du fichier", qui laissait des trous partout (aspect nuage de points) car des
+    // triangles voisins sur la surface ne sont pas forcement voisins dans le fichier - bug reel
+    // trouve et corrige sur un vrai fichier (~2M faces) cote Windows, meme correctif porte ici.
+    private const val MAX_TRIANGLES = 5_000_000
+    private const val TAILLE_GRILLE = 24
 
     /**
      * @param octets contenu brut du fichier (deja lu, peu importe la source : SAF, fichier local...)
@@ -47,17 +54,8 @@ object RenduStl {
         var triangles = charger(octets, extension) ?: return null
         if (triangles.isEmpty()) return null
 
-        if (triangles.size > MAX_TRIANGLES) {
-            val pas = triangles.size.toDouble() / MAX_TRIANGLES
-            val reduit = ArrayList<Triangle>(MAX_TRIANGLES)
-            var i = 0.0
-            while (i < triangles.size) {
-                reduit.add(triangles[i.toInt()])
-                i += pas
-            }
-            triangles = reduit
-        }
-
+        // Boite englobante calculee AVANT toute reduction (necessaire pour la grille spatiale
+        // ci-dessous, et de toute facon utile pour le centrage/l'echelle qui suivent).
         var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var minZ = Float.MAX_VALUE
         var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
         for (t in triangles) {
@@ -70,6 +68,41 @@ object RenduStl {
         val centreX = (minX + maxX) / 2f
         val centreY = (minY + maxY) / 2f
         val centreZ = (minZ + maxZ) / 2f
+
+        if (triangles.size > MAX_TRIANGLES) {
+            val etendueX = (maxX - minX).coerceAtLeast(0.0001f)
+            val etendueY = (maxY - minY).coerceAtLeast(0.0001f)
+            val etendueZ = (maxZ - minZ).coerceAtLeast(0.0001f)
+
+            val cases = HashMap<Int, ArrayList<Triangle>>()
+            for (t in triangles) {
+                val cx = (t.a[0] + t.b[0] + t.c[0]) / 3f
+                val cy = (t.a[1] + t.b[1] + t.c[1]) / 3f
+                val cz = (t.a[2] + t.b[2] + t.c[2]) / 3f
+                val gx = (((cx - minX) / etendueX) * (TAILLE_GRILLE - 1)).toInt()
+                val gy = (((cy - minY) / etendueY) * (TAILLE_GRILLE - 1)).toInt()
+                val gz = (((cz - minZ) / etendueZ) * (TAILLE_GRILLE - 1)).toInt()
+                val cle = gx + gy * TAILLE_GRILLE + gz * TAILLE_GRILLE * TAILLE_GRILLE
+                cases.getOrPut(cle) { ArrayList() }.add(t)
+            }
+
+            val groupes = ArrayList(cases.values)
+            val reduit = ArrayList<Triangle>(MAX_TRIANGLES)
+            val indexParGroupe = IntArray(groupes.size)
+            var resteDesTriangles = true
+            while (reduit.size < MAX_TRIANGLES && resteDesTriangles) {
+                resteDesTriangles = false
+                for (g in groupes.indices) {
+                    if (reduit.size >= MAX_TRIANGLES) break
+                    if (indexParGroupe[g] < groupes[g].size) {
+                        reduit.add(groupes[g][indexParGroupe[g]])
+                        indexParGroupe[g]++
+                        if (indexParGroupe[g] < groupes[g].size) resteDesTriangles = true
+                    }
+                }
+            }
+            triangles = reduit
+        }
 
         val angleX = Math.toRadians(35.264)
         val angleY = Math.toRadians(45.0)
