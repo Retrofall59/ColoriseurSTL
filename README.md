@@ -1,9 +1,15 @@
 # ColoriseurSTL
 
 Appli Android pour coloriser automatiquement un ou plusieurs fichiers 3D (`.stl`, `.obj`, `.fbx`,
-`.glb`, `.gltf` — pas le `.3mf`, que Meshy n'accepte qu'en sortie) via l'IA de Meshy, et
-sortir des `.3mf` prêts à trancher (profil Bambu intégré). Portage direct de la version
-PowerShell/Windows du même nom, déjà validée en conditions réelles.
+`.glb`, `.gltf` — pas le `.3mf`, qu'aucun des deux fournisseurs n'accepte en entrée) via Meshy ou
+Tripo au choix, et sortir des `.3mf` prêts à trancher. Portage direct de la version
+PowerShell/Windows du même nom, déjà validée en conditions réelles pour les deux fournisseurs.
+
+Renseigne la clé d'au moins l'un des deux dans Paramètres ; un menu sur l'écran principal permet
+de choisir lequel utiliser pour chaque lot. Différence de fond à connaître : Meshy utilise une
+palette fixe à N couleurs, Tripo encode la couleur par sommet du maillage (dégradé continu) —
+résultats visuellement différents selon le fournisseur choisi. Le solde de crédits API Tripo est
+séparé des crédits Tripo Studio (le site web) : vérifie sur platform.tripo3d.ai/billing.
 
 ## ⚠️ À savoir avant d'utiliser
 

@@ -147,14 +147,40 @@ object TripoApiClient {
         // --- Etape 2 : uploader le fichier brut sur cette URL ---
         uploaderVersUrlPresignee(urlPresignee, octets)
 
-        // --- Etape 3 : texturation ---
-        val corpsTexture = JSONObject().put("input", jetonFichier).put("prompt", prompt)
+        // --- Etape 3 : import du modele uploade ---
+        // Etape obligatoire decouverte a posteriori (absente des premieres versions) : la doc
+        // officielle (docs.tripo3d.ai/model-generation/import-model.html) precise qu'un fichier
+        // uploade doit d'abord passer par une tache "import_model" avant de pouvoir etre texture.
+        // Confirme aussi par l'historique du tableau de bord Tripo : chaque texturation en echec
+        // etait precedee d'une tache import_model en succes jamais reutilisee par le code avant
+        // ce correctif.
+        val corpsImport = JSONObject()
+            .put("type", "import_model")
+            .put("file", JSONObject().put("file_token", jetonFichier))
+        val reponseImport = requeteJson("POST", "/models/import", cleApi, corpsImport)
+        val idImport = reponseImport.getString("task_id")
+
+        attendreTache(idImport, cleApi, "Import", ecouteur)
+
+        // --- Etape 4 : texturation (a partir du resultat de l'import) ---
+        // Champs confirmes par la vraie doc officielle (platform.tripo3d.ai/docs/texture) : le
+        // champ s'appelle "original_model_task_id", pas "input" comme envoye dans les premieres
+        // versions - "input" etait silencieusement ignore par l'API, qui tournait alors sans
+        // jamais avoir de vraie reference de modele, d'ou l'echec systematique observe en test
+        // reel (meme sur un simple cube). Le prompt texte est imbrique dans "texture_prompt.text".
+        val corpsTexture = JSONObject()
+            .put("original_model_task_id", idImport)
+            .put("texture_prompt", JSONObject().put("text", prompt))
         val reponseTexture = requeteJson("POST", "/models/texture", cleApi, corpsTexture)
         val idTexture = reponseTexture.getString("task_id")
 
-        attendreTache(idTexture, cleApi, "Texturation", ecouteur)
+        val tacheTexture = attendreTache(idTexture, cleApi, "Texturation", ecouteur)
+        val creditsTexture = tacheTexture.optDouble("credits_consumed", 0.0)
 
-        // --- Etape 4 : conversion en 3MF colore ---
+        // --- Etape 5 : conversion en 3MF colore ---
+        // "input" confirme correct pour cet endpoint precis (contrairement a texture_model) -
+        // developers.tripo3d.com/en/docs/models-convert : "input - Model source. Accepts task_id
+        // or file_token."
         val corpsConvert = JSONObject()
             .put("input", idTexture)
             .put("format", "3MF")
@@ -163,19 +189,20 @@ object TripoApiClient {
         val idConvert = reponseConvert.getString("task_id")
 
         val tacheConvert = attendreTache(idConvert, cleApi, "Conversion 3MF", ecouteur)
+        val creditsConvert = tacheConvert.optDouble("credits_consumed", 0.0)
 
-        // Le nom exact du champ de sortie est une deduction par analogie avec les autres
-        // endpoints Tripo documentes - jamais confirme en conditions reelles (la conversion n'a
-        // encore jamais abouti jusqu'au bout lors des tests).
-        val sortie = tacheConvert.optJSONObject("output")
-        val urlSortie = sortie?.optString("model") ?: tacheConvert.optString("model")
+        // Confirme par une vraie reponse Tripo complete (premier succes de bout en bout cote
+        // Windows) : le champ s'appelle "output.model_url", pas "output.model" comme devine au
+        // depart.
+        val urlSortie = tacheConvert.optJSONObject("output")?.optString("model_url")
         if (urlSortie.isNullOrEmpty()) {
             throw ErreurApi("reponse de conversion sans URL de modele exploitable - reponse brute recue : $tacheConvert")
         }
 
-        // Tripo facture par operation ; le total exact par fichier n'est pas extrait ici faute
-        // d'avoir confirme ou il se trouve dans la reponse - meme choix que cote Windows.
-        return ResultatColorisation(urlSortie, 0)
+        // Credits reellement consommes, extraits des deux etapes facturees (texture + conversion
+        // ; l'import semble gratuit, 0 observe partout dans le tableau de bord Tripo).
+        val creditsTotal = (creditsTexture + creditsConvert).toInt()
+        return ResultatColorisation(urlSortie, creditsTotal)
     }
 
     /** Telecharge un fichier distant (le .3mf final) en octets bruts. */

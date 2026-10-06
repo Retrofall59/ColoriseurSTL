@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.11 (build 11)
+
+**Tripo confirmé fonctionnel de bout en bout pour la première fois**, côté Windows, après une
+longue série de corrections - tous les correctifs portés ici à l'identique :
+
+- Ajout de l'étape d'import manquante (`import_model`), obligatoire avant la texturation pour
+  un fichier uploadé - confirmée par la doc officielle et par l'historique du tableau de bord
+  Tripo (chaque texturation en échec était précédée d'un import en succès jamais réutilisé).
+- Corrigé le nom du champ pour la texturation : `original_model_task_id`, pas `input` comme
+  envoyé jusqu'ici - `input` était silencieusement ignoré par l'API, qui tournait alors sans
+  jamais avoir de vraie référence de modèle. C'était la vraie cause des échecs systématiques
+  ("Internal processing error") observés sur tous les tests précédents, même sur un simple cube.
+- Corrigé l'extraction de l'URL du résultat final : `output.model_url`, pas `output.model`.
+- Les crédits réellement consommés sont maintenant extraits et comptabilisés (au lieu de
+  toujours afficher 0 pour les fichiers traités via Tripo).
+
 ## v0.10 (build 10)
 
 - Corrigé un manque réel dans le manifest : la permission `ACCESS_NETWORK_STATE` n'était pas
