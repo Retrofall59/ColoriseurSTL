@@ -44,6 +44,9 @@ class MainActivity : AppCompatActivity() {
         // pas disparaitre dans les memes circonstances.
         private var fichiersSourcePersistants: List<FichierSource> = emptyList()
         private const val CREDITS_ESTIMES_PAR_FICHIER = 20
+        // Formats acceptes par l'API Meshy en entree (confirme dans la doc officielle - le .3mf
+        // n'y figure PAS : Meshy ne l'accepte qu'en SORTIE, jamais comme source a coloriser).
+        private val EXTENSIONS_SUPPORTEES = listOf("stl", "obj", "fbx", "glb", "gltf")
     }
 
     private lateinit var texteSourceChoisie: TextView
@@ -299,31 +302,31 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val trouves = ArrayList<FichierSource>()
-        collecterStlRecursif(racine, trouves)
+        collecterFichiers3dRecursif(racine, trouves)
 
         if (trouves.isEmpty()) {
-            Toast.makeText(this, "Aucun fichier .stl trouvé dans ce dossier (recherche dans les sous-dossiers incluse).", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Aucun fichier 3D supporté trouvé dans ce dossier (recherche dans les sous-dossiers incluse).", Toast.LENGTH_LONG).show()
             return
         }
-        texteSourceChoisie.text = "Dossier : ${racine.name} (${trouves.size} fichier(s) .stl)"
+        texteSourceChoisie.text = "Dossier : ${racine.name} (${trouves.size} fichier(s))"
         fichiersSource = trouves
         fichiersSourcePersistants = trouves
         afficherGalerieFichiers()
     }
 
-    private fun collecterStlRecursif(dossier: DocumentFile, resultat: MutableList<FichierSource>) {
+    private fun collecterFichiers3dRecursif(dossier: DocumentFile, resultat: MutableList<FichierSource>) {
         for (enfant in dossier.listFiles()) {
             if (enfant.isDirectory) {
-                collecterStlRecursif(enfant, resultat)
-            } else if (enfant.name?.endsWith(".stl", ignoreCase = true) == true) {
-                resultat.add(FichierSource(enfant.uri, enfant.name ?: "fichier.stl"))
+                collecterFichiers3dRecursif(enfant, resultat)
+            } else if (EXTENSIONS_SUPPORTEES.any { enfant.name?.endsWith(".$it", ignoreCase = true) == true }) {
+                resultat.add(FichierSource(enfant.uri, enfant.name ?: "fichier"))
             }
         }
     }
 
     private fun chargerDepuisFichiers(uris: List<Uri>) {
         val fichiers = uris.map { uri ->
-            val nom = DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: "fichier.stl"
+            val nom = DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: "fichier"
             FichierSource(uri, nom)
         }
         texteSourceChoisie.text = "${fichiers.size} fichier(s) choisi(s) individuellement"
@@ -404,7 +407,7 @@ class MainActivity : AppCompatActivity() {
             for (f in fichiersSource) {
                 val bitmap = try {
                     contentResolver.openInputStream(f.uri)?.use { flux ->
-                        RenduStl.rendreMiniatureDepuisFlux(flux, 220)
+                        RenduStl.rendreMiniatureDepuisFlux(flux, 220, f.nom.substringAfterLast(".", ""))
                     }
                 } catch (e: Exception) { null }
 

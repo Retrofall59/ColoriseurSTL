@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.7 (build 7)
+
+- **Nouveaux formats acceptés** : en plus du `.stl`, l'appli accepte maintenant `.obj`, `.fbx`,
+  `.glb` et `.gltf` (formats confirmés dans la doc officielle de l'API Meshy). Le `.3mf` n'est
+  **pas** supporté en entrée - Meshy ne l'accepte qu'en sortie, jamais comme source.
+- **Vrai rendu ajouté pour l'OBJ** (vignettes de départ), même logique que le STL. Pour
+  `.fbx`/`.glb`/`.gltf` : pas de tentative de rendu local (formats trop complexes pour un
+  parseur maison fiable), le placeholder "pas d'aperçu" s'affiche à la place - le fichier se
+  colorise quand même normalement par ailleurs.
+- Côté Windows (même projet), le même ajout a pu être **réellement exécuté et vérifié
+  visuellement** grâce à un compilateur C# installé en cours de route - première vraie
+  vérification visuelle de ce moteur de rendu sur tout ce projet. La version Android utilise la
+  même logique (portée en Kotlin), mais reste, comme toujours, seulement compilée ici, jamais
+  exécutée sur un appareil réel par mes soins.
+
 ## v0.6 (build 6)
 
 - Nouveau réglage **"Wi-Fi uniquement"** (Paramètres) : bloque le lancement d'un lot si la

@@ -35,9 +35,16 @@ object RenduStl {
     // plus lent mais complet.
     private const val MAX_TRIANGLES = 300_000
 
-    /** @param octets contenu brut du fichier STL (deja lu, peu importe la source : SAF, fichier local...) */
-    fun rendreMiniature(octets: ByteArray, taillePixels: Int): Bitmap? {
-        var triangles = charger(octets) ?: return null
+    /**
+     * @param octets contenu brut du fichier (deja lu, peu importe la source : SAF, fichier local...)
+     * @param extension extension du fichier (avec ou sans le point, insensible a la casse) - decide
+     *   quel lecteur utiliser. ".fbx"/".glb"/".gltf" renvoient null immediatement (pas de tentative
+     *   de parsing, formats trop complexes pour un rendu maison fiable) : l'appelant affiche alors
+     *   l'image de remplacement. Le fichier est quand meme envoye a Meshy normalement, seul
+     *   l'apercu local avant traitement est absent dans ce cas.
+     */
+    fun rendreMiniature(octets: ByteArray, taillePixels: Int, extension: String): Bitmap? {
+        var triangles = charger(octets, extension) ?: return null
         if (triangles.isEmpty()) return null
 
         if (triangles.size > MAX_TRIANGLES) {
@@ -162,10 +169,14 @@ object RenduStl {
         return tampon.toByteArray()
     }
 
-    fun rendreMiniatureDepuisFlux(flux: InputStream, taillePixels: Int): Bitmap? =
-        rendreMiniature(lireTout(flux), taillePixels)
+    fun rendreMiniatureDepuisFlux(flux: InputStream, taillePixels: Int, extension: String): Bitmap? =
+        rendreMiniature(lireTout(flux), taillePixels, extension)
 
-    private fun charger(octets: ByteArray): List<Triangle>? {
+    private fun charger(octets: ByteArray, extension: String): List<Triangle>? {
+        val ext = extension.lowercase().removePrefix(".")
+        if (ext == "obj") return chargerObj(octets)
+        if (ext != "stl") return null
+
         if (octets.size >= 84) {
             val buffer = ByteBuffer.wrap(octets).order(ByteOrder.LITTLE_ENDIAN)
             val nbTriangles = buffer.getInt(80)
@@ -175,6 +186,45 @@ object RenduStl {
             }
         }
         return chargerAscii(octets)
+    }
+
+    /**
+     * Format OBJ : texte simple, sommets ("v x y z") et faces ("f a b c", eventuellement
+     * "a/b/c" avec indices texture/normale ignores, ou plus de 3 sommets - triangulation en
+     * eventail). Indices 1-bases ; un indice negatif signifie "depuis la fin" (rare mais prevu
+     * par le format). Meme logique que la version Windows (C#), verifiee par execution reelle
+     * la-bas sur un cube de test.
+     */
+    private fun chargerObj(octets: ByteArray): List<Triangle> {
+        val sommets = ArrayList<FloatArray>()
+        val triangles = ArrayList<Triangle>()
+        val texte = String(octets, Charsets.US_ASCII)
+
+        for (ligneBrute in texte.lineSequence()) {
+            val ligne = ligneBrute.trim()
+            if (ligne.startsWith("v ") || ligne.startsWith("v\t")) {
+                val parties = ligne.substring(1).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                if (parties.size >= 3) {
+                    try {
+                        sommets.add(floatArrayOf(parties[0].toFloat(), parties[1].toFloat(), parties[2].toFloat()))
+                    } catch (e: NumberFormatException) { /* ligne mal formee : ignoree */ }
+                }
+            } else if (ligne.startsWith("f ") || ligne.startsWith("f\t")) {
+                val jetons = ligne.substring(1).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                val sommetsFace = ArrayList<FloatArray>()
+                for (jeton in jetons) {
+                    val indiceTexte = jeton.split("/")[0]
+                    val indice = indiceTexte.toIntOrNull() ?: continue
+                    val indiceReel = if (indice > 0) indice - 1 else sommets.size + indice
+                    if (indiceReel in sommets.indices) sommetsFace.add(sommets[indiceReel])
+                }
+                // Triangulation en eventail pour les faces a plus de 3 sommets (quads, etc.)
+                for (i in 1 until sommetsFace.size - 1) {
+                    triangles.add(Triangle(sommetsFace[0], sommetsFace[i], sommetsFace[i + 1]))
+                }
+            }
+        }
+        return triangles
     }
 
     private fun chargerBinaire(buffer: ByteBuffer, nbTriangles: Int): List<Triangle> {

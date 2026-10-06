@@ -1,6 +1,7 @@
 # ColoriseurSTL
 
-Appli Android pour coloriser automatiquement un ou plusieurs fichiers STL via l'IA de Meshy, et
+Appli Android pour coloriser automatiquement un ou plusieurs fichiers 3D (`.stl`, `.obj`, `.fbx`,
+`.glb`, `.gltf` — pas le `.3mf`, que Meshy n'accepte qu'en sortie) via l'IA de Meshy, et
 sortir des `.3mf` prêts à trancher (profil Bambu intégré). Portage direct de la version
 PowerShell/Windows du même nom, déjà validée en conditions réelles.
 
