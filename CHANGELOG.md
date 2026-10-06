@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.12 (build 12)
+
+**Menu de prompts a deux niveaux**, pour remplacer la liste plate de 10 styles predefinis qui
+melangeait des presets pensees pour un personnage avec d'autres pensees pour un decor :
+
+- Nouveau menu "Categorie" (Personnage / Decor / Personnage et decor / Piece / Autre) qui filtre
+  la liste proposee par le menu "Style voulu" en dessous - meme principe que la version Windows
+  mise a jour en parallele.
+- 10 prompts detailles par categorie (40 au total) + une entree "Autre" par categorie pour la
+  saisie libre, chacune avec sa propre memoire du dernier texte tape (pour ne pas melanger le
+  texte libre d'un personnage avec celui d'une piece mecanique d'une fois sur l'autre).
+- L'appli se rouvre sur la derniere categorie utilisee.
+- `PromptsPredefinis` restructure en catalogue par categorie (`categories`, `libellesPour`,
+  `textePour`) au lieu d'une simple liste a plat - meme nom de fichier, structure interne
+  changee.
+
 ## v0.11 (build 11)
 
 **Tripo confirmé fonctionnel de bout en bout pour la première fois**, côté Windows, après une

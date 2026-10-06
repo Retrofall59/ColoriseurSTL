@@ -20,7 +20,8 @@ object GestionnaireParametres {
     private const val CLE_API_MESHY = "cle_api_meshy"
     private const val CLE_API_TRIPO = "cle_api_tripo"
     private const val CLE_FOURNISSEUR = "fournisseur_choisi"
-    private const val CLE_PROMPT_PERSONNALISE = "dernier_prompt_personnalise"
+    private const val CLE_PROMPT_PERSONNALISE_PREFIXE = "dernier_prompt_personnalise_"
+    private const val CLE_CATEGORIE_PROMPT = "derniere_categorie_prompt"
     private const val CLE_NB_COULEURS = "nb_couleurs"
     private const val CLE_DOSSIER_SORTIE = "dossier_sortie_uri"
     private const val CLE_MESSAGE_BATTERIE_VU = "message_batterie_vu"
@@ -57,11 +58,25 @@ object GestionnaireParametres {
         prefs(context).edit().putString(CLE_FOURNISSEUR, fournisseur).apply()
     }
 
-    fun lireDernierPromptPersonnalise(context: Context): String =
-        prefs(context).getString(CLE_PROMPT_PERSONNALISE, "") ?: ""
+    /** Slug simple pour deriver une cle de preference stable a partir d'un nom de categorie. */
+    private fun slugCategorie(categorie: String): String =
+        categorie.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
 
-    fun ecrireDernierPromptPersonnalise(context: Context, texte: String) {
-        prefs(context).edit().putString(CLE_PROMPT_PERSONNALISE, texte).apply()
+    // Memoire du dernier texte libre ("Autre") saisi, separee par categorie - evite de melanger
+    // par exemple le texte libre tape pour un personnage avec celui tape pour une piece
+    // mecanique. Equivalent du fichier "dernier_prompt_<categorie>.txt" cote Windows.
+    fun lireDernierPromptPersonnalise(context: Context, categorie: String): String =
+        prefs(context).getString(CLE_PROMPT_PERSONNALISE_PREFIXE + slugCategorie(categorie), "") ?: ""
+
+    fun ecrireDernierPromptPersonnalise(context: Context, categorie: String, texte: String) {
+        prefs(context).edit().putString(CLE_PROMPT_PERSONNALISE_PREFIXE + slugCategorie(categorie), texte).apply()
+    }
+
+    /** Derniere categorie de prompt selectionnee, pour rouvrir l'appli sur le meme menu. */
+    fun lireDerniereCategoriePrompt(context: Context): String? = prefs(context).getString(CLE_CATEGORIE_PROMPT, null)
+
+    fun ecrireDerniereCategoriePrompt(context: Context, categorie: String) {
+        prefs(context).edit().putString(CLE_CATEGORIE_PROMPT, categorie).apply()
     }
 
     fun lireNbCouleurs(context: Context): Int = prefs(context).getInt(CLE_NB_COULEURS, 4)

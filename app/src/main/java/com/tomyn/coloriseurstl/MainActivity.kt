@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var texteSourceChoisie: TextView
     private lateinit var texteDossierSortie: TextView
+    private lateinit var menuCategoriePrompt: Spinner
     private lateinit var menuPrompt: Spinner
     private lateinit var editPrompt: EditText
     private lateinit var selecteurCouleurs: NumberPicker
@@ -118,6 +119,7 @@ class MainActivity : AppCompatActivity() {
 
         texteSourceChoisie = findViewById(R.id.texteSourceChoisie)
         texteDossierSortie = findViewById(R.id.texteDossierSortie)
+        menuCategoriePrompt = findViewById(R.id.menuCategoriePrompt)
         menuPrompt = findViewById(R.id.menuPrompt)
         editPrompt = findViewById(R.id.editPrompt)
         selecteurCouleurs = findViewById(R.id.selecteurCouleurs)
@@ -242,22 +244,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Categorie actuellement selectionnee dans menuCategoriePrompt (libelle, pas position). */
+    private fun categoriePromptActuelle(): String =
+        menuCategoriePrompt.selectedItem?.toString() ?: PromptsPredefinis.nomsCategories.first()
+
     private fun configurerMenuPrompt() {
-        val adaptateur = ArrayAdapter(this, android.R.layout.simple_spinner_item, PromptsPredefinis.libelles)
-        adaptateur.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        menuPrompt.adapter = adaptateur
+        // --- Menu "Categorie" : filtre la liste de prompts proposee par menuPrompt. ---
+        val adaptateurCategories = ArrayAdapter(this, android.R.layout.simple_spinner_item, PromptsPredefinis.nomsCategories)
+        adaptateurCategories.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        menuCategoriePrompt.adapter = adaptateurCategories
 
-        editPrompt.setText(PromptsPredefinis.liste.values.first())
+        // Rouvre l'appli sur la derniere categorie choisie, si elle existe encore.
+        val categorieInitiale = GestionnaireParametres.lireDerniereCategoriePrompt(this@MainActivity)
+        val positionInitiale = categorieInitiale?.let { PromptsPredefinis.nomsCategories.indexOf(it) } ?: -1
+        if (positionInitiale >= 0) menuCategoriePrompt.setSelection(positionInitiale)
 
+        menuCategoriePrompt.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val categorie = PromptsPredefinis.nomsCategories[position]
+                GestionnaireParametres.ecrireDerniereCategoriePrompt(this@MainActivity, categorie)
+                remplirMenuPrompt(categorie)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // --- Menu "Style voulu" : peuple initialement par remplirMenuPrompt ci-dessous. ---
         menuPrompt.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val libelle = PromptsPredefinis.libelles[position]
-                val texte = PromptsPredefinis.liste[libelle]
+                val categorie = categoriePromptActuelle()
+                val libelle = PromptsPredefinis.libellesPour(categorie).getOrNull(position) ?: return
+                val texte = PromptsPredefinis.textePour(categorie, libelle)
                 if (texte != null) {
                     editPrompt.setText(texte)
                 } else {
-                    if (PromptsPredefinis.liste.values.contains(editPrompt.text.toString())) {
-                        editPrompt.setText(GestionnaireParametres.lireDernierPromptPersonnalise(this@MainActivity))
+                    // "Autre" : si le champ contient encore un preset (pas une saisie perso en
+                    // cours), on recharge le dernier prompt libre enregistre pour cette
+                    // categorie plutot que de vider - evite d'avoir a le retaper a chaque fois.
+                    if (PromptsPredefinis.categories[categorie]?.values?.contains(editPrompt.text.toString()) == true) {
+                        editPrompt.setText(GestionnaireParametres.lireDernierPromptPersonnalise(this@MainActivity, categorie))
                     }
                     editPrompt.requestFocus()
                 }
@@ -267,12 +291,31 @@ class MainActivity : AppCompatActivity() {
 
         editPrompt.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) {
-                val estModeAutre = PromptsPredefinis.liste[menuPrompt.selectedItem?.toString()] == null
-                if (estModeAutre) GestionnaireParametres.ecrireDernierPromptPersonnalise(this@MainActivity, s.toString())
+                val categorie = categoriePromptActuelle()
+                val estModeAutre = PromptsPredefinis.textePour(categorie, menuPrompt.selectedItem?.toString() ?: "") == null
+                if (estModeAutre) GestionnaireParametres.ecrireDernierPromptPersonnalise(this@MainActivity, categorie, s.toString())
             }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
+
+        // Peuple le menu "Style voulu" pour la categorie actuellement affichee (initiale ou
+        // restauree ci-dessus) - doit venir apres la mise en place des deux listeners.
+        remplirMenuPrompt(categoriePromptActuelle())
+    }
+
+    /** (Re)peuple menuPrompt avec les entrees de la categorie donnee et selectionne la premiere. */
+    private fun remplirMenuPrompt(categorie: String) {
+        val adaptateur = ArrayAdapter(this, android.R.layout.simple_spinner_item, PromptsPredefinis.libellesPour(categorie))
+        adaptateur.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        menuPrompt.adapter = adaptateur
+        menuPrompt.setSelection(0)
+        // setSelection(0) ne declenche pas toujours onItemSelected si la position ne change pas
+        // (ex. on reste sur le premier item en changeant juste de categorie) - on met donc aussi
+        // a jour editPrompt directement ici pour etre sur que le texte suit bien la categorie.
+        val premierLibelle = PromptsPredefinis.libellesPour(categorie).firstOrNull()
+        val premierTexte = premierLibelle?.let { PromptsPredefinis.textePour(categorie, it) }
+        if (premierTexte != null) editPrompt.setText(premierTexte)
     }
 
     /**
