@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.14 (build 14)
+
+**Portage des correctifs Windows du 07/10/2026** (export OBJ Tripo, option OBJ expérimentale pour
+Meshy, vrais chiffres de crédits) :
+
+- **Tripo sort désormais un `.obj` colorié par sommet (ZIP extrait) au lieu d'un `.3mf`.**
+  `export_vertex_colors` n'est documenté par Tripo comme valide que pour les formats OBJ et
+  GLTF - demandé avec 3MF comme avant, le paramètre était silencieusement ignoré, d'où des
+  `.3mf` reçus avec une palette ajoutée mais jamais appliquée à la géométrie (aucune texture
+  visible). Le résultat Tripo est maintenant un **sous-dossier** `<nom>_colorise/` (ou
+  `<nom>_tripo_colorise/` en mode comparaison), extrait du ZIP renvoyé par l'API (maillage + `.mtl`
+  + textures) via `ZipInputStream` et le `ContentResolver` (pas d'équivalent direct de
+  `ZipFile.ExtractToDirectory` avec le Storage Access Framework).
+- **Nouvelle case à cocher "Pour Meshy : exporter en .obj texturé plutôt qu'en .3mf"** : saute
+  l'étape Multi-Color Print (facturée en plus) et récupère directement le `.obj` + `.mtl` + image
+  de texture de l'étape Retexture, dans un sous-dossier dédié - même principe que Tripo. Disponible
+  aussi bien en solo qu'en mode comparaison (seul Meshy est concerné ; Tripo n'a pas d'équivalent
+  "avec/sans" à choisir). Reste décochée par défaut.
+- **Estimation de coût revue avec les vrais chiffres observés par Tomyn le 07/10/2026** : Meshy
+  ~20 crédits/figurine (Retexture 10 + Multi-Color Print 10, confirmés dans le tableau de bord -
+  une première lecture avait suggéré 56, corrigée depuis), ~10 crédits avec l'option `.obj`
+  (Multi-Color Print économisé), Tripo ~20 crédits/figurine (import 5 confirmé NON gratuit comme
+  on le pensait + texturation 10 + conversion variable ~5). Le crédit d'import Tripo, auparavant
+  ignoré dans le total réel du bilan, est maintenant bien compté.
+- Vérifié par compilation réelle (kotlinc + stubs des API Android/AndroidX utilisées, extension du
+  stub `DocumentFile` avec `createDirectory`/`findFile`) : zéro erreur. Pas encore testé en
+  conditions réelles sur un appareil - priorité donnée à Windows pour la validation terrain avant
+  ce portage, comme d'habitude.
+
+## v0.13 (build 13)
+
+**Mode comparaison Meshy + Tripo**, porté depuis la version Windows (même fonctionnalité,
+adaptée à l'écran mobile) :
+
+- Nouvelle case à cocher "Comparer Meshy et Tripo" (désactive le menu de choix du fournisseur
+  quand elle est cochée) : lance les deux fournisseurs sur chaque fichier, l'un après l'autre,
+  chacun avec son propre `try`/`catch` indépendant - l'échec de l'un n'empêche jamais de
+  récupérer le résultat de l'autre.
+- Fichiers de sortie suffixés `_meshy`/`_tripo` pour ne jamais s'écraser l'un l'autre, exactement
+  comme sur Windows.
+- Un fichier compte comme "réussi" dès qu'AU MOINS UN des deux fournisseurs aboutit ; seul un
+  échec sur les deux fournisseurs compte comme un vrai échec.
+- Contrairement à Windows (deux colonnes côte à côte), l'écran mobile est trop étroit pour une
+  vraie mise en page à deux colonnes : chaque vignette de résultat porte à la place un petit
+  badge coloré ("Meshy" en bleu, "Tripo" en orange) pour distinguer les deux à l'œil dans la même
+  galerie.
+- Bilan final (journal + notification) au format "Meshy X/N réussite(s), Tripo Y/N réussite(s)"
+  en mode comparaison, au lieu du bilan simple habituel.
+- Double le coût en crédits à chaque génération (les deux fournisseurs sont facturés) - reste
+  décochée par défaut.
+- Vérifié par compilation réelle (kotlinc + stubs des API Android/AndroidX utilisées) : zéro
+  erreur. Pas encore testé en conditions réelles sur un appareil.
+
 ## v0.12 (build 12)
 
 **Menu de prompts a deux niveaux**, pour remplacer la liste plate de 10 styles predefinis qui

@@ -13,6 +13,8 @@ import android.os.IBinder
 import android.os.StatFs
 import androidx.core.app.NotificationCompat
 import androidx.documentfile.provider.DocumentFile
+import java.io.ByteArrayInputStream
+import java.util.zip.ZipInputStream
 
 /**
  * Fait tourner le traitement en premier plan, independamment de MainActivity - contrairement a
@@ -38,6 +40,8 @@ class ColorisationService : Service() {
         const val EXTRA_HORODATAGE = "horodatage"
         const val EXTRA_REESSAI_SEULEMENT = "reessai_seulement"
         const val EXTRA_FOURNISSEUR = "fournisseur"
+        const val EXTRA_COMPARER = "comparer"
+        const val EXTRA_MESHY_OBJ_EXPERIMENTAL = "meshy_obj_experimental"
 
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
@@ -78,6 +82,8 @@ class ColorisationService : Service() {
         val dossierSortieUri = Uri.parse(intent.getStringExtra(EXTRA_DOSSIER_SORTIE_URI))
         val avecHorodatage = intent.getBooleanExtra(EXTRA_HORODATAGE, false)
         val fournisseur = intent.getStringExtra(EXTRA_FOURNISSEUR) ?: "Meshy"
+        val comparer = intent.getBooleanExtra(EXTRA_COMPARER, false)
+        val meshyObjExperimental = intent.getBooleanExtra(EXTRA_MESHY_OBJ_EXPERIMENTAL, false)
 
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
@@ -85,7 +91,7 @@ class ColorisationService : Service() {
         EtatTraitement.totalFichiersLot = uris.size
 
         threadTraitement = Thread {
-            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur)
+            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer, meshyObjExperimental)
         }
         threadTraitement?.start()
 
@@ -94,11 +100,19 @@ class ColorisationService : Service() {
 
     private fun traiterLot(
         uris: List<Uri>, noms: List<String>, prompt: String, maxCouleurs: Int,
-        dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String
+        dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String, comparer: Boolean,
+        meshyObjExperimental: Boolean
     ) {
-        val cleApi = if (fournisseur == "Tripo") GestionnaireParametres.lireCleApiTripo(this) else GestionnaireParametres.lireCleApi(this)
+        val cleMeshy = GestionnaireParametres.lireCleApi(this)
+        val cleTripo = GestionnaireParametres.lireCleApiTripo(this)
+        val cleApi = if (fournisseur == "Tripo") cleTripo else cleMeshy
         val racineSortie = DocumentFile.fromTreeUri(this, dossierSortieUri)
         var reussites = 0
+        // Comptes separes par fournisseur, utilises seulement en mode comparaison (voir plus bas
+        // et terminerService) - un fichier compte comme une "reussite" globale des qu'AU MOINS UN
+        // des deux fournisseurs a abouti, meme fonctionnement que la version Windows.
+        var reussitesMeshy = 0
+        var reussitesTripo = 0
 
         if (racineSortie == null) {
             EtatTraitement.ecrireJournal("ERREUR : dossier de sortie inaccessible.")
@@ -143,66 +157,37 @@ class ColorisationService : Service() {
                     throw Exception("fichier de ${octets.size / 1024 / 1024} Mo, limite Meshy = 50 Mo - non envoye")
                 }
 
-                var urlApercu = ""
-                val octetsResultat: ByteArray
-                val creditsConsommes: Int
-
-                if (fournisseur == "Tripo") {
-                    EtatTraitement.ecrireJournal("  Envoi a l'API Texture (Tripo)...")
-                    val extension = nom.substringAfterLast(".", "")
-                    val resultat = TripoApiClient.coloriser(
-                        octets, extension, prompt, cleApi,
-                        object : TripoApiClient.EcouteurAvancement {
-                            override fun surProgres(etape: String, statutBrut: String, progres: Int) {
-                                if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
-                                EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
-                                mettreAJourNotification(i + 1, uris.size, "$nom - $etape")
-                            }
-                        }
-                    )
-                    EtatTraitement.ecrireJournal("  Termine.")
-                    octetsResultat = TripoApiClient.telecharger(resultat.url3mf)
-                    creditsConsommes = resultat.creditsConsommes
-                } else {
-                    EtatTraitement.ecrireJournal("  Envoi a l'API Retexture...")
-                    val resultat = MeshyApiClient.coloriser(
-                        octets, prompt, maxCouleurs, cleApi,
-                        object : MeshyApiClient.EcouteurAvancement {
-                            override fun surProgres(etape: String, statut: String, progres: Int) {
-                                if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
-                                EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
-                                mettreAJourNotification(i + 1, uris.size, "$nom - $etape")
-                            }
-                        }
-                    )
-                    EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
-                    octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)
-                    urlApercu = resultat.urlApercu
-                    creditsConsommes = resultat.creditsConsommes
-                }
-                val suffixe = if (avecHorodatage) {
-                    "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
-                } else "_colorise"
-                val nomSortie = nom.substringBeforeLast(".") + suffixe + ".3mf"
-                val fichierSortie = racineSortie.createFile("application/octet-stream", nomSortie)
-                    ?: throw Exception("impossible de creer le fichier de sortie")
-                contentResolver.openOutputStream(fichierSortie.uri)?.use { it.write(octetsResultat) }
-                    ?: throw Exception("impossible d'ecrire le fichier de sortie")
-
-                EtatTraitement.ecrireJournal("  -> Enregistre : $nomSortie")
-
-                // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
-                // reste a null dans ce cas, l'appelant affiche alors le placeholder habituel.
-                val apercu = if (urlApercu.isNotEmpty()) {
+                if (comparer) {
+                    // Les deux fournisseurs tournent l'un apres l'autre sur le MEME fichier deja lu
+                    // en memoire (pas de double lecture), chacun avec son propre try/catch
+                    // independant : l'echec de l'un ne doit jamais empecher de recuperer le
+                    // resultat de l'autre - meme logique que la version Windows.
+                    var auMoinsUnReussi = false
                     try {
-                        val octetsApercu = MeshyApiClient.telecharger(urlApercu)
-                        BitmapFactory.decodeByteArray(octetsApercu, 0, octetsApercu.size)
-                    } catch (e: Exception) { null }
-                } else null
-
-                EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu))
-                EtatTraitement.creditsReelsLot += creditsConsommes
-                reussites++
+                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental)
+                        reussitesMeshy++
+                        auMoinsUnReussi = true
+                    } catch (e: Exception) {
+                        if (e.message == "ANNULATION_DEMANDEE") throw e
+                        EtatTraitement.ecrireJournal("  ECHEC Meshy sur $nom : ${e.message}")
+                    }
+                    try {
+                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false)
+                        reussitesTripo++
+                        auMoinsUnReussi = true
+                    } catch (e: Exception) {
+                        if (e.message == "ANNULATION_DEMANDEE") throw e
+                        EtatTraitement.ecrireJournal("  ECHEC Tripo sur $nom : ${e.message}")
+                    }
+                    if (auMoinsUnReussi) {
+                        reussites++
+                    } else {
+                        EtatTraitement.ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
+                    }
+                } else {
+                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental)
+                    reussites++
+                }
             } catch (e: Exception) {
                 if (e.message == "ANNULATION_DEMANDEE") {
                     EtatTraitement.ecrireJournal("\n=== Annule par l'utilisateur (en cours de traitement de $nom) ===")
@@ -213,18 +198,191 @@ class ColorisationService : Service() {
             }
         }
 
-        terminerService(reussites)
+        terminerService(reussites, comparer, reussitesMeshy, reussitesTripo, uris.size)
     }
 
-    private fun terminerService(reussites: Int) {
+    /**
+     * Colorise UN fichier (deja lu en memoire) avec UN fournisseur, enregistre le resultat (fichier
+     * de sortie + vignette dans EtatTraitement) et retourne les credits consommes. Factorise entre
+     * le mode simple et le mode comparaison (voir traiterLot) - jette une exception en cas d'echec,
+     * y compris "ANNULATION_DEMANDEE", a l'appelant de decider quoi en faire dans chaque mode.
+     */
+    private fun coloriserAvecUnFournisseur(
+        fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
+        maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
+        indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean
+    ): Int {
+        val suffixe = suffixeFournisseur + if (avecHorodatage) {
+            "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
+        } else "_colorise"
+        val nomBase = nom.substringBeforeLast(".")
+
+        if (fournisseurEffectif == "Tripo") {
+            // Depuis le 07/10/2026 : Tripo sort un .obj colore par sommet (plus un .3mf, voir
+            // TripoApiClient) livre en ZIP - extrait dans un sous-dossier dedie, meme logique que
+            // la version Windows.
+            EtatTraitement.ecrireJournal("  Envoi a l'API Texture (Tripo)...")
+            val extension = nom.substringAfterLast(".", "")
+            val resultat = TripoApiClient.coloriser(
+                octets, extension, prompt, cleApi,
+                object : TripoApiClient.EcouteurAvancement {
+                    override fun surProgres(etape: String, statutBrut: String, progres: Int) {
+                        if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                        EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
+                        mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                    }
+                }
+            )
+            EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
+            val octetsZip = TripoApiClient.telecharger(resultat.urlZipObj)
+            val nomDossier = nomBase + suffixe
+            val sousDossier = racineSortie.createDirectory(nomDossier)
+                ?: throw Exception("impossible de creer le sous-dossier de sortie ($nomDossier)")
+            val fichierObj = extraireZipDansSousDossier(octetsZip, sousDossier)
+                ?: throw Exception("le ZIP recu de Tripo ne contient aucun fichier .obj")
+            EtatTraitement.ecrireJournal("  -> Enregistre : $nomDossier/${fichierObj.name} (ouvrir ce fichier dans Bambu Studio)")
+
+            // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
+            // reste a null, l'appelant affiche alors le placeholder habituel.
+            EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur))
+            EtatTraitement.creditsReelsLot += resultat.creditsConsommes
+            return resultat.creditsConsommes
+        }
+
+        if (meshyObjExperimental) {
+            // Option experimentale (portee depuis la version Windows, confirmee fonctionnelle en
+            // conditions reelles) : saute Multi-Color Print, recupere directement le .obj texture
+            // de l'etape Retexture - une seule etape facturee, moins cher, et couleurs souvent
+            // plus fideles que l'equivalent Tripo.
+            EtatTraitement.ecrireJournal("  Envoi a l'API Retexture (export .obj)...")
+            val resultat = MeshyApiClient.coloriserObjExperimental(
+                octets, prompt, cleApi,
+                object : MeshyApiClient.EcouteurAvancement {
+                    override fun surProgres(etape: String, statut: String, progres: Int) {
+                        if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                        EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                        mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                    }
+                }
+            )
+            EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
+            val nomDossier = nomBase + suffixe
+            val sousDossier = racineSortie.createDirectory(nomDossier)
+                ?: throw Exception("impossible de creer le sous-dossier de sortie ($nomDossier)")
+            val fichierObj = telechargerVersSousDossier(sousDossier, resultat.urlObj)
+                ?: throw Exception("impossible d'enregistrer le .obj")
+            resultat.urlMtl?.let { telechargerVersSousDossier(sousDossier, it) }
+            resultat.urlTexture?.let { telechargerVersSousDossier(sousDossier, it) }
+            EtatTraitement.ecrireJournal("  -> Enregistre : $nomDossier/${fichierObj.name} (un \"reparer le maillage\" peut etre propose a l'ouverture, normal pour un import OBJ)")
+
+            val apercu = if (resultat.urlApercu.isNotEmpty()) {
+                try {
+                    val octetsApercu = MeshyApiClient.telecharger(resultat.urlApercu)
+                    BitmapFactory.decodeByteArray(octetsApercu, 0, octetsApercu.size)
+                } catch (e: Exception) { null }
+            } else null
+
+            EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
+            EtatTraitement.creditsReelsLot += resultat.creditsConsommes
+            return resultat.creditsConsommes
+        }
+
+        // --- Meshy, chemin habituel (.3mf via Multi-Color Print) ---
+        EtatTraitement.ecrireJournal("  Envoi a l'API Retexture...")
+        val resultat = MeshyApiClient.coloriser(
+            octets, prompt, maxCouleurs, cleApi,
+            object : MeshyApiClient.EcouteurAvancement {
+                override fun surProgres(etape: String, statut: String, progres: Int) {
+                    if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                    EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                    mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                }
+            }
+        )
+        EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
+        val octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)
+        val nomSortie = nomBase + suffixe + ".3mf"
+        val fichierSortie = racineSortie.createFile("application/octet-stream", nomSortie)
+            ?: throw Exception("impossible de creer le fichier de sortie")
+        contentResolver.openOutputStream(fichierSortie.uri)?.use { it.write(octetsResultat) }
+            ?: throw Exception("impossible d'ecrire le fichier de sortie")
+
+        EtatTraitement.ecrireJournal("  -> Enregistre : $nomSortie")
+
+        val apercu = if (resultat.urlApercu.isNotEmpty()) {
+            try {
+                val octetsApercu = MeshyApiClient.telecharger(resultat.urlApercu)
+                BitmapFactory.decodeByteArray(octetsApercu, 0, octetsApercu.size)
+            } catch (e: Exception) { null }
+        } else null
+
+        EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
+        EtatTraitement.creditsReelsLot += resultat.creditsConsommes
+        return resultat.creditsConsommes
+    }
+
+    /**
+     * Extrait un ZIP (octets deja en memoire) dans un sous-dossier SAF, fichier par fichier -
+     * pas d'API ZipFile classique utilisable directement sur un DocumentFile, donc lecture
+     * manuelle via ZipInputStream puis ecriture de chaque entree via le ContentResolver. Les
+     * eventuels sous-dossiers internes au ZIP sont aplatis (seul le nom de fichier est garde) :
+     * Tripo ne renvoie jamais plusieurs fichiers de meme nom dans un seul ZIP, pas de risque de
+     * collision. Retourne le DocumentFile du premier ".obj" trouve (fichier a ouvrir dans Bambu
+     * Studio), ou null si le ZIP n'en contient aucun.
+     */
+    private fun extraireZipDansSousDossier(octetsZip: ByteArray, sousDossier: DocumentFile): DocumentFile? {
+        var fichierObj: DocumentFile? = null
+        ZipInputStream(ByteArrayInputStream(octetsZip)).use { zip ->
+            var entree = zip.nextEntry
+            while (entree != null) {
+                if (!entree.isDirectory) {
+                    val nomEntree = entree.name.substringAfterLast("/")
+                    if (nomEntree.isNotEmpty()) {
+                        val fichier = sousDossier.createFile("application/octet-stream", nomEntree)
+                        if (fichier != null) {
+                            contentResolver.openOutputStream(fichier.uri)?.use { sortie -> zip.copyTo(sortie) }
+                            if (nomEntree.endsWith(".obj", ignoreCase = true) && fichierObj == null) {
+                                fichierObj = fichier
+                            }
+                        }
+                    }
+                }
+                zip.closeEntry()
+                entree = zip.nextEntry
+            }
+        }
+        return fichierObj
+    }
+
+    /** Telecharge une URL distante et l'enregistre dans un sous-dossier SAF, nommee d'apres le dernier segment de l'URL. */
+    private fun telechargerVersSousDossier(sousDossier: DocumentFile, url: String): DocumentFile? {
+        val nomFichier = Uri.parse(url).lastPathSegment?.substringAfterLast("/") ?: return null
+        val octets = MeshyApiClient.telecharger(url)
+        val fichier = sousDossier.createFile("application/octet-stream", nomFichier) ?: return null
+        contentResolver.openOutputStream(fichier.uri)?.use { it.write(octets) } ?: return null
+        return fichier
+    }
+
+    private fun terminerService(
+        reussites: Int,
+        comparer: Boolean = false,
+        reussitesMeshy: Int = 0,
+        reussitesTripo: Int = 0,
+        totalFichiers: Int = 0
+    ) {
         val echecs = EtatTraitement.echecs().size
-        EtatTraitement.ecrireJournal("\n=== Bilan : $reussites reussite(s), $echecs echec(s) ===")
+        val texteBilan = if (comparer) {
+            "Meshy $reussitesMeshy/$totalFichiers reussite(s), Tripo $reussitesTripo/$totalFichiers reussite(s)"
+        } else {
+            "$reussites reussite(s), $echecs echec(s)"
+        }
+        EtatTraitement.ecrireJournal("\n=== Bilan : $texteBilan ===")
         EtatTraitement.enCours = false
 
         val gestionnaire = getSystemService(NotificationManager::class.java)
         val notificationFin = NotificationCompat.Builder(this, ID_CANAL)
             .setContentTitle("Colorisation terminee")
-            .setContentText("$reussites reussite(s), $echecs echec(s)")
+            .setContentText(texteBilan)
             .setSmallIcon(R.drawable.ic_bobine)
             .setAutoCancel(true)
             .setOngoing(false)

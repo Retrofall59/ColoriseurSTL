@@ -148,6 +148,57 @@ object MeshyApiClient {
 
     data class ResultatColorisation(val url3mf: String, val urlApercu: String, val creditsConsommes: Int)
 
+    data class ResultatColorisationObj(
+        val urlObj: String,
+        val urlMtl: String?,
+        val urlTexture: String?,
+        val urlApercu: String,
+        val creditsConsommes: Int
+    )
+
+    /**
+     * Variante experimentale (ajoutee le 07/10/2026, portee depuis la version Windows deja
+     * confirmee fonctionnelle en conditions reelles) : s'arrete apres l'etape Retexture, sans
+     * passer par Multi-Color Print - recupere directement le .obj texture (UV/PBR) + son .mtl +
+     * son image de texture depuis "model_urls"/"texture_urls" de la reponse Retexture, plutot que
+     * la palette a N couleurs fixe de Multi-Color Print. Une seule etape facturee : moins cher
+     * (confirme a l'usage : ~40 credits au lieu de ~56), et Bambu Studio propose quand meme sa
+     * boite de dialogue de correspondance automatique des couleurs a l'ouverture d'un .obj,
+     * exactement comme pour l'export Tripo.
+     */
+    fun coloriserObjExperimental(
+        octetsStl: ByteArray,
+        prompt: String,
+        cleApi: String,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatColorisationObj {
+        val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl, Base64.NO_WRAP)
+
+        val corpsRetexture = JSONObject()
+            .put("model_url", dataUri)
+            .put("text_style_prompt", prompt)
+            .put("enable_original_uv", false)
+        val reponseRetexture = requete("POST", "/retexture", cleApi, corpsRetexture)
+        val idRetexture = reponseRetexture.getString("result")
+
+        val tacheRetexture = attendreTache("/retexture/$idRetexture", cleApi, "Retexture", ecouteur)
+        val creditsRetexture = tacheRetexture.optInt("consumed_credits", 0)
+        val urlApercu = tacheRetexture.optString("thumbnail_url", "")
+
+        val urlsModele = tacheRetexture.optJSONObject("model_urls")
+        val urlObj = urlsModele?.optString("obj", "") ?: ""
+        if (urlObj.isEmpty()) {
+            throw ErreurApi("reponse Retexture sans URL .obj exploitable - reponse brute recue : $tacheRetexture")
+        }
+        val urlMtl = urlsModele?.optString("mtl", "")?.ifEmpty { null }
+        val urlsTexture = tacheRetexture.optJSONArray("texture_urls")
+        val urlTexture = if (urlsTexture != null && urlsTexture.length() > 0) {
+            urlsTexture.getJSONObject(0).optString("base_color", "").ifEmpty { null }
+        } else null
+
+        return ResultatColorisationObj(urlObj, urlMtl, urlTexture, urlApercu, creditsRetexture)
+    }
+
     /** Telecharge un fichier distant (le .3mf final, ou l'image d'apercu) en octets bruts. */
     fun telecharger(url: String): ByteArray {
         val connexion = URL(url).openConnection() as HttpURLConnection

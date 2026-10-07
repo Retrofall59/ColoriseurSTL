@@ -8,13 +8,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Appels a l'API Tripo (presignation d'upload, texturation, conversion en 3MF colore), portage
- * fidele du pipeline PowerShell (Windows) - endpoints et logique valides en conditions reelles :
- * reservation d'upload, envoi du fichier, creation de tache de texturation et suivi de
- * progression tous confirmes fonctionnels avec de vraies cles/credits. Seule la toute derniere
- * etape (conversion /models/convert) n'a pas encore ete vue aboutir jusqu'au bout - les echecs
- * rencontres venaient d'erreurs internes cote serveur Tripo (confirme par les messages d'erreur
- * eux-memes), pas d'un probleme dans ces appels.
+ * Appels a l'API Tripo (presignation d'upload, texturation, conversion en OBJ colore par
+ * sommet), portage fidele du pipeline PowerShell (Windows) - endpoints et logique valides en
+ * conditions reelles : reservation d'upload, envoi du fichier, import, texturation et conversion
+ * tous confirmes fonctionnels avec de vraies cles/credits.
  *
  * Base documentee par le SDK Go officiel de VAST-AI-Research (societe editrice de Tripo) :
  *   https://pkg.go.dev/github.com/VAST-AI-Research/tripo-go-sdk
@@ -22,6 +19,11 @@ import java.net.URL
  * Difference de fond avec Meshy a connaitre : Tripo encode la couleur par sommet du maillage
  * (degrade continu), pas une palette figee a N couleurs - pas de parametre "nombre de couleurs"
  * equivalent a maxCouleurs cote Tripo.
+ *
+ * Format de sortie OBJ (pas 3MF) depuis le 07/10/2026 : "export_vertex_colors" n'est documente
+ * comme valide par Tripo que pour les formats OBJ et GLTF - demande avec 3MF, le 3MF obtenu
+ * avait une palette ajoutee mais jamais appliquee a la geometrie (aucune texture visible). L'OBJ
+ * est livre en ZIP (maillage + .mtl + textures) a extraire cote appelant.
  */
 object TripoApiClient {
 
@@ -35,7 +37,7 @@ object TripoApiClient {
         fun surProgres(etape: String, statutBrut: String, progres: Int)
     }
 
-    data class ResultatColorisation(val url3mf: String, val creditsConsommes: Int)
+    data class ResultatColorisation(val urlZipObj: String, val creditsConsommes: Int)
 
     private fun requeteJson(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject {
         val url = URL("$BASE_URL$chemin")
@@ -160,7 +162,11 @@ object TripoApiClient {
         val reponseImport = requeteJson("POST", "/models/import", cleApi, corpsImport)
         val idImport = reponseImport.getString("task_id")
 
-        attendreTache(idImport, cleApi, "Import", ecouteur)
+        val tacheImport = attendreTache(idImport, cleApi, "Import", ecouteur)
+        // Corrige le 07/10/2026 : contrairement a ce qui etait suppose ("l'import semble
+        // gratuit"), Tomyn a confirme que cette etape coute 5 credits sur son tableau de bord -
+        // jamais ajoutes au total renvoye jusqu'ici, qui sous-comptait donc le vrai cout.
+        val creditsImport = tacheImport.optDouble("credits_consumed", 0.0)
 
         // --- Etape 4 : texturation (a partir du resultat de l'import) ---
         // Champs confirmes par la vraie doc officielle (platform.tripo3d.ai/docs/texture) : le
@@ -177,35 +183,40 @@ object TripoApiClient {
         val tacheTexture = attendreTache(idTexture, cleApi, "Texturation", ecouteur)
         val creditsTexture = tacheTexture.optDouble("credits_consumed", 0.0)
 
-        // --- Etape 5 : conversion en 3MF colore ---
-        // "input" confirme correct pour cet endpoint precis (contrairement a texture_model) -
-        // developers.tripo3d.com/en/docs/models-convert : "input - Model source. Accepts task_id
-        // or file_token."
+        // --- Etape 5 : conversion en OBJ colore par sommet (pas en 3MF) ---
+        // Changement du 07/10/2026 : "export_vertex_colors" est documente par Tripo comme valide
+        // UNIQUEMENT pour les formats OBJ et GLTF (developers.tripo3d.com/en/docs/models-convert)
+        // - demande avec format=3MF comme avant, ce parametre etait silencieusement ignore, d'ou
+        // les 3MF recus avec une palette de 4 couleurs ajoutee mais jamais appliquee a la
+        // geometrie (confirme par Tomyn : aucune texture visible, meme dans un lecteur .3mf).
+        // Bambu Studio sachant lire un OBJ colore par sommet et proposer ses couleurs dans l'AMS,
+        // on demande directement ce format-la a la place - meme correctif que la version Windows.
         val corpsConvert = JSONObject()
             .put("input", idTexture)
-            .put("format", "3MF")
+            .put("format", "OBJ")
             .put("export_vertex_colors", true)
         val reponseConvert = requeteJson("POST", "/models/convert", cleApi, corpsConvert)
         val idConvert = reponseConvert.getString("task_id")
 
-        val tacheConvert = attendreTache(idConvert, cleApi, "Conversion 3MF", ecouteur)
+        val tacheConvert = attendreTache(idConvert, cleApi, "Conversion OBJ", ecouteur)
         val creditsConvert = tacheConvert.optDouble("credits_consumed", 0.0)
 
         // Confirme par une vraie reponse Tripo complete (premier succes de bout en bout cote
         // Windows) : le champ s'appelle "output.model_url", pas "output.model" comme devine au
-        // depart.
+        // depart. L'export OBJ est livre sous forme de ZIP (maillage + .mtl + textures), pas un
+        // fichier unique - a extraire cote appelant (voir ColorisationService).
         val urlSortie = tacheConvert.optJSONObject("output")?.optString("model_url")
         if (urlSortie.isNullOrEmpty()) {
             throw ErreurApi("reponse de conversion sans URL de modele exploitable - reponse brute recue : $tacheConvert")
         }
 
-        // Credits reellement consommes, extraits des deux etapes facturees (texture + conversion
-        // ; l'import semble gratuit, 0 observe partout dans le tableau de bord Tripo).
-        val creditsTotal = (creditsTexture + creditsConvert).toInt()
+        // Credits reellement consommes, sur les TROIS etapes facturees : import (confirme a 5
+        // credits, corrige le 07/10/2026), texturation (confirmee a 10 credits) et conversion.
+        val creditsTotal = (creditsImport + creditsTexture + creditsConvert).toInt()
         return ResultatColorisation(urlSortie, creditsTotal)
     }
 
-    /** Telecharge un fichier distant (le .3mf final) en octets bruts. */
+    /** Telecharge un fichier distant (le ZIP de l'export OBJ, ou tout autre fichier) en octets bruts. */
     fun telecharger(url: String): ByteArray {
         val connexion = URL(url).openConnection() as HttpURLConnection
         try {

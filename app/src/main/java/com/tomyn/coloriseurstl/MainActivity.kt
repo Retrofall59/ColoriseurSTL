@@ -43,7 +43,18 @@ class MainActivity : AppCompatActivity() {
         // mais la LISTE DE DEPART (avant meme de lancer) a besoin du meme traitement pour ne
         // pas disparaitre dans les memes circonstances.
         private var fichiersSourcePersistants: List<FichierSource> = emptyList()
+        // Rectifie le 07/10/2026 : premiere lecture du tableau de bord Meshy par Tomyn mal
+        // interpretee (25+15+16 = 56), le vrai detail confirme juste apres est Retexture = 10
+        // credits et Multi-Color Print = 10 credits, soit 20 au total - l'estimation d'origine
+        // etait donc la bonne.
         private const val CREDITS_ESTIMES_PAR_FICHIER = 20
+        // Cout de la seule etape Retexture (sans Multi-Color Print) - utilise pour l'estimation
+        // quand l'option .obj experimentale est cochee.
+        private const val CREDITS_ESTIMES_RETEXTURE_SEULE = 10
+        // Confirme par Tomyn le 07/10/2026 : import 5 + texturation 10 = 15 "de base" cote
+        // Tripo, plus l'etape de conversion (variable, ~5 observes) - echelle differente de
+        // celle de Meshy, d'ou une constante separee.
+        private const val CREDITS_ESTIMES_PAR_FICHIER_TRIPO = 20
         // Formats acceptes par l'API Meshy en entree (confirme dans la doc officielle - le .3mf
         // n'y figure PAS : Meshy ne l'accepte qu'en SORTIE, jamais comme source a coloriser).
         private val EXTENSIONS_SUPPORTEES = listOf("stl", "obj", "fbx", "glb", "gltf")
@@ -68,6 +79,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ongletResultats: Button
     private lateinit var ongletAvancement: Button
     private lateinit var menuFournisseur: Spinner
+    private lateinit var caseComparerFournisseurs: CheckBox
+    private lateinit var caseMeshyObjExperimental: CheckBox
 
     private var fichiersSource: List<FichierSource> = emptyList()
     private var uriDossierSortie: Uri? = null
@@ -124,6 +137,8 @@ class MainActivity : AppCompatActivity() {
         editPrompt = findViewById(R.id.editPrompt)
         selecteurCouleurs = findViewById(R.id.selecteurCouleurs)
         menuFournisseur = findViewById(R.id.menuFournisseur)
+        caseComparerFournisseurs = findViewById(R.id.caseComparerFournisseurs)
+        caseMeshyObjExperimental = findViewById(R.id.caseMeshyObjExperimental)
         btnLancer = findViewById(R.id.btnLancer)
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
@@ -156,6 +171,11 @@ class MainActivity : AppCompatActivity() {
         configurerSelecteurCouleurs()
         configurerMenuPrompt()
         configurerMenuFournisseur()
+        caseComparerFournisseurs.setOnCheckedChangeListener { _, coche ->
+            menuFournisseur.isEnabled = !coche
+            mettreAJourEstimation()
+        }
+        caseMeshyObjExperimental.setOnCheckedChangeListener { _, _ -> mettreAJourEstimation() }
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
         proposerExemptionBatterieSiNecessaire()
@@ -331,6 +351,7 @@ class MainActivity : AppCompatActivity() {
                 if (choix == "Meshy" || choix == "Tripo") {
                     GestionnaireParametres.ecrireFournisseurChoisi(this@MainActivity, choix)
                 }
+                mettreAJourEstimation()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -419,7 +440,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun creerVignette(
         nom: String, image: Bitmap?, avecCaseACocher: Uri? = null,
-        surClic: (() -> Unit)? = null, surClicLong: (() -> Unit)? = null
+        surClic: (() -> Unit)? = null, surClicLong: (() -> Unit)? = null, badgeFournisseur: String = ""
     ): View {
         val densite = resources.displayMetrics.density
         fun px(dp: Int) = (dp * densite).toInt()
@@ -433,6 +454,20 @@ class MainActivity : AppCompatActivity() {
         paramsPanneau.setMargins(px(4), px(4), px(4), px(4))
         panneau.layoutParams = paramsPanneau
         panneau.setBackgroundColor(resources.getColor(R.color.carte_blanc, theme))
+
+        if (badgeFournisseur.isNotEmpty()) {
+            // Badge "Meshy"/"Tripo" affiche uniquement en mode comparaison (voir
+            // EtatTraitement.ResultatColorise.fournisseur) : hors de ce mode, un seul fournisseur
+            // est actif a la fois, repeter son nom sur chaque vignette n'apporterait rien.
+            val badge = TextView(this)
+            badge.text = badgeFournisseur
+            badge.textSize = 9f
+            badge.setTextColor(resources.getColor(R.color.carte_blanc, theme))
+            badge.setBackgroundColor(if (badgeFournisseur == "Meshy") 0xFF2D6CDF.toInt() else 0xFFDF8A2D.toInt())
+            badge.setPadding(px(4), px(1), px(4), px(1))
+            badge.gravity = Gravity.CENTER
+            panneau.addView(badge)
+        }
 
         if (avecCaseACocher != null) {
             val caseACocher = CheckBox(this)
@@ -492,9 +527,9 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { null }
 
                 runOnUiThread {
-                    galerieFichiers.addView(creerVignette(f.nom, bitmap, f.uri) {
+                    galerieFichiers.addView(creerVignette(f.nom, bitmap, f.uri, surClic = {
                         ouvrirDansAppliExterne(f.uri)
-                    })
+                    }))
                     if (bitmap != null) reussites++
                     texteCompteurGalerie.text = "$reussites / ${fichiersSource.size} vignette(s) affichee(s)"
                     mettreAJourEstimation()
@@ -505,8 +540,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun mettreAJourEstimation() {
         val inclus = fichiersSource.count { f -> caseACocherParUri[f.uri]?.isChecked != false }
-        texteEstimationCout.text = if (inclus == 0) "" else
-            "Coût estimé : ~${inclus * CREDITS_ESTIMES_PAR_FICHIER} crédits ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)"
+        if (inclus == 0) {
+            texteEstimationCout.text = ""
+            return
+        }
+        texteEstimationCout.text = when {
+            caseComparerFournisseurs.isChecked -> {
+                val totalTripo = inclus * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+                if (caseMeshyObjExperimental.isChecked) {
+                    val totalMeshyObj = inclus * CREDITS_ESTIMES_RETEXTURE_SEULE
+                    "Coût estimé : ~$totalMeshyObj crédits Meshy (Retexture seule) + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)"
+                } else {
+                    val totalMeshy = inclus * CREDITS_ESTIMES_PAR_FICHIER
+                    "Coût estimé : ~$totalMeshy crédits Meshy + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)"
+                }
+            }
+            menuFournisseur.selectedItem?.toString() == "Meshy" && caseMeshyObjExperimental.isChecked -> {
+                val totalMeshyObj = inclus * CREDITS_ESTIMES_RETEXTURE_SEULE
+                "Coût estimé : ~$totalMeshyObj crédits ($inclus fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)"
+            }
+            menuFournisseur.selectedItem?.toString() == "Tripo" -> {
+                val totalTripo = inclus * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+                "Coût estimé : ~$totalTripo crédits Tripo ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)"
+            }
+            else -> "Coût estimé : ~${inclus * CREDITS_ESTIMES_PAR_FICHIER} crédits ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)"
+        }
     }
 
     private fun ouvrirDansAppliExterne(uri: Uri) {
@@ -579,18 +637,29 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
             return
         }
-        val fournisseur = menuFournisseur.selectedItem?.toString()
-        if (fournisseur != "Meshy" && fournisseur != "Tripo") {
-            Toast.makeText(this, "Choisis un fournisseur (Meshy ou Tripo) avant de lancer.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (fournisseur == "Meshy" && cleMeshy.isBlank()) {
-            Toast.makeText(this, "Meshy est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
-            return
-        }
-        if (fournisseur == "Tripo" && cleTripo.isBlank()) {
-            Toast.makeText(this, "Tripo est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
-            return
+        val comparer = caseComparerFournisseurs.isChecked
+        val fournisseur: String
+        if (comparer) {
+            if (cleMeshy.isBlank() || cleTripo.isBlank()) {
+                Toast.makeText(this, "Le mode comparaison nécessite les deux clés API (Meshy et Tripo).", Toast.LENGTH_LONG).show()
+                return
+            }
+            fournisseur = "Comparer"  // valeur interne, jamais affichee - voir demarrerServiceColorisation
+        } else {
+            val choix = menuFournisseur.selectedItem?.toString()
+            if (choix != "Meshy" && choix != "Tripo") {
+                Toast.makeText(this, "Choisis un fournisseur (Meshy ou Tripo) avant de lancer.", Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (choix == "Meshy" && cleMeshy.isBlank()) {
+                Toast.makeText(this, "Meshy est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
+                return
+            }
+            if (choix == "Tripo" && cleTripo.isBlank()) {
+                Toast.makeText(this, "Tripo est sélectionné mais sa clé API est vide.", Toast.LENGTH_LONG).show()
+                return
+            }
+            fournisseur = choix
         }
         if (fichiersAtraiter.isEmpty()) {
             Toast.makeText(this, "Aucun fichier inclus.", Toast.LENGTH_SHORT).show()
@@ -607,12 +676,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Verification cle+solde : seulement pour Meshy. Cote Tripo, desactivee - l'endpoint
-        // devine (/user/balance, jamais confirme) provoquait un blocage de l'appli sur la
-        // version Windows ; rien d'essentiel perdu, le vrai pipeline n'est pas touche, les
+        // Verification cle+solde : seulement pour Meshy (quand il va etre utilise, donc aussi en
+        // mode comparaison puisque Meshy y est toujours sollicite). Cote Tripo, desactivee -
+        // l'endpoint devine (/user/balance, jamais confirme) provoquait un blocage de l'appli sur
+        // la version Windows ; rien d'essentiel perdu, le vrai pipeline n'est pas touche, les
         // erreurs eventuelles remontent normalement depuis le service pendant le traitement.
+        val meshyObjExperimental = caseMeshyObjExperimental.isChecked
+
         if (fournisseur == "Tripo") {
-            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur)
+            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental)
             return
         }
 
@@ -633,21 +705,26 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("Vérification impossible")
                             .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur) }
+                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental) }
                             .setNegativeButton("Annuler", null)
                             .show()
                     }
                     MeshyApiClient.StatutCle.VALIDE -> {
-                        val coutEstime = fichiersAtraiter.size * CREDITS_ESTIMES_PAR_FICHIER
+                        // En mode comparaison, Tripo s'ajoute a ce cout mais n'a pas d'estimation
+                        // fiable (echelle de credits differente, jamais documentee avec certitude -
+                        // voir TripoApiClient) : on compare juste au cout Meshy seul, honnete plutot
+                        // que d'inventer un total combine.
+                        val creditsParFichierMeshy = if (meshyObjExperimental) CREDITS_ESTIMES_RETEXTURE_SEULE else CREDITS_ESTIMES_PAR_FICHIER
+                        val coutEstime = fichiersAtraiter.size * creditsParFichierMeshy
                         if ((verif.solde ?: 0) < coutEstime) {
                             AlertDialog.Builder(this)
                                 .setTitle("Solde potentiellement insuffisant")
-                                .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur) }
+                                .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot (Meshy seul) : ~$coutEstime crédits.\n\nContinuer quand même ?")
+                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental) }
                                 .setNegativeButton("Annuler", null)
                                 .show()
                         } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur)
+                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental)
                         }
                     }
                 }
@@ -655,7 +732,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String) {
+    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String, comparer: Boolean, meshyObjExperimental: Boolean) {
         val intent = Intent(this, ColorisationService::class.java).apply {
             putParcelableArrayListExtra(ColorisationService.EXTRA_URIS, ArrayList(fichiersAtraiter.map { it.first }))
             putStringArrayListExtra(ColorisationService.EXTRA_NOMS, ArrayList(fichiersAtraiter.map { it.second }))
@@ -663,6 +740,8 @@ class MainActivity : AppCompatActivity() {
             putExtra(ColorisationService.EXTRA_MAX_COULEURS, selecteurCouleurs.value)
             putExtra(ColorisationService.EXTRA_DOSSIER_SORTIE_URI, dossierSortie.toString())
             putExtra(ColorisationService.EXTRA_FOURNISSEUR, fournisseur)
+            putExtra(ColorisationService.EXTRA_COMPARER, comparer)
+            putExtra(ColorisationService.EXTRA_MESHY_OBJ_EXPERIMENTAL, meshyObjExperimental)
         }
         galerieResultats.removeAllViews()
         nombreResultatsAffiches = 0
@@ -692,7 +771,7 @@ class MainActivity : AppCompatActivity() {
             for (i in nombreResultatsAffiches until resultats.size) {
                 val r = resultats[i]
                 galerieResultats.addView(creerVignette(r.nom, r.apercu, null,
-                    { ouvrirDansAppliExterne(r.uri) }, { partagerFichier(r.uri) }))
+                    { ouvrirDansAppliExterne(r.uri) }, { partagerFichier(r.uri) }, r.fournisseur))
             }
             nombreResultatsAffiches = resultats.size
         }

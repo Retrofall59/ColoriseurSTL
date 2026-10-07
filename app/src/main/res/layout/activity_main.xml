@@ -239,6 +239,24 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" />
 
+                <CheckBox
+                    android:id="@+id/caseComparerFournisseurs"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Comparer Meshy et Tripo (lance les deux, nécessite les deux clés, double le coût)"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <CheckBox
+                    android:id="@+id/caseMeshyObjExperimental"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Pour Meshy : exporter en .obj texturé plutôt qu'en .3mf (sans Multi-Color Print, moins cher, couleurs plus fidèles)"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
             </LinearLayout>
 
         </androidx.cardview.widget.CardView>

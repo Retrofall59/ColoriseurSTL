@@ -17,7 +17,10 @@ import android.net.Uri
  * projet, qui n'utilise aucune bibliotheque de concurrence avancee.
  */
 object EtatTraitement {
-    data class ResultatColorise(val uri: Uri, val nom: String, val apercu: Bitmap?)
+    // fournisseur : "Meshy" ou "Tripo" en mode comparaison (affiche comme badge sur la vignette,
+    // voir MainActivity.creerVignette) ; chaine vide hors comparaison (un seul fournisseur actif,
+    // pas besoin de le repeter sur chaque vignette).
+    data class ResultatColorise(val uri: Uri, val nom: String, val apercu: Bitmap?, val fournisseur: String = "")
     data class FichierEchec(val uri: Uri, val nom: String, val raison: String)
 
     @Volatile var enCours: Boolean = false
