@@ -207,6 +207,8 @@ class ColorisationService : Service() {
      * le mode simple et le mode comparaison (voir traiterLot) - jette une exception en cas d'echec,
      * y compris "ANNULATION_DEMANDEE", a l'appelant de decider quoi en faire dans chaque mode.
      */
+    private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png")
+
     private fun coloriserAvecUnFournisseur(
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
         maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
@@ -216,8 +218,16 @@ class ColorisationService : Service() {
             "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
         } else "_colorise"
         val nomBase = nom.substringBeforeLast(".")
+        val extensionFichier = nom.substringAfterLast(".", "").lowercase()
+        val estUneImage = extensionFichier in EXTENSIONS_IMAGES
 
         if (fournisseurEffectif == "Tripo") {
+            // Image -> STL (08/10/2026) : pas encore pris en charge cote Tripo dans cette
+            // version, Meshy seulement pour le moment - erreur explicite plutot qu'un echec API
+            // confus (Tripo recevrait l'image comme si c'etait un modele 3D).
+            if (estUneImage) {
+                throw Exception("les images ne sont pas encore prises en charge cote Tripo dans cette version - utilise Meshy pour une image")
+            }
             // Depuis le 07/10/2026 : Tripo sort un .obj colore par sommet (plus un .3mf, voir
             // TripoApiClient) livre en ZIP - extrait dans un sous-dossier dedie, meme logique que
             // la version Windows.
@@ -249,6 +259,30 @@ class ColorisationService : Service() {
             return resultat.creditsConsommes
         }
 
+        // Image -> STL (08/10/2026, idee de Tomyn, deja confirmee fonctionnelle sur la version
+        // Windows) : genere d'abord le maillage via Image to 3D (maillage seul), avant d'enchainer
+        // sur EXACTEMENT le meme pipeline de colorisation que pour un modele 3D fourni directement
+        // (meme case .obj experimentale, meme palette) - le task_id resultant sert directement de
+        // source a la Retexture, sans jamais telecharger de fichier intermediaire.
+        var idTacheSource: String? = null
+        var creditsImage3D = 0
+        if (estUneImage) {
+            EtatTraitement.ecrireJournal("  Image detectee - envoi a l'API Image to 3D (maillage seul)...")
+            val resultatImage = MeshyApiClient.genererMaillageDepuisImage(
+                octets, extensionFichier, cleApi,
+                object : MeshyApiClient.EcouteurAvancement {
+                    override fun surProgres(etape: String, statut: String, progres: Int) {
+                        if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                        EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                        mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                    }
+                }
+            )
+            idTacheSource = resultatImage.idTache
+            creditsImage3D = resultatImage.creditsConsommes
+            EtatTraitement.ecrireJournal("  Maillage genere depuis l'image (${creditsImage3D} credits).")
+        }
+
         if (meshyObjExperimental) {
             // Option experimentale (portee depuis la version Windows, confirmee fonctionnelle en
             // conditions reelles) : saute Multi-Color Print, recupere directement le .obj texture
@@ -256,7 +290,7 @@ class ColorisationService : Service() {
             // plus fideles que l'equivalent Tripo.
             EtatTraitement.ecrireJournal("  Envoi a l'API Retexture (export .obj)...")
             val resultat = MeshyApiClient.coloriserObjExperimental(
-                octets, prompt, cleApi,
+                if (idTacheSource == null) octets else null, idTacheSource, prompt, cleApi,
                 object : MeshyApiClient.EcouteurAvancement {
                     override fun surProgres(etape: String, statut: String, progres: Int) {
                         if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
@@ -283,14 +317,15 @@ class ColorisationService : Service() {
             } else null
 
             EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
-            EtatTraitement.creditsReelsLot += resultat.creditsConsommes
-            return resultat.creditsConsommes
+            val totalCredits = creditsImage3D + resultat.creditsConsommes
+            EtatTraitement.creditsReelsLot += totalCredits
+            return totalCredits
         }
 
         // --- Meshy, chemin habituel (.3mf via Multi-Color Print) ---
         EtatTraitement.ecrireJournal("  Envoi a l'API Retexture...")
         val resultat = MeshyApiClient.coloriser(
-            octets, prompt, maxCouleurs, cleApi,
+            if (idTacheSource == null) octets else null, idTacheSource, prompt, maxCouleurs, cleApi,
             object : MeshyApiClient.EcouteurAvancement {
                 override fun surProgres(etape: String, statut: String, progres: Int) {
                     if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
@@ -317,8 +352,9 @@ class ColorisationService : Service() {
         } else null
 
         EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
-        EtatTraitement.creditsReelsLot += resultat.creditsConsommes
-        return resultat.creditsConsommes
+        val totalCredits = creditsImage3D + resultat.creditsConsommes
+        EtatTraitement.creditsReelsLot += totalCredits
+        return totalCredits
     }
 
     /**

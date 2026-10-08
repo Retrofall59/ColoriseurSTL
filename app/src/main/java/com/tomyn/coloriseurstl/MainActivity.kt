@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -57,7 +58,15 @@ class MainActivity : AppCompatActivity() {
         private const val CREDITS_ESTIMES_PAR_FICHIER_TRIPO = 20
         // Formats acceptes par l'API Meshy en entree (confirme dans la doc officielle - le .3mf
         // n'y figure PAS : Meshy ne l'accepte qu'en SORTIE, jamais comme source a coloriser).
-        private val EXTENSIONS_SUPPORTEES = listOf("stl", "obj", "fbx", "glb", "gltf")
+        private val EXTENSIONS_MODELES_3D = listOf("stl", "obj", "fbx", "glb", "gltf")
+        // Image -> STL (08/10/2026, idee de Tomyn, deja confirmee fonctionnelle sur la version
+        // Windows) : une image dans le dossier source est detectee par son extension, sans case
+        // ni onglet separe - Meshy genere le maillage avant de le coloriser normalement.
+        private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png")
+        private val EXTENSIONS_SUPPORTEES = EXTENSIONS_MODELES_3D + EXTENSIONS_IMAGES
+        // Cout de l'etape Image to 3D en maillage seul (should_texture=false, modele par defaut)
+        // - confirme sur la doc tarifaire officielle Meshy, meme valeur que la version Windows.
+        private const val CREDITS_ESTIMES_IMAGE_VERS_3D = 20
     }
 
     private lateinit var texteSourceChoisie: TextView
@@ -520,9 +529,16 @@ class MainActivity : AppCompatActivity() {
         Thread {
             var reussites = 0
             for (f in fichiersSource) {
+                val extension = f.nom.substringAfterLast(".", "").lowercase()
                 val bitmap = try {
                     contentResolver.openInputStream(f.uri)?.use { flux ->
-                        RenduStl.rendreMiniatureDepuisFlux(flux, 220, f.nom.substringAfterLast(".", ""))
+                        // Image -> STL (08/10/2026) : une image de depart est deja une image,
+                        // pas la peine de passer par le rendu STL maison (qui echouerait dessus).
+                        if (extension in EXTENSIONS_IMAGES) {
+                            BitmapFactory.decodeStream(flux)
+                        } else {
+                            RenduStl.rendreMiniatureDepuisFlux(flux, 220, extension)
+                        }
                     }
                 } catch (e: Exception) { null }
 
@@ -544,26 +560,34 @@ class MainActivity : AppCompatActivity() {
             texteEstimationCout.text = ""
             return
         }
+        // Image -> STL (08/10/2026) : surcout Image to 3D a ajouter uniquement pour les fichiers
+        // images du lot - compte a part, affiche separement pour que le surcout soit explique.
+        val nbImages = fichiersSource.count { f ->
+            caseACocherParUri[f.uri]?.isChecked != false && f.nom.substringAfterLast(".", "").lowercase() in EXTENSIONS_IMAGES
+        }
+        val surcoutImages = if (nbImages > 0) " + ~${nbImages * CREDITS_ESTIMES_IMAGE_VERS_3D} crédits Meshy pour générer le maillage des $nbImages image(s) avant colorisation" else ""
+
         texteEstimationCout.text = when {
             caseComparerFournisseurs.isChecked -> {
                 val totalTripo = inclus * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
                 if (caseMeshyObjExperimental.isChecked) {
                     val totalMeshyObj = inclus * CREDITS_ESTIMES_RETEXTURE_SEULE
-                    "Coût estimé : ~$totalMeshyObj crédits Meshy (Retexture seule) + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)"
+                    "Coût estimé : ~$totalMeshyObj crédits Meshy (Retexture seule) + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)$surcoutImages"
                 } else {
                     val totalMeshy = inclus * CREDITS_ESTIMES_PAR_FICHIER
-                    "Coût estimé : ~$totalMeshy crédits Meshy + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)"
+                    "Coût estimé : ~$totalMeshy crédits Meshy + ~$totalTripo crédits Tripo ($inclus fichier(s) chacun, deux échelles de crédits différentes)$surcoutImages"
                 }
             }
             menuFournisseur.selectedItem?.toString() == "Meshy" && caseMeshyObjExperimental.isChecked -> {
                 val totalMeshyObj = inclus * CREDITS_ESTIMES_RETEXTURE_SEULE
-                "Coût estimé : ~$totalMeshyObj crédits ($inclus fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)"
+                "Coût estimé : ~$totalMeshyObj crédits ($inclus fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)$surcoutImages"
             }
             menuFournisseur.selectedItem?.toString() == "Tripo" -> {
                 val totalTripo = inclus * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
-                "Coût estimé : ~$totalTripo crédits Tripo ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)"
+                val avertImages = if (nbImages > 0) " - ATTENTION : les images ne sont pas prises en charge par Tripo, elles échoueront" else ""
+                "Coût estimé : ~$totalTripo crédits Tripo ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)$avertImages"
             }
-            else -> "Coût estimé : ~${inclus * CREDITS_ESTIMES_PAR_FICHIER} crédits ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)"
+            else -> "Coût estimé : ~${inclus * CREDITS_ESTIMES_PAR_FICHIER} crédits ($inclus fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)$surcoutImages"
         }
     }
 

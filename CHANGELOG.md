@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.15 (build 15)
+
+**Image -> STL -> colorisation (idée de Tomyn, portée depuis la version Windows déjà confirmée
+fonctionnelle en conditions réelles)** : le dossier source peut maintenant contenir des images
+(`.jpg`, `.jpeg`, `.png`) mélangées avec des fichiers 3D, détectées automatiquement par leur
+extension - rien d'obligatoire, aucune nouvelle case ni onglet.
+
+- Pour un fichier 3D : rien ne change.
+- Pour une image : l'appli lance d'abord "Image to 3D" chez Meshy (maillage seul, sans texture -
+  la texture est refaite juste après par la colorisation habituelle avec le prompt choisi, pas
+  celle générique que ferait Image to 3D elle-même), puis enchaîne directement sur le même
+  pipeline de colorisation qu'un fichier 3D (même case ".obj expérimentale", même palette).
+- **Coût** : +20 crédits environ par image (confirmé sur la doc tarifaire Meshy), en plus du coût
+  de colorisation habituel - affiché séparément dans l'estimation.
+- **Meshy uniquement pour le moment** - une image donnée à Tripo échoue avec un message clair.
+- La vignette de la galerie de départ affiche directement l'image plutôt que de tenter (et
+  échouer silencieusement) le rendu STL maison dessus.
+- Vérifié par compilation réelle (kotlinc + stubs Android) : zéro erreur. Pas encore testé sur le
+  terrain côté Android (déjà confirmé fonctionnel sur la version Windows le 08/10/2026).
+
 ## v0.14 (build 14)
 
 **Portage des correctifs Windows du 07/10/2026** (export OBJ Tripo, option OBJ expérimentale pour

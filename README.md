@@ -11,6 +11,12 @@ palette fixe à N couleurs, Tripo encode la couleur par sommet du maillage (dég
 résultats visuellement différents selon le fournisseur choisi. Le solde de crédits API Tripo est
 séparé des crédits Tripo Studio (le site web) : vérifie sur platform.tripo3d.ai/billing.
 
+**Partir d'une image plutôt que d'un modèle 3D (v0.15)** : le dossier source peut aussi contenir
+des images (`.jpg`, `.jpeg`, `.png`) mélangées avec des fichiers 3D, détectées automatiquement par
+leur extension. Pour une image, l'appli lance d'abord "Image to 3D" chez Meshy (maillage seul),
+puis enchaîne sur la colorisation habituelle - +20 crédits environ par image, en plus du coût de
+colorisation. Meshy uniquement pour le moment (pas encore pris en charge côté Tripo).
+
 ## ⚠️ À savoir avant d'utiliser
 
 - **Un compte Meshy PRO est obligatoire.** Le plan Free n'a pas accès à l'API Meshy.

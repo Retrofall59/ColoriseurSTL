@@ -104,26 +104,65 @@ object MeshyApiClient {
         }
     }
 
+    data class ResultatImage3D(val idTache: String, val creditsConsommes: Int)
+
+    /**
+     * Image -> STL (ajoute le 08/10/2026, idee de Tomyn, portee depuis la version Windows deja
+     * confirmee fonctionnelle en conditions reelles) : "Image to 3D" de Meshy, maillage SEUL
+     * (should_texture=false) - la texture est refaite juste apres par la Retexture habituelle
+     * avec le prompt choisi par l'utilisateur, pas celle (generique) que ferait Image to 3D
+     * elle-meme. Payer la texturation deux fois (une ici, une a la Retexture) n'aurait aucun sens.
+     * Le task_id retourne s'utilise directement comme input_task_id de la Retexture (voir
+     * coloriser/coloriserObjExperimental ci-dessous), sans jamais telecharger de fichier
+     * intermediaire.
+     */
+    fun genererMaillageDepuisImage(
+        octetsImage: ByteArray,
+        extensionFichier: String,
+        cleApi: String,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatImage3D {
+        val mime = if (extensionFichier.lowercase() in listOf("jpg", "jpeg")) "image/jpeg" else "image/png"
+        val dataUri = "data:$mime;base64," + Base64.encodeToString(octetsImage, Base64.NO_WRAP)
+
+        val corps = JSONObject()
+            .put("image_url", dataUri)
+            .put("should_texture", false)
+        val reponse = requete("POST", "/image-to-3d", cleApi, corps)
+        val idTache = reponse.getString("result")
+
+        val tache = attendreTache("/image-to-3d/$idTache", cleApi, "Image to 3D", ecouteur)
+        return ResultatImage3D(idTache, tache.optInt("consumed_credits", 0))
+    }
+
     /**
      * Lance la texturation (etape 1) puis la reduction en couleurs imprimables (etape 2), de
      * maniere synchrone (bloquante) - a appeler depuis un thread d'arriere-plan, jamais depuis
      * le thread principal de l'interface.
      *
+     * @param octetsStl ignore si idTacheSource est fourni (source = image deja transformee en
+     *   maillage par genererMaillageDepuisImage, voir ci-dessus) - sinon le modele 3D a coloriser.
+     * @param idTacheSource task_id Meshy a reutiliser comme source (ex: resultat d'Image to 3D),
+     *   ou null pour coloriser directement octetsStl.
      * @return l'URL de telechargement du fichier .3mf final, et l'URL d'apercu fourni par Meshy
      */
     fun coloriser(
-        octetsStl: ByteArray,
+        octetsStl: ByteArray?,
+        idTacheSource: String?,
         prompt: String,
         maxCouleurs: Int,
         cleApi: String,
         ecouteur: EcouteurAvancement? = null
     ): ResultatColorisation {
-        val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl, Base64.NO_WRAP)
-
         val corpsRetexture = JSONObject()
-            .put("model_url", dataUri)
             .put("text_style_prompt", prompt)
             .put("enable_original_uv", false)
+        if (idTacheSource != null) {
+            corpsRetexture.put("input_task_id", idTacheSource)
+        } else {
+            val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl!!, Base64.NO_WRAP)
+            corpsRetexture.put("model_url", dataUri)
+        }
         val reponseRetexture = requete("POST", "/retexture", cleApi, corpsRetexture)
         val idRetexture = reponseRetexture.getString("result")
 
@@ -167,17 +206,21 @@ object MeshyApiClient {
      * exactement comme pour l'export Tripo.
      */
     fun coloriserObjExperimental(
-        octetsStl: ByteArray,
+        octetsStl: ByteArray?,
+        idTacheSource: String?,
         prompt: String,
         cleApi: String,
         ecouteur: EcouteurAvancement? = null
     ): ResultatColorisationObj {
-        val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl, Base64.NO_WRAP)
-
         val corpsRetexture = JSONObject()
-            .put("model_url", dataUri)
             .put("text_style_prompt", prompt)
             .put("enable_original_uv", false)
+        if (idTacheSource != null) {
+            corpsRetexture.put("input_task_id", idTacheSource)
+        } else {
+            val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl!!, Base64.NO_WRAP)
+            corpsRetexture.put("model_url", dataUri)
+        }
         val reponseRetexture = requete("POST", "/retexture", cleApi, corpsRetexture)
         val idRetexture = reponseRetexture.getString("result")
 
