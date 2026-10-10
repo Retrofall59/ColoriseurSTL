@@ -88,6 +88,7 @@ class ColorisationService : Service() {
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
         EtatTraitement.reinitialiserPourNouveauLot()
+        GestionnaireParametres.viderResultatsLotPersistes(this)
         EtatTraitement.totalFichiersLot = uris.size
 
         threadTraitement = Thread {
@@ -96,6 +97,19 @@ class ColorisationService : Service() {
         threadTraitement?.start()
 
         return START_NOT_STICKY
+    }
+
+    /** Ecrit a la fois dans EtatTraitement (lu par MainActivite tant que le processus est en vie)
+     * et sur le disque (voir GestionnaireParametres) - pour survivre a un kill de processus en
+     * cours de lot, pas seulement une fois le lot termine. */
+    private fun ajouterResultat(resultat: EtatTraitement.ResultatColorise) {
+        EtatTraitement.ajouterResultat(resultat)
+        GestionnaireParametres.ajouterResultatPersiste(this, resultat)
+    }
+
+    private fun ajouterEchec(echec: EtatTraitement.FichierEchec) {
+        EtatTraitement.ajouterEchec(echec)
+        GestionnaireParametres.ajouterEchecPersiste(this, echec)
     }
 
     private fun traiterLot(
@@ -182,7 +196,7 @@ class ColorisationService : Service() {
                     if (auMoinsUnReussi) {
                         reussites++
                     } else {
-                        EtatTraitement.ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
+                        ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
                     }
                 } else {
                     coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental)
@@ -194,7 +208,7 @@ class ColorisationService : Service() {
                     break
                 }
                 EtatTraitement.ecrireJournal("  ECHEC sur $nom : ${e.message}")
-                EtatTraitement.ajouterEchec(EtatTraitement.FichierEchec(uri, nom, e.message ?: "erreur inconnue"))
+                ajouterEchec(EtatTraitement.FichierEchec(uri, nom, e.message ?: "erreur inconnue"))
             }
         }
 
@@ -254,7 +268,7 @@ class ColorisationService : Service() {
 
             // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
             // reste a null, l'appelant affiche alors le placeholder habituel.
-            EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur))
+            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur))
             EtatTraitement.creditsReelsLot += resultat.creditsConsommes
             return resultat.creditsConsommes
         }
@@ -316,7 +330,7 @@ class ColorisationService : Service() {
                 } catch (e: Exception) { null }
             } else null
 
-            EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
+            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
             val totalCredits = creditsImage3D + resultat.creditsConsommes
             EtatTraitement.creditsReelsLot += totalCredits
             return totalCredits
@@ -351,7 +365,7 @@ class ColorisationService : Service() {
             } catch (e: Exception) { null }
         } else null
 
-        EtatTraitement.ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
+        ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
         val totalCredits = creditsImage3D + resultat.creditsConsommes
         EtatTraitement.creditsReelsLot += totalCredits
         return totalCredits

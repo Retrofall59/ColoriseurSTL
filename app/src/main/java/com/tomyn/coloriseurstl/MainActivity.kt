@@ -221,6 +221,24 @@ class MainActivity : AppCompatActivity() {
         if (EtatTraitement.enCours) {
             basculerBoutonsVersEnCours()
         }
+
+        // Reprise apres un vrai kill de processus (pas juste une rotation d'ecran) - ajoute le
+        // 10/10/2026, bug remonte par Tomyn : ouvrir un visualiseur STL externe depuis un resultat
+        // peut suffire a faire tuer le processus par Android pour recuperer de la memoire, ce qui
+        // vide EtatTraitement (objet en memoire uniquement). EtatTraitement vide ET aucun
+        // traitement en cours = soit un premier lancement (rien a restaurer, les fonctions
+        // ci-dessous renverront des listes vides), soit exactement ce cas de figure.
+        if (!EtatTraitement.enCours && EtatTraitement.resultats().isEmpty() && EtatTraitement.echecs().isEmpty()) {
+            val resultatsPersistes = GestionnaireParametres.chargerResultatsPersistes(this)
+            val echecsPersistes = GestionnaireParametres.chargerEchecsPersistes(this)
+            if (resultatsPersistes.isNotEmpty() || echecsPersistes.isNotEmpty()) {
+                EtatTraitement.restaurerResultats(resultatsPersistes)
+                EtatTraitement.restaurerEchecs(echecsPersistes)
+                dernierLotEchecs = echecsPersistes
+                btnRelancerEchecs.visibility = if (echecsPersistes.isNotEmpty()) View.VISIBLE else View.GONE
+            }
+        }
+
         rafraichirDepuisEtatTraitement()
     }
 

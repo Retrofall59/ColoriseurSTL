@@ -17,6 +17,12 @@ leur extension. Pour une image, l'appli lance d'abord "Image to 3D" chez Meshy (
 puis enchaîne sur la colorisation habituelle - +20 crédits environ par image, en plus du coût de
 colorisation. Meshy uniquement pour le moment (pas encore pris en charge côté Tripo).
 
+**Constaté par Tomyn (2026-10-08) : partir d'une image donne un résultat nettement plus fidèle**
+qu'un STL fourni directement - probablement parce que le maillage généré par Image to 3D a un UV
+pensé dès le départ pour recevoir une texture automatique, alors qu'un STL fourni directement n'a
+souvent jamais été conçu pour ça (pensé pour une impression mono-couleur ou pour être repeint à
+la main).
+
 ## ⚠️ À savoir avant d'utiliser
 
 - **Un compte Meshy PRO est obligatoire.** Le plan Free n'a pas accès à l'API Meshy.

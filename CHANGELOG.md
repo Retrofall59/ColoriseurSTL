@@ -1,8 +1,32 @@
 # Changelog
 
+## v0.16 (build 16)
+
+**Corrige : les résultats colorisés disparaissaient en revenant dans l'appli après avoir ouvert un
+visualiseur STL externe depuis la galerie** (remonté par Tomyn en testant la v0.15 en conditions
+réelles). Cause : `EtatTraitement` (résultats, échecs, journal) ne vivait qu'en mémoire RAM dans un
+objet singleton - suffisant pour survivre à une rotation d'écran, mais pas à un vrai kill de
+processus par Android, qui peut arriver en mettant l'appli en arrière-plan pour ouvrir une appli
+tierce (surtout avec plusieurs aperçus en mémoire). Au retour dans l'appli, le processus repart de
+zéro et la galerie se retrouve vide - obligeant à relancer toute la colorisation (et donc à
+reconsommer des crédits) juste pour revoir un résultat déjà obtenu.
+
+- Chaque résultat et chaque échec est maintenant aussi écrit sur le disque (dans l'espace privé de
+  l'appli, pas dans le cache qu'Android peut vider à tout moment) au fur et à mesure du lot, pas
+  seulement une fois le lot terminé - un kill en plein milieu ne perd que ce qui n'était pas encore
+  traité, jamais ce qui l'était déjà.
+- Au lancement de l'appli, si l'état en mémoire est vide (signe d'un redémarrage de processus) et
+  qu'un lot précédent a laissé une trace sur le disque, la galerie de résultats est reconstruite
+  automatiquement à partir de cette trace - y compris les aperçus (réenregistrés en PNG).
+- Un nouveau lot efface la trace du précédent, comme avant côté mémoire.
+- Vérifié par compilation réelle (kotlinc + stubs Android, avec deux vrais trous de stub corrigés
+  au passage : `Bitmap.compress`/`CompressFormat` et `BitmapFactory.decodeFile` manquaient) : zéro
+  erreur. **Pas encore réinstallé/retesté sur le terrain** - priorité donnée à corriger vite ce bug
+  précis plutôt qu'à attendre un nouveau cycle de test complet.
+
 ## v0.15 (build 15)
 
-**Image -> STL -> colorisation (idée de Tomyn, portée depuis la version Windows déjà confirmée
+**Image -> STL -> colorisation (idée de Damdam2959, portée depuis la version Windows déjà confirmée
 fonctionnelle en conditions réelles)** : le dossier source peut maintenant contenir des images
 (`.jpg`, `.jpeg`, `.png`) mélangées avec des fichiers 3D, détectées automatiquement par leur
 extension - rien d'obligatoire, aucune nouvelle case ni onglet.
@@ -38,7 +62,7 @@ Meshy, vrais chiffres de crédits) :
   de texture de l'étape Retexture, dans un sous-dossier dédié - même principe que Tripo. Disponible
   aussi bien en solo qu'en mode comparaison (seul Meshy est concerné ; Tripo n'a pas d'équivalent
   "avec/sans" à choisir). Reste décochée par défaut.
-- **Estimation de coût revue avec les vrais chiffres observés par Tomyn le 07/10/2026** : Meshy
+- **Estimation de coût revue avec les vrais chiffres observés par Damdam2959 le 07/10/2026** : Meshy
   ~20 crédits/figurine (Retexture 10 + Multi-Color Print 10, confirmés dans le tableau de bord -
   une première lecture avait suggéré 56, corrigée depuis), ~10 crédits avec l'option `.obj`
   (Multi-Color Print économisé), Tripo ~20 crédits/figurine (import 5 confirmé NON gratuit comme

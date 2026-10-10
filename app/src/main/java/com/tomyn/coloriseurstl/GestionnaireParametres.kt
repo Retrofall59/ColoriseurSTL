@@ -2,8 +2,12 @@ package com.tomyn.coloriseurstl
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -131,5 +135,90 @@ object GestionnaireParametres {
 
     fun ecrireWifiUniquement(context: Context, valeur: Boolean) {
         prefs(context).edit().putBoolean(CLE_WIFI_UNIQUEMENT, valeur).apply()
+    }
+
+    // --- Persistance du dernier lot (ajoute le 10/10/2026, bug remonte par Tomyn) : EtatTraitement
+    // garde les resultats/echecs uniquement en memoire (objet singleton), ce qui suffit pour une
+    // simple rotation d'ecran mais pas pour un vrai kill de processus par Android - ce qui arrive
+    // typiquement en ouvrant un visualiseur STL externe depuis un resultat (appli mise en arriere
+    // plan, memoire reclamee, surtout avec plusieurs Bitmap d'apercu en memoire). Ecrit ici au fil
+    // de l'eau par ColorisationService (un resultat/echec a la fois, pas juste en fin de lot - un
+    // kill en plein milieu du lot ne doit pas perdre ce qui est deja fait), et relu par
+    // MainActivity.onCreate quand EtatTraitement redemarre a vide. Stockage non chiffre (aucun
+    // secret ici, juste des Uri/noms de fichiers deja visibles a l'ecran) dans l'espace prive de
+    // l'appli (filesDir, pas cacheDir - cacheDir peut etre vide par le systeme a tout moment, ce
+    // qui irait justement a l'encontre du but recherche).
+    private fun fichierResultatsPersistes(context: Context) = File(context.filesDir, "dernier_lot_resultats.jsonl")
+    private fun fichierEchecsPersistes(context: Context) = File(context.filesDir, "dernier_lot_echecs.jsonl")
+    private fun dossierApercusPersistes(context: Context) = File(context.filesDir, "dernier_lot_apercus")
+
+    fun ajouterResultatPersiste(context: Context, resultat: EtatTraitement.ResultatColorise) {
+        try {
+            var nomApercu = ""
+            if (resultat.apercu != null) {
+                val dossier = dossierApercusPersistes(context).apply { mkdirs() }
+                nomApercu = "apercu_${System.nanoTime()}.png"
+                File(dossier, nomApercu).outputStream().use { flux ->
+                    resultat.apercu.compress(Bitmap.CompressFormat.PNG, 90, flux)
+                }
+            }
+            val json = JSONObject().apply {
+                put("uri", resultat.uri.toString())
+                put("nom", resultat.nom)
+                put("fournisseur", resultat.fournisseur)
+                put("apercu", nomApercu)
+            }
+            fichierResultatsPersistes(context).appendText(json.toString() + "\n")
+        } catch (e: Exception) {
+            // La persistance n'est qu'un filet de securite contre un kill de processus - jamais
+            // bloquant pour le traitement lui-meme si l'ecriture echoue pour une raison ou une autre.
+        }
+    }
+
+    fun ajouterEchecPersiste(context: Context, echec: EtatTraitement.FichierEchec) {
+        try {
+            val json = JSONObject().apply {
+                put("uri", echec.uri.toString())
+                put("nom", echec.nom)
+                put("raison", echec.raison)
+            }
+            fichierEchecsPersistes(context).appendText(json.toString() + "\n")
+        } catch (e: Exception) { }
+    }
+
+    fun chargerResultatsPersistes(context: Context): List<EtatTraitement.ResultatColorise> {
+        val fichier = fichierResultatsPersistes(context)
+        if (!fichier.exists()) return emptyList()
+        return try {
+            fichier.readLines().mapNotNull { ligne ->
+                if (ligne.isBlank()) return@mapNotNull null
+                val json = JSONObject(ligne)
+                val nomApercu = json.optString("apercu", "")
+                val apercu = if (nomApercu.isNotEmpty()) {
+                    try { BitmapFactory.decodeFile(File(dossierApercusPersistes(context), nomApercu).absolutePath) } catch (e: Exception) { null }
+                } else null
+                EtatTraitement.ResultatColorise(Uri.parse(json.getString("uri")), json.getString("nom"), apercu, json.optString("fournisseur", ""))
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    fun chargerEchecsPersistes(context: Context): List<EtatTraitement.FichierEchec> {
+        val fichier = fichierEchecsPersistes(context)
+        if (!fichier.exists()) return emptyList()
+        return try {
+            fichier.readLines().mapNotNull { ligne ->
+                if (ligne.isBlank()) return@mapNotNull null
+                val json = JSONObject(ligne)
+                EtatTraitement.FichierEchec(Uri.parse(json.getString("uri")), json.getString("nom"), json.optString("raison", "raison inconnue"))
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    fun viderResultatsLotPersistes(context: Context) {
+        try {
+            fichierResultatsPersistes(context).delete()
+            fichierEchecsPersistes(context).delete()
+            dossierApercusPersistes(context).deleteRecursively()
+        } catch (e: Exception) { }
     }
 }

@@ -56,6 +56,20 @@ object EtatTraitement {
 
     @Synchronized fun viderEchecs() { echecsInternes.clear() }
 
+    // Reinjecte des resultats/echecs relus sur le disque (voir GestionnaireParametres) apres un
+    // kill de processus - ajoute le 10/10/2026. Volontairement separe de reinitialiserPourNouveauLot
+    // (qui, lui, VIDE tout pour un nouveau lot) : ici on REMPLIT un objet qui vient de redemarrer a
+    // vide, sans toucher enCours ni les autres compteurs.
+    @Synchronized fun restaurerResultats(liste: List<ResultatColorise>) {
+        resultatsInternes.clear()
+        resultatsInternes.addAll(liste)
+    }
+
+    @Synchronized fun restaurerEchecs(liste: List<FichierEchec>) {
+        echecsInternes.clear()
+        echecsInternes.addAll(liste)
+    }
+
     fun reinitialiserPourNouveauLot() {
         viderJournal()
         viderResultats()
