@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.17 (build 17)
+
+**Portage de deux fonctions de la version Windows (ajoutées le 08/10/2026 côté bureau) :**
+
+- **Historique par fichier** : à chaque colorisation réussie (Tripo, Meshy standard ou Meshy .obj),
+  une ligne est ajoutée dans `historique_fichiers.csv` à la racine du dossier de sortie choisi
+  (date, nom du fichier, fournisseur, crédits, chemin de sortie). Contrairement à la version
+  Windows (où ce fichier est juste à côté du script et donc trivial à retrouver), sur Android le
+  CSV est écrit via le dossier de sortie SAF choisi par Tomyn, pour qu'il reste accessible.
+- **Assombrissement de la texture .obj** : nouveau champ (0 à 100 %), actif uniquement quand
+  l'option "Meshy .obj expérimental" est cochée, pour compenser l'éclaircissement/assombrissement
+  que Bambu Studio peut appliquer automatiquement selon le filament choisi (même logique que côté
+  Windows : multiplication des canaux R/G/B par un facteur, alpha inchangé).
+- Vérifié par compilation réelle (kotlinc + stubs Android, avec plusieurs trous de stub corrigés :
+  `Intent.getDoubleExtra`/`putExtra(Double)`, `ContentResolver.openOutputStream(uri, mode)`,
+  `Canvas.drawBitmap`, `Paint.colorFilter`, `ColorMatrix`/`ColorMatrixColorFilter`) : zéro erreur.
+  **Pas encore testé sur le terrain** - à vérifier à l'installation, notamment que le CSV s'écrit
+  bien dans le bon dossier et que le curseur d'assombrissement donne un résultat visuel cohérent.
+
 ## v0.16 (build 16)
 
 **Corrige : les résultats colorisés disparaissaient en revenant dans l'appli après avoir ouvert un

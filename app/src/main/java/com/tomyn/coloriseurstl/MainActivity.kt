@@ -90,6 +90,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var menuFournisseur: Spinner
     private lateinit var caseComparerFournisseurs: CheckBox
     private lateinit var caseMeshyObjExperimental: CheckBox
+    private lateinit var texteAssombrirTexture: TextView
+    private lateinit var champAssombrirTexture: EditText
 
     private var fichiersSource: List<FichierSource> = emptyList()
     private var uriDossierSortie: Uri? = null
@@ -148,6 +150,8 @@ class MainActivity : AppCompatActivity() {
         menuFournisseur = findViewById(R.id.menuFournisseur)
         caseComparerFournisseurs = findViewById(R.id.caseComparerFournisseurs)
         caseMeshyObjExperimental = findViewById(R.id.caseMeshyObjExperimental)
+        texteAssombrirTexture = findViewById(R.id.texteAssombrirTexture)
+        champAssombrirTexture = findViewById(R.id.champAssombrirTexture)
         btnLancer = findViewById(R.id.btnLancer)
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
@@ -184,7 +188,11 @@ class MainActivity : AppCompatActivity() {
             menuFournisseur.isEnabled = !coche
             mettreAJourEstimation()
         }
-        caseMeshyObjExperimental.setOnCheckedChangeListener { _, _ -> mettreAJourEstimation() }
+        caseMeshyObjExperimental.setOnCheckedChangeListener { _, coche ->
+            texteAssombrirTexture.isEnabled = coche
+            champAssombrirTexture.isEnabled = coche
+            mettreAJourEstimation()
+        }
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
         proposerExemptionBatterieSiNecessaire()
@@ -724,9 +732,14 @@ class MainActivity : AppCompatActivity() {
         // la version Windows ; rien d'essentiel perdu, le vrai pipeline n'est pas touche, les
         // erreurs eventuelles remontent normalement depuis le service pendant le traitement.
         val meshyObjExperimental = caseMeshyObjExperimental.isChecked
+        // N'a de sens que si meshyObjExperimental est coche (champ grise sinon) ; texte invalide
+        // ou vide -> 0 (aucun assombrissement), jamais une erreur bloquante pour un simple reglage.
+        val assombrirTexturePourcent = if (meshyObjExperimental) {
+            champAssombrirTexture.text.toString().replace(",", ".").toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0
+        } else 0.0
 
         if (fournisseur == "Tripo") {
-            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental)
+            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
             return
         }
 
@@ -747,7 +760,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("Vérification impossible")
                             .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental) }
+                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent) }
                             .setNegativeButton("Annuler", null)
                             .show()
                     }
@@ -762,11 +775,11 @@ class MainActivity : AppCompatActivity() {
                             AlertDialog.Builder(this)
                                 .setTitle("Solde potentiellement insuffisant")
                                 .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot (Meshy seul) : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental) }
+                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent) }
                                 .setNegativeButton("Annuler", null)
                                 .show()
                         } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental)
+                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
                         }
                     }
                 }
@@ -774,7 +787,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String, comparer: Boolean, meshyObjExperimental: Boolean) {
+    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String, comparer: Boolean, meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0) {
         val intent = Intent(this, ColorisationService::class.java).apply {
             putParcelableArrayListExtra(ColorisationService.EXTRA_URIS, ArrayList(fichiersAtraiter.map { it.first }))
             putStringArrayListExtra(ColorisationService.EXTRA_NOMS, ArrayList(fichiersAtraiter.map { it.second }))
@@ -784,6 +797,7 @@ class MainActivity : AppCompatActivity() {
             putExtra(ColorisationService.EXTRA_FOURNISSEUR, fournisseur)
             putExtra(ColorisationService.EXTRA_COMPARER, comparer)
             putExtra(ColorisationService.EXTRA_MESHY_OBJ_EXPERIMENTAL, meshyObjExperimental)
+            putExtra(ColorisationService.EXTRA_ASSOMBRIR_TEXTURE_POURCENT, assombrirTexturePourcent)
         }
         galerieResultats.removeAllViews()
         nombreResultatsAffiches = 0

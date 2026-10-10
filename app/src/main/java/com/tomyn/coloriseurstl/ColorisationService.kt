@@ -6,7 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Environment
 import android.os.IBinder
@@ -42,6 +47,9 @@ class ColorisationService : Service() {
         const val EXTRA_FOURNISSEUR = "fournisseur"
         const val EXTRA_COMPARER = "comparer"
         const val EXTRA_MESHY_OBJ_EXPERIMENTAL = "meshy_obj_experimental"
+        // Porte depuis la version Windows le 10/10/2026 (reglage ajoute le 08/10/2026 cote
+        // Windows, pas encore porte jusqu'ici) - voir assombrirFichierImage plus bas.
+        const val EXTRA_ASSOMBRIR_TEXTURE_POURCENT = "assombrir_texture_pourcent"
 
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
@@ -84,6 +92,7 @@ class ColorisationService : Service() {
         val fournisseur = intent.getStringExtra(EXTRA_FOURNISSEUR) ?: "Meshy"
         val comparer = intent.getBooleanExtra(EXTRA_COMPARER, false)
         val meshyObjExperimental = intent.getBooleanExtra(EXTRA_MESHY_OBJ_EXPERIMENTAL, false)
+        val assombrirTexturePourcent = intent.getDoubleExtra(EXTRA_ASSOMBRIR_TEXTURE_POURCENT, 0.0)
 
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
@@ -92,7 +101,7 @@ class ColorisationService : Service() {
         EtatTraitement.totalFichiersLot = uris.size
 
         threadTraitement = Thread {
-            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer, meshyObjExperimental)
+            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
         }
         threadTraitement?.start()
 
@@ -115,7 +124,7 @@ class ColorisationService : Service() {
     private fun traiterLot(
         uris: List<Uri>, noms: List<String>, prompt: String, maxCouleurs: Int,
         dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String, comparer: Boolean,
-        meshyObjExperimental: Boolean
+        meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0
     ) {
         val cleMeshy = GestionnaireParametres.lireCleApi(this)
         val cleTripo = GestionnaireParametres.lireCleApiTripo(this)
@@ -178,7 +187,7 @@ class ColorisationService : Service() {
                     // resultat de l'autre - meme logique que la version Windows.
                     var auMoinsUnReussi = false
                     try {
-                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental)
+                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent)
                         reussitesMeshy++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -186,7 +195,7 @@ class ColorisationService : Service() {
                         EtatTraitement.ecrireJournal("  ECHEC Meshy sur $nom : ${e.message}")
                     }
                     try {
-                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false)
+                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false, 0.0)
                         reussitesTripo++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -199,7 +208,7 @@ class ColorisationService : Service() {
                         ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
                     }
                 } else {
-                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental)
+                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent)
                     reussites++
                 }
             } catch (e: Exception) {
@@ -226,7 +235,8 @@ class ColorisationService : Service() {
     private fun coloriserAvecUnFournisseur(
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
         maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
-        indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean
+        indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean,
+        assombrirTexturePourcent: Double = 0.0
     ): Int {
         val suffixe = suffixeFournisseur + if (avecHorodatage) {
             "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
@@ -269,6 +279,7 @@ class ColorisationService : Service() {
             // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
             // reste a null, l'appelant affiche alors le placeholder habituel.
             ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur))
+            enregistrerHistoriqueFichier(racineSortie, nom, "Tripo", resultat.creditsConsommes, "$nomDossier/${fichierObj.name}")
             EtatTraitement.creditsReelsLot += resultat.creditsConsommes
             return resultat.creditsConsommes
         }
@@ -320,7 +331,17 @@ class ColorisationService : Service() {
             val fichierObj = telechargerVersSousDossier(sousDossier, resultat.urlObj)
                 ?: throw Exception("impossible d'enregistrer le .obj")
             resultat.urlMtl?.let { telechargerVersSousDossier(sousDossier, it) }
-            resultat.urlTexture?.let { telechargerVersSousDossier(sousDossier, it) }
+            resultat.urlTexture?.let { url ->
+                val fichierTexture = telechargerVersSousDossier(sousDossier, url)
+                // Assombrissement de la texture (porte depuis la version Windows le 10/10/2026,
+                // reglage ajoute le 08/10/2026 cote Windows) : precompense l'eclaircissement du
+                // melange automatique de Bambu Studio quand le jeu de filaments comprend du blanc
+                // - voir assombrirFichierImage. Uniquement la texture, jamais le .obj ni le .mtl.
+                if (fichierTexture != null && assombrirTexturePourcent > 0) {
+                    assombrirFichierImage(fichierTexture, assombrirTexturePourcent)
+                    EtatTraitement.ecrireJournal("  Texture assombrie de $assombrirTexturePourcent% (reglage utilisateur).")
+                }
+            }
             EtatTraitement.ecrireJournal("  -> Enregistre : $nomDossier/${fichierObj.name} (un \"reparer le maillage\" peut etre propose a l'ouverture, normal pour un import OBJ)")
 
             val apercu = if (resultat.urlApercu.isNotEmpty()) {
@@ -332,6 +353,7 @@ class ColorisationService : Service() {
 
             ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
             val totalCredits = creditsImage3D + resultat.creditsConsommes
+            enregistrerHistoriqueFichier(racineSortie, nom, "Meshy (.obj)", totalCredits, "$nomDossier/${fichierObj.name}")
             EtatTraitement.creditsReelsLot += totalCredits
             return totalCredits
         }
@@ -367,8 +389,85 @@ class ColorisationService : Service() {
 
         ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
         val totalCredits = creditsImage3D + resultat.creditsConsommes
+        enregistrerHistoriqueFichier(racineSortie, nom, "Meshy", totalCredits, nomSortie)
         EtatTraitement.creditsReelsLot += totalCredits
         return totalCredits
+    }
+
+    /**
+     * Assombrit l'image de texture .obj recue de Meshy - porte depuis la version Windows (meme
+     * principe : multiplie R/G/B par un facteur via une matrice de couleurs, alpha inchange),
+     * reglage ajoute le 08/10/2026 cote Windows (demande de Tomyn) pour precompenser
+     * l'eclaircissement du melange automatique de Bambu Studio quand le jeu de filaments
+     * choisi comprend du blanc (voir le README pour le detail). Pourcentage <= 0 ne fait rien.
+     */
+    private fun assombrirFichierImage(fichier: DocumentFile, pourcentageAssombrissement: Double) {
+        if (pourcentageAssombrissement <= 0) return
+        try {
+            val octetsOriginaux = contentResolver.openInputStream(fichier.uri)?.use { it.readBytes() } ?: return
+            val bitmapSource = BitmapFactory.decodeByteArray(octetsOriginaux, 0, octetsOriginaux.size) ?: return
+            val facteur = (1.0 - (pourcentageAssombrissement / 100.0)).coerceAtLeast(0.0).toFloat()
+            val matrice = ColorMatrix(
+                floatArrayOf(
+                    facteur, 0f, 0f, 0f, 0f,
+                    0f, facteur, 0f, 0f, 0f,
+                    0f, 0f, facteur, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+            val bitmapAssombri = Bitmap.createBitmap(bitmapSource.width, bitmapSource.height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmapAssombri)
+            val peinture = Paint().apply { colorFilter = ColorMatrixColorFilter(matrice) }
+            canvas.drawBitmap(bitmapSource, 0f, 0f, peinture)
+            val formatPng = fichier.name?.lowercase()?.endsWith(".png") == true
+            val format = if (formatPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+            // "wt" (write+truncate) : necessaire pour ecraser le fichier existant via le
+            // ContentResolver - un simple openOutputStream(uri) sans mode n'est pas garanti de
+            // tronquer sur tous les fournisseurs SAF.
+            contentResolver.openOutputStream(fichier.uri, "wt")?.use { sortie ->
+                bitmapAssombri.compress(format, 92, sortie)
+            }
+        } catch (e: Exception) {
+            EtatTraitement.ecrireJournal("  (assombrissement de la texture ignore : ${e.message})")
+        }
+    }
+
+    /**
+     * Historique PAR FICHIER (porte depuis la version Windows le 10/10/2026, ajoute le 08/10/2026
+     * cote Windows a la demande de Tomyn) : contrairement a l'historique par LOT
+     * (GestionnaireParametres.ajouterHistoriqueLot, un total par lancement), garde une ligne par
+     * fichier reussi - nom, fournisseur, credits consommes, chemin de sortie. Les resultats
+     * Meshy/Tripo ne sont pas recuperables depuis leur API passe 3 jours (politique officielle),
+     * donc ceci ne remplace pas une sauvegarde du dossier de sortie, juste un journal local
+     * complementaire.
+     *
+     * Ecrit dans le DOSSIER DE SORTIE choisi (pas l'espace prive de l'appli comme
+     * GestionnaireParametres.ajouterHistoriqueLot) : contrairement a Windows ou le fichier est
+     * juste a cote du script, l'espace prive Android n'est pas consultable par Tomyn sans outil
+     * special - le dossier de sortie, lui, est deja l'endroit ou il va chercher ses fichiers
+     * colorises.
+     */
+    private fun enregistrerHistoriqueFichier(racineSortie: DocumentFile, nomFichier: String, fournisseurLabel: String, credits: Int, cheminSortie: String) {
+        try {
+            val nomCsv = "historique_fichiers.csv"
+            var fichierCsv = racineSortie.findFile(nomCsv)
+            val estNouveau = fichierCsv == null
+            if (fichierCsv == null) {
+                fichierCsv = racineSortie.createFile("text/csv", nomCsv) ?: return
+            }
+            val ancienContenu = if (!estNouveau) {
+                contentResolver.openInputStream(fichierCsv.uri)?.use { it.readBytes() } ?: ByteArray(0)
+            } else ByteArray(0)
+            val date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date())
+            val ligne = "$date;$nomFichier;$fournisseurLabel;$credits;$cheminSortie\n"
+            contentResolver.openOutputStream(fichierCsv.uri, "wt")?.use { sortie ->
+                sortie.write(ancienContenu)
+                if (estNouveau) sortie.write("Date;Fichier;Fournisseur;Credits;CheminSortie\n".toByteArray())
+                sortie.write(ligne.toByteArray())
+            }
+        } catch (e: Exception) {
+            // Jamais bloquant - meme logique que l'historique de lot existant.
+        }
     }
 
     /**
