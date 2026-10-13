@@ -5,6 +5,14 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Fix : le champ "Triangles visés" chevauchait le bouton "Lancer la colorisation" (13/10/2026,
+signalé par Tomyn).** Le nouveau champ ajouté juste en dessous avait bien sa propre ligne, mais
+le bouton "Lancer" calculait encore sa position par rapport à la même variable de ligne,
+decalée entre-temps - il retombait exactement sur la ligne des triangles au lieu de rester sur
+celle de "Nombre de couleurs". Le bouton garde maintenant sa position d'origine (même ligne que
+le nombre de couleurs), mémorisée avant que la ligne des triangles ne la fasse avancer. Correctif
+purement visuel, sans impact sur le comportement.
+
 **Maillage "Image to 3D" trop peu dense (13/10/2026, Tomyn : "je lui donne une photo et il me
 sort un truc très low poly, sur le site Meshy tu peux lui dire combien de triangles tu veux à
 l'arrivée")** : confirmé en relisant la doc de l'API Meshy — le paramètre `target_polycount`

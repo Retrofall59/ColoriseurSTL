@@ -1385,6 +1385,11 @@ $txtPrompt.Add_TextChanged({
 })
 
 # --- Nombre de couleurs + bouton Lancer ---
+# 13/10/2026 : memorise la ligne de "Nombre de couleurs" AVANT d'avancer $yActuel pour la ligne
+# "Triangles vises" ajoutee juste en dessous - le bouton Lancer doit rester cale sur CETTE ligne
+# (comme avant l'ajout du champ triangles), pas sur $yActuel une fois decale, sinon il retombe
+# exactement sur la ligne des triangles et les deux se chevauchent (signale par Tomyn).
+$yLigneCouleurs = $yActuel
 Ajouter-Label "Nombre de couleurs (1-16) :" 15 ($yActuel + 4)
 $numCouleurs = Creer-SelecteurNumerique 60 24
 $numCouleurs.Location = New-Object System.Drawing.Point(210, $yActuel)
@@ -1425,7 +1430,7 @@ $form.Controls.Add($caseHorodatage)
 
 $btnLancer = New-Object System.Windows.Forms.Button
 $btnLancer.Text = "Lancer la colorisation"
-$btnLancer.Location = New-Object System.Drawing.Point(290, ($yActuel - 2))
+$btnLancer.Location = New-Object System.Drawing.Point(290, ($yLigneCouleurs - 2))
 $btnLancer.Size = New-Object System.Drawing.Size(465, 30)
 $btnLancer.Font = New-Object System.Drawing.Font($btnLancer.Font, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($btnLancer)
