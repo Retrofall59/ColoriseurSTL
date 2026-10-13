@@ -5,6 +5,19 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Titre + description prêts à coller pour un dépôt MakerWorld (13/10/2026, Tomyn).** Demande
+initiale : import/export automatisé avec MakerWorld (Bambu Lab). Vérifié avant de coder :
+MakerWorld n'a **pas d'API publique** (confirmé sur leur propre forum - accès réservé aux
+entreprises sur demande, de plus en plus fermé avec le temps), et Tomyn avait déjà tenté un
+contournement par scraping, bloqué par Cloudflare. Ni l'import ni le dépôt ne sont donc
+automatisables proprement (pas d'API) ou de façon fiable (scraping bloqué). Seule la partie
+rédaction l'est : à chaque fichier colorisé avec succès, un titre (dérivé du nom de fichier) et
+une description (basée sur le style/prompt choisi) sont désormais générés automatiquement -
+déposés dans un fichier `..._description_makerworld.txt` à côté du résultat, ET accessibles
+d'un clic via un nouveau bouton "Copier description" sur la vignette correspondante (presse-
+papier), à coller à la main dans le formulaire de dépôt MakerWorld (nom, catégorie, licence,
+visibilité, description - champs confirmés dans leur doc officielle).
+
 **Reprise automatique d'un lot interrompu (13/10/2026, Tomyn).** Sur un gros dossier (~250
 fichiers d'images du collègue dessinateur), si l'appli plante ou est fermée à mi-lot, relancer
 sur le même dossier de sortie repartait de zéro et redépensait des crédits sur des fichiers déjà

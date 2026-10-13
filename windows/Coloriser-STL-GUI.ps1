@@ -1727,9 +1727,42 @@ function Ecrire-Journal($texte) {
 }
 
 # --- Ajoute une vignette (miniature + nom + double-clic pour agrandir) a une galerie ---
-function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $avecCaseACocher = $false) {
+# 13/10/2026, Tomyn : pas de depot automatise possible vers MakerWorld (pas d'API publique,
+# confirme sur leur propre forum - acces reserve aux entreprises sur demande, de plus en plus
+# ferme avec le temps ; tentative de scraping deja essayee par Tomyn, bloquee par Cloudflare).
+# Seule la partie redaction est automatisable : un titre + une description prets a coller a la
+# main dans le formulaire de depot MakerWorld (champs confirmes dans leur doc officielle : nom,
+# categorie, licence, visibilite, description).
+function Generer-DescriptionMakerWorld([string]$NomBase, [string]$PromptTexte) {
+    # Nettoie le nom de fichier pour en faire un titre lisible : underscores/tirets -> espaces, et
+    # suppression d'un eventuel suffixe d'horodatage ("_20261013_231500", ajoute par l'option
+    # "Garder un historique des essais") qui n'a rien a faire dans un titre de depot.
+    $titreBrut = $NomBase -replace '_\d{8}_\d{6}$', ''
+    $titreBrut = ($titreBrut -replace '[_\-]+', ' ').Trim()
+    $titre = if ($titreBrut) { (Get-Culture).TextInfo.ToTitleCase($titreBrut.ToLower()) } else { $NomBase }
+
+    $descriptionPrompt = $PromptTexte.Trim()
+    if ($descriptionPrompt -and $descriptionPrompt -notmatch '[.!?]\s*$') { $descriptionPrompt += "." }
+
+    $texte = @"
+$titre
+
+Figurine imprimee en 3D et colorisee automatiquement, prete a trancher en multi-couleurs (AMS).
+Rendu voulu : $descriptionPrompt
+
+(Titre et description generes automatiquement par Coloriser-STL a partir du style choisi - a
+relire et completer avant de deposer le modele.)
+"@
+    return @{ Titre = $titre; Texte = $texte }
+}
+
+function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $avecCaseACocher = $false, [string]$texteDescription = "") {
+    # 13/10/2026 : carte plus haute seulement quand une description MakerWorld est fournie (voir
+    # Generer-DescriptionMakerWorld plus haut), pour garder la galerie de depart (pas de
+    # description) a sa taille habituelle.
+    $hauteurBoutonDescription = if ($texteDescription) { 26 } else { 0 }
     $panneau = New-Object System.Windows.Forms.Panel
-    $panneau.Size = New-Object System.Drawing.Size(($TailleMiniature + 16), ($TailleMiniature + 84))
+    $panneau.Size = New-Object System.Drawing.Size(($TailleMiniature + 16), ($TailleMiniature + 84 + $hauteurBoutonDescription))
     # Carte "carte blanche" plutot que le cadre gris FixedSingle d'origine (10/10/2026) : fond
     # blanc + une bande violette de 3px en haut, dessinee a la main (Panel ne propose pas de
     # bordure coloree nativement sans passer par un Paint custom).
@@ -1745,7 +1778,7 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     $cheminArrondi = New-Object System.Drawing.Drawing2D.GraphicsPath
     $diametre = $rayon * 2
     $largeurCarte = $TailleMiniature + 16
-    $hauteurCarte = $TailleMiniature + 84
+    $hauteurCarte = $TailleMiniature + 84 + $hauteurBoutonDescription
     $cheminArrondi.AddArc(0, 0, $diametre, $diametre, 180, 90)
     $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), 0, $diametre, $diametre, 270, 90)
     $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), ($hauteurCarte - $diametre - 1), $diametre, $diametre, 0, 90)
@@ -1815,6 +1848,28 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     }.GetNewClosure()
     $boiteImage.Add_DoubleClick($gestionnaireDoubleClic)
     $etiquette.Add_DoubleClick($gestionnaireDoubleClic)
+
+    # 13/10/2026 : bouton "Copier description" (voir Generer-DescriptionMakerWorld plus haut) -
+    # copie titre + description dans le presse-papier, a coller a la main dans le formulaire de
+    # depot MakerWorld (pas d'automatisation possible cote depot, voir le commentaire sur cette
+    # fonction).
+    if ($texteDescription) {
+        $btnCopierDescription = New-Object System.Windows.Forms.Button
+        $btnCopierDescription.Text = "Copier description"
+        $btnCopierDescription.Size = New-Object System.Drawing.Size(($TailleMiniature + 6), 22)
+        $btnCopierDescription.Location = New-Object System.Drawing.Point(5, ($TailleMiniature + 32 + 36))
+        $btnCopierDescription.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $panneau.Controls.Add($btnCopierDescription)
+        Rendre-BoutonPlat $btnCopierDescription "discret"
+        $btnCopierDescription.Add_Click({
+            try {
+                [System.Windows.Forms.Clipboard]::SetText($texteDescription)
+                $btnCopierDescription.Text = "Copie dans le presse-papier !"
+            } catch {
+                Afficher-Boite "Impossible de copier dans le presse-papier : $_" "Erreur" "OK" "Error" | Out-Null
+            }
+        }.GetNewClosure())
+    }
 
     $galerie.Controls.Add($panneau)
 }
@@ -2250,7 +2305,13 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     }
     Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir le fichier $($fichierObj.Name) dans Bambu Studio)"
 
-    Ajouter-Vignette $GalerieCible $fichierObj.FullName $null
+    # 13/10/2026 : titre + description prets a coller dans le formulaire de depot MakerWorld (voir
+    # Generer-DescriptionMakerWorld) - fichier texte a cote du resultat, et bouton "Copier
+    # description" sur la vignette correspondante.
+    $descriptionGeneree = Generer-DescriptionMakerWorld $FichierStl.BaseName $Prompt
+    try { Set-Content -Path (Join-Path $dossierResultat "description_makerworld.txt") -Value $descriptionGeneree.Texte -Encoding UTF8 } catch { }
+
+    Ajouter-Vignette $GalerieCible $fichierObj.FullName $null -texteDescription $descriptionGeneree.Texte
     [System.Windows.Forms.Application]::DoEvents()
 
     # Credits reellement consommes sur les TROIS etapes facturees : import (5), texturation (10)
@@ -2364,7 +2425,12 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
         Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir le .obj dans Bambu Studio - un 'reparer le maillage' peut etre propose, c'est normal pour un import OBJ)"
 
         $cheminObjFinal = Join-Path $dossierResultat ([System.IO.Path]::GetFileName(([Uri]$urlObj).AbsolutePath))
-        Ajouter-Vignette $GalerieCible $cheminObjFinal $imageApercu
+
+        # 13/10/2026 : voir le commentaire equivalent dans Coloriser-UnFichierTripo plus haut.
+        $descriptionGeneree = Generer-DescriptionMakerWorld $FichierStl.BaseName $Prompt
+        try { Set-Content -Path (Join-Path $dossierResultat "description_makerworld.txt") -Value $descriptionGeneree.Texte -Encoding UTF8 } catch { }
+
+        Ajouter-Vignette $GalerieCible $cheminObjFinal $imageApercu -texteDescription $descriptionGeneree.Texte
         [System.Windows.Forms.Application]::DoEvents()
 
         # Une seule etape facturee dans cette variante (pas de Multi-Color Print), plus le
@@ -2386,7 +2452,13 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     Invoke-WebRequest -Uri $tacheImpression.model_urls.'3mf' -OutFile $cheminSortie
     Ecrire-Journal "  -> Enregistre : $cheminSortie"
 
-    Ajouter-Vignette $GalerieCible $cheminSortie $imageApercu
+    # 13/10/2026 : voir le commentaire equivalent dans Coloriser-UnFichierTripo plus haut. Fichier
+    # unique ici (pas de sous-dossier) - le .txt est depose juste a cote avec le meme nom de base.
+    $descriptionGeneree = Generer-DescriptionMakerWorld $FichierStl.BaseName $Prompt
+    $cheminDescription = Join-Path $DossierSortie ($FichierStl.BaseName + $suffixe + "_description_makerworld.txt")
+    try { Set-Content -Path $cheminDescription -Value $descriptionGeneree.Texte -Encoding UTF8 } catch { }
+
+    Ajouter-Vignette $GalerieCible $cheminSortie $imageApercu -texteDescription $descriptionGeneree.Texte
     [System.Windows.Forms.Application]::DoEvents()
 
     # Credits reellement consommes pour ce fichier (les deux etapes, plus l'Image to 3D en amont
