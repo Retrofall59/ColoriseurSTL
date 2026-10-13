@@ -3,7 +3,7 @@ name: Compiler l'APK
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
+    tags: [ 'v*', '[0-9]*' ]
   workflow_dispatch:
 
 jobs:
