@@ -2,8 +2,9 @@
 
 Appli Android pour coloriser automatiquement un ou plusieurs fichiers 3D (`.stl`, `.obj`, `.fbx`,
 `.glb`, `.gltf` — pas le `.3mf`, qu'aucun des deux fournisseurs n'accepte en entrée) via Meshy ou
-Tripo au choix, et sortir des `.3mf` prêts à trancher. Portage direct de la version
-PowerShell/Windows du même nom, déjà validée en conditions réelles pour les deux fournisseurs.
+Tripo au choix, et sortir des `.3mf` prêts à trancher. Portage direct de la
+[version PowerShell/Windows](windows/) du même nom, déjà validée en conditions réelles pour les
+deux fournisseurs.
 
 Renseigne la clé d'au moins l'un des deux dans Paramètres ; un menu sur l'écran principal permet
 de choisir lequel utiliser pour chaque lot. Différence de fond à connaître : Meshy utilise une

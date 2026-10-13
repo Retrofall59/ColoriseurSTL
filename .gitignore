@@ -1,0 +1,8 @@
+# Version Windows (windows/) - fichiers personnels generes a cote du script au premier usage,
+# jamais versionnes : cle API chiffree, historiques, dernier prompt mémorisé, resultats generes.
+windows/cle_api.enc
+windows/cle_api_tripo.enc
+windows/historique_lots.csv
+windows/historique_fichiers.csv
+windows/dernier_prompt_*.txt
+windows/colorise/
