@@ -5,6 +5,18 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Maillage "Image to 3D" trop peu dense (13/10/2026, Tomyn : "je lui donne une photo et il me
+sort un truc très low poly, sur le site Meshy tu peux lui dire combien de triangles tu veux à
+l'arrivée")** : confirmé en relisant la doc de l'API Meshy — le paramètre `target_polycount`
+(100 à 300 000 triangles) existe bien, mais il est ignoré tant que `should_remesh` n'est pas mis
+explicitement à `true` (`false` par défaut pour Meshy 6/7 — donc aucun remaillage ne se
+produisait jusqu'ici, et le maillage généré restait tel quel, parfois clairsemé). Un nouveau
+champ **"Triangles visés (image uniquement, 100-300000)"** apparaît dans l'appli à côté du
+nombre de couleurs, envoyé avec `should_remesh: true` à chaque appel "Image to 3D" — valeur par
+défaut 30 000, identique à celle documentée par Meshy pour un remaillage activé. Sans effet sur
+un fichier 3D (STL/OBJ/etc.) déjà fourni en entrée, seulement sur une image. **Non testé en
+conditions réelles.**
+
 Colorise automatiquement un dossier entier de fichiers 3D non colorisés (`.stl`, `.obj`, `.fbx`,
 `.glb`, `.gltf`). **Deux fournisseurs possibles, au choix** : Meshy (palette fixe à N couleurs,
 sort un `.3mf` prêt à trancher) ou Tripo (couleur par sommet, dégradé continu, sort un `.obj`

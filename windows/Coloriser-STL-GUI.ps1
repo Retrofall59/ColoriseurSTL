@@ -1398,6 +1398,24 @@ $numCouleurs.Maximum = 16
 $numCouleurs.Value = 4
 $form.Controls.Add($numCouleurs)
 
+# 13/10/2026, Tomyn : "je lui donne une photo et il me sort un truc tres low poly, sur le site
+# Meshy tu peux lui dire combien de triangles tu veux a l'arrivee" - confirme dans la doc API
+# Image to 3D : "target_polycount" existe bien (100 a 300 000), mais ne sert a rien tant que
+# "should_remesh" n'est pas explicitement a true (par defaut false pour Meshy 6/7 - donc AUCUN
+# remaillage ne se produisait jusqu'ici, d'ou le maillage brut, parfois clairsem, de la generation
+# IA). Les deux sont maintenant envoyes ensemble a chaque appel "Image to 3D" (voir Lancer-Image3D
+# plus bas) - actif uniquement quand le fichier d'entree est une image, ignore sinon. Valeur par
+# defaut = 30 000, identique au defaut documente par Meshy pour un remaillage active.
+Ajouter-Label "Triangles vises (image uniquement, 100-300000) :" 15 ($yActuel + 32)
+$numTriangles = Creer-SelecteurNumerique 90 24
+$numTriangles.Location = New-Object System.Drawing.Point(400, ($yActuel + 28))
+$numTriangles.Minimum = 100
+$numTriangles.Maximum = 300000
+$numTriangles.Increment = 1000
+$numTriangles.Value = 30000
+$form.Controls.Add($numTriangles)
+$yActuel += 30
+
 $caseHorodatage = New-Object System.Windows.Forms.CheckBox
 $caseHorodatage.Text = "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)"
 $caseHorodatage.Location = New-Object System.Drawing.Point(15, ($yActuel + 32))
@@ -2123,7 +2141,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     return $creditsTotal
 }
 
-function Lancer-Image3D($FichierImage, $Entetes) {
+function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000) {
     # Image -> maillage (ajoute le 08/10/2026) : "Image to 3D" de Meshy, maillage seul
     # (should_texture=false) - la texture est refaite juste apres par la Retexture habituelle avec
     # LE PROMPT choisi par l'utilisateur, pas celle (generique) que ferait Image to 3D elle-meme.
@@ -2134,15 +2152,19 @@ function Lancer-Image3D($FichierImage, $Entetes) {
     $base64 = [Convert]::ToBase64String($octets)
     $dataUri = "data:$mime;base64,$base64"
 
-    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul)..."
-    $corps = @{ image_url = $dataUri; should_texture = $false } | ConvertTo-Json
+    # 13/10/2026, Tomyn : "ca sort un truc tres low poly, sur le site Meshy tu peux dire combien
+    # de triangles tu veux" - "target_polycount" existe bien dans l'API, mais Meshy l'ignore si
+    # "should_remesh" n'est pas explicitement a true (false par defaut pour Meshy 6/7, donc AUCUN
+    # remaillage avant ce correctif - d'ou le maillage brut, parfois clairseme, de la generation).
+    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $TargetPolycount triangle(s) vises)..."
+    $corps = @{ image_url = $dataUri; should_texture = $false; should_remesh = $true; target_polycount = $TargetPolycount } | ConvertTo-Json
     $reponse = Invoke-RestMethod -Uri "$BaseUrl/image-to-3d" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
     $tache = Attendre-Tache "$BaseUrl/image-to-3d/$($reponse.result)" $Entetes "Image to 3D"
     Ecrire-Journal "  Maillage genere depuis l'image ($($tache.consumed_credits) credits)."
     return $tache
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0) {
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -2159,7 +2181,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     }
 
     if ($estUneImage) {
-        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes
+        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount
         $creditsImage3D = [int]$tacheImage3D.consumed_credits
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
@@ -2521,7 +2543,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value)
+                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -2541,7 +2563,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value)
+                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
                     } else {
                         $creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
                     }
