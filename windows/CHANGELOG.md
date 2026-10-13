@@ -5,6 +5,22 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**5 nouvelles catégories de prompts (13/10/2026, Tomyn : "ça peut toujours servir à un moment").**
+En plus d'"Animal de compagnie" ajoutée juste avant, 5 autres catégories pas encore couvertes par
+les menus existants, toutes avec 10 styles + "Autre" comme les autres :
+- **Buste / statuette commémorative** (portrait humain) — rendu sobre et fidèle, bronze/marbre,
+  médaille, trophée, souvenir de cérémonie.
+- **Terrain / plateau de jeu** — hexagones/cases lisibles, carte fantasy, wargame, désert,
+  hivernal, île, etc. (différent du "Socle de jeu" déjà présent dans Décor, pensé pour un plateau
+  entier plutôt qu'un socle de figurine).
+- **Véhicule** — voiture, livrée de course, militaire, avion, vaisseau sci-fi, moto, train,
+  bateau.
+- **Food / nourriture factice** — gâteau, plat, fruits/légumes, glace, fast-food, confiserie,
+  plateau de fromages.
+- **Bijou / vêtement fonctionnel** — différent du "Bijou / objet précieux" de Pièce/Autre (pensé
+  pour une pièce décorative statique) : ici visé pour un objet réellement porté, couleurs
+  pensées pour tenir sur une surface qui plie ou bouge.
+
 **Nouvelle catégorie de prompts : "Animal de compagnie" (13/10/2026, demande de Tomyn).** Entre
 "Personnage" et "Décor" dans le menu déroulant, 10 styles dédiés aux figurines d'animaux (pelage
 réaliste, portrait souvenir fidèle, stylisé mignon/chibi, figurine peinte à la main, chat, chien,

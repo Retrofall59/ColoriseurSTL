@@ -1284,6 +1284,19 @@ $script:promptsParCategorie = [ordered]@{
         "Memorial / hommage"                  = "couleurs fideles et apaisees a la robe reelle de l'animal, rendu doux et soigne, adapte a une piece souvenir"
         "Autre (texte libre ci-dessous)"      = $null
     }
+    "Buste / statuette commemorative" = [ordered]@{
+        "Portrait fidele et sobre"            = "couleurs de peau et de cheveux realistes et fideles a la photo d'origine, rendu digne et sobre, sans effet stylise"
+        "Noir et blanc / sepia"                = "rendu en camaieu de gris ou de sepia, sans couleur vive, effet photo ancienne ou buste classique"
+        "Bronze / statue classique"            = "finition type bronze patine ou pierre claire, teinte uniforme et sobre avec de legeres variations de patine"
+        "Uniforme / tenue specifique"          = "peau et cheveux realistes, uniforme ou tenue avec des couleurs fideles et nettement distinctes de la peau"
+        "Portrait de couple / famille"         = "couleurs realistes et coherentes pour chaque personne representee, bien differenciees entre les sujets"
+        "Marbre clair"                         = "teinte uniforme type marbre ou platre clair, tres peu de variation de couleur, rendu epure et intemporel"
+        "Medaille / bas-relief"                = "couleur unique ou presque, type metal patine (bronze, laiton ou argent selon le cas), reliefs mis en valeur par l'ombrage naturel"
+        "Trophee / recompense"                 = "finition metallique noble (or, argent ou bronze selon le cas), rendu brillant et soigne"
+        "Souvenir de ceremonie"                = "couleurs sobres et elegantes, tenue de ceremonie bien distincte de la peau et des cheveux, rendu soigne et discret"
+        "Realiste multicolore detaille"        = "couleurs realistes et nettement differenciees pour chaque element (peau, cheveux, vetements, accessoires), rendu detaille et vivant malgre le format buste"
+        "Autre (texte libre ci-dessous)"       = $null
+    }
     "Decor" = [ordered]@{
         "Materiaux naturels"                 = "pierre, bois, vegetation et eau avec des couleurs naturelles et bien differenciees selon le materiau"
         "Architecture / batiment"            = "pierre, toiture, bois et metal avec des couleurs distinctes et realistes selon chaque materiau de construction"
@@ -1296,6 +1309,19 @@ $script:promptsParCategorie = [ordered]@{
         "Vegetation dense / foret"           = "multiples nuances de vert et de brun, feuillage, troncs et sol bien differencies"
         "Socle de jeu / wargaming"           = "terrain et relief avec des couleurs naturelles variees, textures du sol bien marquees (herbe, roche, sable selon le cas)"
         "Autre (texte libre ci-dessous)"     = $null
+    }
+    "Terrain / plateau de jeu" = [ordered]@{
+        "Hexagones / cases lisibles"          = "cases ou hexagones avec des couleurs nettement differenciees selon le type de terrain (herbe, eau, roche, sable, foret), contrastes marques pour rester lisible a distance"
+        "Relief naturel varie"                = "terrain avec des couleurs naturelles variees selon l'altitude et le type de sol, degrades doux entre les zones"
+        "Plateau stylise jeu de societe"      = "couleurs vives et franches type jeu de societe moderne, zones bien delimitees et faciles a distinguer d'un coup d'oeil"
+        "Carte fantasy"                       = "couleurs riches et legerement stylisees pour les terrains fantastiques (lave, cristal, marais magique selon le cas), contrastes nets entre les zones"
+        "Terrain militaire / wargame"         = "couleurs sobres et realistes type terrain militaire (boue, beton, vegetation), marquages de zone bien visibles si presents"
+        "Desert / aride"                     = "camaieu de sable, roche et terre avec des variations de teinte naturelles, peu de vegetation"
+        "Hivernal / enneige"                  = "camaieu de blanc, gris et bleu clair pour la neige et la glace, elements rocheux ou vegetaux bien distincts en dessous"
+        "Urbain / plateau de rue"             = "beton, bitume et batiments avec des couleurs sobres et realistes, marquages au sol bien visibles"
+        "Grille / damier technique"           = "couleurs contrastees et constantes entre les cases pour un reperage facile, rendu simple et fonctionnel"
+        "Ile / archipel"                      = "camaieu de bleu pour l'eau, vert pour la vegetation et sable clair pour les plages, transitions nettes entre les zones"
+        "Autre (texte libre ci-dessous)"      = $null
     }
     "Personnage et decor" = [ordered]@{
         "Scene complete equilibree"          = "personnage et decor avec des couleurs realistes et bien differenciees, equilibre entre le sujet principal et son environnement"
@@ -1310,6 +1336,19 @@ $script:promptsParCategorie = [ordered]@{
         "Scene urbaine"                      = "personnage et decor urbain avec des couleurs realistes, materiaux de la ville (beton, metal, verre) bien differencies du personnage"
         "Autre (texte libre ci-dessous)"     = $null
     }
+    "Vehicule" = [ordered]@{
+        "Carrosserie realiste"                = "carrosserie, vitres, pneus et chrome avec des couleurs realistes et nettement distinctes selon le materiau, reflets metalliques sur la carrosserie"
+        "Voiture de course / livree"          = "couleurs vives et contrastees type livree de course, zones de sponsoring ou de numerotation bien delimitees"
+        "Vehicule militaire"                  = "camouflage ou teinte unie type vehicule militaire, couleurs mates et sobres, usure legere"
+        "Avion / aeronautique"                = "fuselage, ailes, cockpit et reacteurs avec des couleurs realistes et bien differenciees, marquages distincts si presents"
+        "Vaisseau spatial / sci-fi"           = "coque technique avec des couleurs froides et metalliques, panneaux et hublots nettement distincts, legers reflets high-tech"
+        "Vehicule d'epoque / vintage"         = "carrosserie et interieur avec des couleurs d'epoque realistes, chrome et cuir bien distincts, patine legere"
+        "Moto"                                = "carenage, selle, chrome et pneus avec des couleurs realistes et contrastees, finitions nettes entre les parties"
+        "Vehicule utilitaire / chantier"      = "carrosserie et elements fonctionnels avec des couleurs sobres et realistes type engin de chantier, marquages de securite distincts si presents"
+        "Train / ferroviaire"                 = "wagons et locomotive avec des couleurs realistes et coherentes, marquages et numeros bien distincts de la carrosserie"
+        "Bateau"                              = "coque, pont et superstructure avec des couleurs realistes et nettement differenciees, ligne de flottaison distincte si presente"
+        "Autre (texte libre ci-dessous)"      = $null
+    }
     "Piece / Autre" = [ordered]@{
         "Piece mecanique realiste"           = "couleurs realistes de metal, plastique et caoutchouc, usure et reflets metalliques bien rendus"
         "Objet du quotidien"                 = "couleurs realistes et naturelles correspondant au materiau reel de l'objet"
@@ -1322,6 +1361,32 @@ $script:promptsParCategorie = [ordered]@{
         "Jouet / accessoire"                 = "couleurs vives et franches type plastique de jouet, zones de couleur bien separees"
         "Bijou / objet precieux"             = "finitions metalliques nobles (or, argent ou bronze selon le cas) et pierres ou details avec des couleurs distinctes et un rendu brillant"
         "Autre (texte libre ci-dessous)"     = $null
+    }
+    "Food / nourriture factice" = [ordered]@{
+        "Gateau / patisserie"                 = "glacage, creme, fruits et decorations avec des couleurs appetissantes et nettement differenciees, rendu gourmand et realiste"
+        "Plat realiste"                       = "aliments avec des couleurs naturelles et realistes propres a chaque ingredient, nettement differencies les uns des autres"
+        "Fruits et legumes"                   = "couleurs vives et naturelles propres a chaque fruit ou legume, peau, chair et feuilles bien distinctes"
+        "Glace / dessert froid"               = "couleurs pastel et appetissantes, nappage, toppings et cornet ou pot bien distincts"
+        "Boisson / cocktail"                  = "liquide, glacons et garniture avec des couleurs distinctes et un rendu translucide si pertinent"
+        "Fast-food / street food"             = "couleurs vives et franches type restauration rapide, emballage et aliment bien differencies"
+        "Boulangerie / pain"                  = "croute doree et mie claire bien distinctes, variations de cuisson naturelles"
+        "Confiserie / bonbons"                = "couleurs vives et saturees type confiserie, zones de couleur bien separees et nettes"
+        "Plateau de fromages / charcuterie"   = "couleurs naturelles et realistes propres a chaque aliment, nettement differenciees entre les pieces du plateau"
+        "Maquette miniature gourmande"        = "couleurs appetissantes et realistes adaptees a une miniature decorative, finitions soignees malgre la petite echelle"
+        "Autre (texte libre ci-dessous)"      = $null
+    }
+    "Bijou / vetement fonctionnel" = [ordered]@{
+        "Bijou porte au quotidien"             = "finitions metalliques nobles (or, argent ou bronze selon le cas) adaptees a un usage reel, couleurs resistantes et uniformes, sans effet fragile"
+        "Accessoire textile souple"            = "couleurs uniformes et resistantes adaptees a une matiere flexible qui va plier et bouger, sans degrade fragile"
+        "Pendentif / collier"                  = "chaine et pendentif avec des couleurs nettement distinctes, finition brillante ou mate selon le style voulu"
+        "Bague / anneau"                       = "finition metallique uniforme et reguliere sur toute la surface, sans variation parasite due a la petite taille de la piece"
+        "Bracelet articule"                    = "couleurs coherentes et uniformes sur l'ensemble des maillons ou segments, adaptees a une piece qui bouge"
+        "Broche / epingle"                     = "couleurs nettes et bien delimitees, finition soignee adaptee a un petit accessoire visible de pres"
+        "Accessoire de mode colore"            = "couleurs vives et franches type accessoire de mode, zones de couleur bien separees"
+        "Style minimaliste / epure"            = "une ou deux couleurs sobres et uniformes, sans degrade ni detail superflu, rendu epure"
+        "Boucle d'oreille"                     = "couleurs nettes et symetriques, finition soignee adaptee a une petite piece portee de pres"
+        "Accessoire enfant"                    = "couleurs vives, douces et ludiques, zones de couleur simples et bien separees, sans detail fragile"
+        "Autre (texte libre ci-dessous)"       = $null
     }
 }
 
