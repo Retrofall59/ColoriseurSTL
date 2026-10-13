@@ -5,6 +5,12 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Nouvelle catégorie de prompts : "Animal de compagnie" (13/10/2026, demande de Tomyn).** Entre
+"Personnage" et "Décor" dans le menu déroulant, 10 styles dédiés aux figurines d'animaux (pelage
+réaliste, portrait souvenir fidèle, stylisé mignon/chibi, figurine peinte à la main, chat, chien,
+oiseau, animal de ferme/exotique, race à poil long, mémorial/hommage), plus "Autre" comme les
+autres catégories.
+
 **Fix : le champ "Triangles visés" chevauchait le bouton "Lancer la colorisation" (13/10/2026,
 signalé par Tomyn).** Le nouveau champ ajouté juste en dessous avait bien sa propre ligne, mais
 le bouton "Lancer" calculait encore sa position par rapport à la même variable de ligne,

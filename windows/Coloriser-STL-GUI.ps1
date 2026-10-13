@@ -1271,6 +1271,19 @@ $script:promptsParCategorie = [ordered]@{
         "Buste / portrait realiste"          = "couleurs de peau realistes et nuancees, details du visage et des cheveux soignes, rendu photorealiste"
         "Autre (texte libre ci-dessous)"     = $null
     }
+    "Animal de compagnie" = [ordered]@{
+        "Realiste pelage/poil"               = "pelage ou poil avec des couleurs realistes et naturelles, variations de teinte fideles a la robe de l'animal, truffe et coussinets dans une couleur distincte"
+        "Portrait souvenir fidele"            = "couleurs aussi fideles que possible a la photo d'origine de l'animal, robe, yeux et marques particulieres bien reconnaissables"
+        "Stylise mignon / chibi"              = "couleurs douces et pastel, rendu mignon et simplifie, zones de couleur bien separees sans trop de nuances"
+        "Figurine peinte a la main"           = "rendu type figurine de collection peinte a la main, couleurs mates et nuancees, ombrages doux entre les zones du pelage"
+        "Chat"                                = "pelage avec des couleurs et motifs realistes (uni, tigre, ecaille ou tachete selon le cas), yeux et truffe bien distincts du pelage"
+        "Chien"                               = "pelage avec des couleurs et motifs realistes selon la race, truffe, yeux, coussinets et collier eventuel bien distincts"
+        "Oiseau"                              = "plumage avec des couleurs vives et nettement differenciees entre les zones (tete, ailes, poitrine, queue), bec et pattes dans une teinte distincte"
+        "Animal de ferme / exotique"          = "pelage, plumage ou peau avec des couleurs realistes et naturelles propres a l'espece, details (cornes, bec, ecailles) bien distincts"
+        "Race a poil long"                    = "pelage long et fourni avec des variations de teinte naturelles, meches et degrades doux, sans aplat uniforme"
+        "Memorial / hommage"                  = "couleurs fideles et apaisees a la robe reelle de l'animal, rendu doux et soigne, adapte a une piece souvenir"
+        "Autre (texte libre ci-dessous)"      = $null
+    }
     "Decor" = [ordered]@{
         "Materiaux naturels"                 = "pierre, bois, vegetation et eau avec des couleurs naturelles et bien differenciees selon le materiau"
         "Architecture / batiment"            = "pierre, toiture, bois et metal avec des couleurs distinctes et realistes selon chaque materiau de construction"
