@@ -5,6 +5,18 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Reprise automatique d'un lot interrompu (13/10/2026, Tomyn).** Sur un gros dossier (~250
+fichiers d'images du collègue dessinateur), si l'appli plante ou est fermée à mi-lot, relancer
+sur le même dossier de sortie repartait de zéro et redépensait des crédits sur des fichiers déjà
+colorisés avec succès. Quand des fichiers de sortie existent déjà dans le dossier choisi (et que
+"Garder un historique des essais" n'est pas coché), une nouvelle boîte à 3 choix s'affiche :
+**Reprendre le lot** (ignore les fichiers déjà traités, ne retraite que les nouveaux/manquants,
+0 crédit dépensé dessus), **Tout refaire** (comportement d'avant : écrase tout) ou **Annuler**.
+Un fichier n'est considéré "déjà traité" que si TOUTES ses sorties attendues existent déjà (les
+deux, en mode comparaison Meshy+Tripo) - sinon il repasse normalement, pour ne jamais sauter un
+fichier resté à moitié fait. Le bilan final précise combien de fichiers ont été repris sans
+redépense.
+
 **5 nouvelles catégories de prompts (13/10/2026, Tomyn : "ça peut toujours servir à un moment").**
 En plus d'"Animal de compagnie" ajoutée juste avant, 5 autres catégories pas encore couvertes par
 les menus existants, toutes avec 10 styles + "Autre" comme les autres :

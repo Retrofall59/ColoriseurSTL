@@ -798,6 +798,43 @@ function Afficher-Boite([string]$message, [string]$titre = "", [string]$boutons 
 
         $fenetre.AcceptButton = $btnNon
         $fenetre.CancelButton = $btnNon
+    } elseif ($boutons -eq "ReprendreTouteAnnuler") {
+        # 13/10/2026, Tomyn : utilisee pour la reprise d'un lot interrompu (voir Lancer-Traitement,
+        # verification des sorties deja presentes) - "Annuler" (DialogResult Cancel), "Tout refaire"
+        # (DialogResult No, orange "chaud" car ca re-depense des credits sur des fichiers deja
+        # faits), "Reprendre le lot" (DialogResult Yes, "principal" car c'est le choix recommande
+        # qui evite de gaspiller des credits).
+        $largeurBouton3 = 150
+        $margeCote = 18
+        $espaceEntreBoutons = 10
+
+        $btnAnnuler3 = New-Object System.Windows.Forms.Button
+        $btnAnnuler3.Text = "Annuler"
+        $btnAnnuler3.Size = New-Object System.Drawing.Size($largeurBouton3, $hauteurBouton)
+        $btnAnnuler3.Location = New-Object System.Drawing.Point($margeCote, $yBoutons)
+        $btnAnnuler3.DialogResult = "Cancel"
+        Rendre-BoutonPlat $btnAnnuler3 "secondaire"
+        $fenetre.Controls.Add($btnAnnuler3)
+
+        $btnToutRefaire = New-Object System.Windows.Forms.Button
+        $btnToutRefaire.Text = "Tout refaire"
+        $btnToutRefaire.Size = New-Object System.Drawing.Size($largeurBouton3, $hauteurBouton)
+        $btnToutRefaire.Location = New-Object System.Drawing.Point(($margeCote + $largeurBouton3 + $espaceEntreBoutons), $yBoutons)
+        $btnToutRefaire.DialogResult = "No"
+        Rendre-BoutonPlat $btnToutRefaire "chaud"
+        $fenetre.Controls.Add($btnToutRefaire)
+
+        $btnReprendre = New-Object System.Windows.Forms.Button
+        $btnReprendre.Text = "Reprendre le lot"
+        $btnReprendre.Size = New-Object System.Drawing.Size($largeurBouton3, $hauteurBouton)
+        $btnReprendre.Location = New-Object System.Drawing.Point(($margeCote + 2 * ($largeurBouton3 + $espaceEntreBoutons)), $yBoutons)
+        $btnReprendre.DialogResult = "Yes"
+        Rendre-BoutonPlat $btnReprendre "principal"
+        $fenetre.Controls.Add($btnReprendre)
+
+        $fenetre.Width = $margeCote * 2 + 3 * $largeurBouton3 + 2 * $espaceEntreBoutons
+        $fenetre.AcceptButton = $btnReprendre
+        $fenetre.CancelButton = $btnAnnuler3
     } else {
         $btnOk = New-Object System.Windows.Forms.Button
         $btnOk.Text = "OK"
@@ -2527,39 +2564,49 @@ function Lancer-Traitement($fichiersStl) {
         if ($reponseBoite -ne "Yes") { return }
     }
 
-    # --- Avertissement si des resultats existants seraient ecrases ---
-    # Inutile avec l'horodatage actif : chaque nom de sortie est alors forcement unique.
+    # --- Avertissement si des resultats existants seraient ecrases / reprise d'un lot interrompu ---
+    # Suffixes distincts par fournisseur en mode comparaison (_meshy_colorise / _tripo_colorise, voir
+    # Coloriser-UnFichier/Tripo) : il faut verifier les deux pour ne rater aucune collision. Meshy
+    # sort un seul fichier .3mf ; Tripo sort desormais un SOUS-DOSSIER (voir Coloriser-UnFichierTripo,
+    # export OBJ livre en ZIP) - les deux sont donc verifies differemment (Test-Path fonctionne pour
+    # les deux, fichier ou dossier). Calcule maintenant INCONDITIONNELLEMENT (plus seulement dans le
+    # cas "dossier deja existant" ci-dessous) car reutilise plus bas dans la boucle de traitement pour
+    # la reprise d'un lot interrompu.
     $dossierSortie = $txtDossierSortie.Text
+    $suffixesSortieActuels = if ($caseComparerFournisseurs.Checked) {
+        # Si l'option .obj experimentale est cochee en meme temps que la comparaison, Meshy sort
+        # aussi un sous-dossier (voir Coloriser-UnFichier) au lieu d'un .3mf.
+        $suffixeMeshyComparaison = if ($caseMeshyObjExperimental.Checked) { "_meshy_colorise" } else { "_meshy_colorise.3mf" }
+        @(@{Suffixe=$suffixeMeshyComparaison}, @{Suffixe="_tripo_colorise"})
+    } elseif ($fournisseur -eq "Tripo") {
+        @(@{Suffixe="_colorise"})
+    } elseif ($fournisseur -eq "Meshy" -and $caseMeshyObjExperimental.Checked) {
+        # Variante experimentale : Meshy sort aussi un sous-dossier dans ce cas (voir
+        # Coloriser-UnFichier), pas un .3mf.
+        @(@{Suffixe="_colorise"})
+    } else {
+        @(@{Suffixe="_colorise.3mf"})
+    }
+    # 13/10/2026, Tomyn : sur un dossier de ~250 fichiers (image du collegue dessinateur), si
+    # l'appli plante ou est fermee a mi-lot, relancer repartait de zero et redepensait des credits
+    # sur des fichiers deja colorises avec succes. $reprendreLot (choix ci-dessous) fait sauter,
+    # dans la boucle plus bas, tout fichier dont TOUTES les sorties attendues existent deja -
+    # inutile avec l'horodatage actif, puisque chaque nom de sortie est alors forcement unique (donc
+    # jamais de collision a detecter, et rien a reprendre).
+    $reprendreLot = $false
     if ((-not $caseHorodatage.Checked) -and (Test-Path $dossierSortie)) {
-        # Suffixes distincts par fournisseur en mode comparaison (_meshy_colorise / _tripo_colorise,
-        # voir Coloriser-UnFichier/Tripo) : il faut verifier les deux pour ne rater aucune collision.
-        # Meshy sort un seul fichier .3mf ; Tripo sort desormais un SOUS-DOSSIER (voir
-        # Coloriser-UnFichierTripo, export OBJ livre en ZIP) - les deux sont donc verifies
-        # differemment (Test-Path fonctionne pour les deux, fichier ou dossier).
-        $suffixesACollisionVerifier = if ($caseComparerFournisseurs.Checked) {
-            # Si l'option .obj experimentale est cochee en meme temps que la comparaison, Meshy
-            # sort aussi un sous-dossier (voir Coloriser-UnFichier) au lieu d'un .3mf.
-            $suffixeMeshyComparaison = if ($caseMeshyObjExperimental.Checked) { "_meshy_colorise" } else { "_meshy_colorise.3mf" }
-            @(@{Suffixe=$suffixeMeshyComparaison}, @{Suffixe="_tripo_colorise"})
-        } elseif ($fournisseur -eq "Tripo") {
-            @(@{Suffixe="_colorise"})
-        } elseif ($fournisseur -eq "Meshy" -and $caseMeshyObjExperimental.Checked) {
-            # Variante experimentale : Meshy sort aussi un sous-dossier dans ce cas (voir
-            # Coloriser-UnFichier), pas un .3mf.
-            @(@{Suffixe="_colorise"})
-        } else {
-            @(@{Suffixe="_colorise.3mf"})
-        }
         $collisions = @()
-        foreach ($suf in $suffixesACollisionVerifier) {
+        foreach ($suf in $suffixesSortieActuels) {
             $collisions += @($fichiersStl | Where-Object { Test-Path (Join-Path $dossierSortie ($_.BaseName + $suf.Suffixe)) })
         }
         $collisions = @($collisions | Select-Object -Unique)
         if ($collisions.Count -gt 0) {
             $listeApercu = ($collisions | Select-Object -First 5 | ForEach-Object { $_.BaseName }) -join "`n"
             $suite = if ($collisions.Count -gt 5) { "`n... et $($collisions.Count - 5) autre(s)" } else { "" }
-            $reponseBoite = Afficher-Boite "$($collisions.Count) fichier(s) de sortie existent deja et seraient ecrases :`n$listeApercu$suite`n`nContinuer quand meme ?" "Des resultats existants seraient ecrases" "YesNo" "Warning"
-            if ($reponseBoite -ne "Yes") { return }
+            $reponseBoite = Afficher-Boite "$($collisions.Count) fichier(s) de sortie existent deja dans ce dossier :`n$listeApercu$suite`n`nReprendre un lot interrompu (ignorer ces fichiers deja traites, sans redepenser de credits dessus) ou tout refaire (les ecraser) ?" "Des resultats existants ont ete trouves" "ReprendreTouteAnnuler" "Warning"
+            if ($reponseBoite -eq "Yes") { $reprendreLot = $true }
+            elseif ($reponseBoite -eq "No") { $reprendreLot = $false }
+            else { return }
         }
     }
 
@@ -2601,6 +2648,10 @@ function Lancer-Traitement($fichiersStl) {
         $echecsCeLot = New-Object System.Collections.Generic.List[System.IO.FileInfo]
         $interrompu = $false
         $creditsReelsLot = 0
+        # Nombre de fichiers sautes car deja traites lors d'un lancement precedent (reprise, voir
+        # $reprendreLot plus haut) - compte a part pour pouvoir l'afficher clairement dans le bilan
+        # final, distinct des vraies reussites de CE lancement.
+        $dejaFaits = 0
         # Compteurs par fournisseur, utilises seulement en mode comparaison (pour un bilan qui
         # distingue "Meshy a reussi mais pas Tripo" d'un echec complet sur un fichier donne - voir
         # plus bas, un fichier n'est un vrai echec de lot que si les DEUX ont rate).
@@ -2615,6 +2666,16 @@ function Lancer-Traitement($fichiersStl) {
                 Ecrire-Journal "`n=== Annule par l'utilisateur (fichiers restants non traites) ==="
                 $interrompu = $true
                 break
+            }
+            if ($reprendreLot) {
+                $sortiesAttendues = @($suffixesSortieActuels | ForEach-Object { Join-Path $dossierSortie ($fichier.BaseName + $_.Suffixe) })
+                if (@($sortiesAttendues | Where-Object { Test-Path $_ }).Count -eq $sortiesAttendues.Count) {
+                    Ecrire-Journal "  - $($fichier.Name) : deja traite (reprise du lot), ignore - 0 credit consomme."
+                    $dejaFaits++
+                    $reussites++
+                    if ($caseComparerFournisseurs.Checked) { $reussitesMeshy++; $reussitesTripo++ }
+                    continue
+                }
             }
             Afficher-ProgressionEnCours "Retexture en cours..."
             try {
@@ -2679,17 +2740,21 @@ function Lancer-Traitement($fichiersStl) {
             Add-Content -Path $CheminHistorique -Value $ligneHistorique
         } catch { }  # pas grave si l'ecriture de l'historique echoue, ca ne doit jamais bloquer le vrai traitement
 
+        # 13/10/2026 : texte de reprise ajoute aux deux bilans ci-dessous seulement si des fichiers
+        # ont vraiment ete sautes (reprise d'un lot interrompu) - sinon rien ne change par rapport
+        # a avant.
+        $texteDejaFaits = if ($dejaFaits -gt 0) { " (dont $dejaFaits deja traite(s) avant, repris sans redepenser de credits)" } else { "" }
         Ecrire-Journal ""
         if ($caseComparerFournisseurs.Checked) {
-            Ecrire-Journal "=== Bilan : Meshy $reussitesMeshy/$($fichiersStl.Count) reussite(s), Tripo $reussitesTripo/$($fichiersStl.Count) reussite(s)$(if ($interrompu) { ', traitement interrompu' }) ==="
+            Ecrire-Journal "=== Bilan : Meshy $reussitesMeshy/$($fichiersStl.Count) reussite(s), Tripo $reussitesTripo/$($fichiersStl.Count) reussite(s)$texteDejaFaits$(if ($interrompu) { ', traitement interrompu' }) ==="
         } else {
-            Ecrire-Journal "=== Bilan : $reussites reussite(s), $echecs echec(s)$(if ($interrompu) { ', traitement interrompu' }) ==="
+            Ecrire-Journal "=== Bilan : $reussites reussite(s), $echecs echec(s)$texteDejaFaits$(if ($interrompu) { ', traitement interrompu' }) ==="
         }
         $onglets.SelectedTab = $ongletResultats
         $messageFin = if ($caseComparerFournisseurs.Checked) {
-            if ($interrompu) { "Annule : Meshy $reussitesMeshy, Tripo $reussitesTripo reussite(s) avant l'arret." }
-            else { "Termine : Meshy $reussitesMeshy/$($fichiersStl.Count), Tripo $reussitesTripo/$($fichiersStl.Count) reussite(s)." }
-        } elseif ($interrompu) { "Annule : $reussites reussite(s) avant l'arret." } else { "Termine : $reussites reussite(s), $echecs echec(s)." }
+            if ($interrompu) { "Annule : Meshy $reussitesMeshy, Tripo $reussitesTripo reussite(s) avant l'arret.$texteDejaFaits" }
+            else { "Termine : Meshy $reussitesMeshy/$($fichiersStl.Count), Tripo $reussitesTripo/$($fichiersStl.Count) reussite(s).$texteDejaFaits" }
+        } elseif ($interrompu) { "Annule : $reussites reussite(s) avant l'arret.$texteDejaFaits" } else { "Termine : $reussites reussite(s), $echecs echec(s).$texteDejaFaits" }
         try {
             $script:notifIcon.ShowBalloonTip(6000, "Colorisation terminee", $messageFin, [System.Windows.Forms.ToolTipIcon]::Info)
         } catch { }  # la notification n'est qu'un plus, jamais bloquant si elle echoue
