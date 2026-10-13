@@ -47,15 +47,29 @@ jobs:
           name: ${{ env.APK_NOM }}
           path: ${{ env.APK_NOM }}.apk
 
-      # Extrait la toute derniere entree de CHANGELOG.md (13/10/2026, Tomyn : la description
-      # auto-generee par "generate_release_notes" - simple liste de commits - "est pourrie").
-      # awk capture tout entre le PREMIER "## " (le titre de la derniere version) et le SUIVANT
-      # (exclu), donc exactement l'entree la plus recente, telle qu'ecrite a la main dans le
-      # changelog - plus lisible qu'une liste de commits bruts.
-      - name: Extraire la derniere entree du changelog
+      # Extrait de CHANGELOG.md l'entree correspondant AU TAG qui a declenche ce build
+      # (13/10/2026, Tomyn : avant, on prenait toujours la toute derniere entree du fichier,
+      # du coup un tag "0.16" affichait la description de la "0.17" si c'etait la plus recente
+      # au moment du tag - faux). Le nom du tag (ex: "0.16") est compare a chaque titre
+      # "## v<version> ..." ou "## <version> ..." du changelog (le "v" eventuel est ignore des
+      # deux cotes), et on extrait tout le texte jusqu'au "## " suivant. Si aucune entree ne
+      # correspond au tag, le fichier reste vide et la Release n'aura simplement pas de
+      # description (plutot que d'afficher par erreur celle d'une autre version).
+      - name: Extraire l'entree du changelog correspondant au tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          awk '/^## /{n++} n==1{print} n==2{exit}' CHANGELOG.md > derniere_entree_changelog.md
+          TAG="${GITHUB_REF_NAME#v}"
+          awk -v tag="$TAG" '
+            /^## / {
+              if (printing) exit
+              titre = $0
+              sub(/^## /, "", titre)
+              sub(/^v/, "", titre)
+              n = split(titre, mots, " ")
+              if (mots[1] == tag) { printing = 1 }
+            }
+            printing { print }
+          ' CHANGELOG.md > derniere_entree_changelog.md
 
       # Publication d'une Release (13/10/2026, demande de Tomyn) - seulement quand ce build est
       # declenche par un TAG de version (via l'onglet Releases de GitHub, ou git tag + git push),
