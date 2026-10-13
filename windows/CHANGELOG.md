@@ -5,6 +5,17 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Refonte visuelle, 1re passe : hiérarchie en sections (13/10/2026, Tomyn).** L'écran de
+configuration était un long mur de champs à plat, sans aucune hiérarchie visuelle. Quatre
+en-têtes de section ajoutés (bande accent violette + titre en majuscules) : **Connexion aux
+fournisseurs**, **Source**, **Style et couleurs**, **Lancement**. Volontairement limité à ça pour
+cette passe : aucun contrôle existant n'a été déplacé ni retouché dans sa logique, seuls les
+en-têtes sont insérés entre eux - choix fait pour ne pas risquer de casser un alignement ou un
+évènement sur une appli dont dépend le collègue dessinateur de Tomyn, sans pouvoir
+visuellement vérifier le rendu avant livraison (pas de Windows sous la main ici). Une refonte
+plus poussée (vrais panneaux groupés, réorganisation de la mise en page) reste possible dans une
+passe ultérieure si celle-ci convient.
+
 **Titre + description prêts à coller pour un dépôt MakerWorld (13/10/2026, Tomyn).** Demande
 initiale : import/export automatisé avec MakerWorld (Bambu Lab). Vérifié avant de coder :
 MakerWorld n'a **pas d'API publique** (confirmé sur leur propre forum - accès réservé aux

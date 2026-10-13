@@ -1047,6 +1047,27 @@ function Ajouter-Label($texte, $x, $y) {
     $form.Controls.Add($label)
 }
 
+# 13/10/2026, Tomyn : refonte visuelle - l'ecran de configuration etait un long mur de champs a
+# plat, sans hierarchie. Ajoute un en-tete pour chaque grande section (une fine bande accent +
+# un titre en majuscules) SANS deplacer ni toucher a la logique d'aucun controle existant : juste
+# insere entre eux, aux memes emplacements $yActuel qu'avant. Meme principe qu'Ajouter-Label :
+# ne touche pas $yActuel elle-meme, c'est l'appelant qui l'avance ensuite.
+function Ajouter-EnteteSection($texte, $y) {
+    $barreAccent = New-Object System.Windows.Forms.Panel
+    $barreAccent.Location = New-Object System.Drawing.Point(15, $y)
+    $barreAccent.Size = New-Object System.Drawing.Size(930, 2)
+    $barreAccent.BackColor = $THEME.AccentPrincipal
+    $form.Controls.Add($barreAccent)
+
+    $labelSection = New-Object System.Windows.Forms.Label
+    $labelSection.Text = $texte.ToUpper()
+    $labelSection.Location = New-Object System.Drawing.Point(15, ($y + 9))
+    $labelSection.AutoSize = $true
+    $labelSection.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $labelSection.ForeColor = $THEME.AccentPrincipal
+    $form.Controls.Add($labelSection)
+}
+
 # --- Cles API : deux fournisseurs possibles, chacun optionnel individuellement (voir plus bas
 # pour la validation "au moins une des deux" et le menu de choix du fournisseur) ---
 function Charger-CleDepuisFichier($chemin) {
@@ -1058,6 +1079,8 @@ function Charger-CleDepuisFichier($chemin) {
     } catch { return "" }
 }
 
+Ajouter-EnteteSection "Connexion aux fournisseurs" $yActuel
+$yActuel += 34
 Ajouter-Label "Cle API Meshy (meshy.ai/settings/api) :" 15 $yActuel
 $yActuel += 20
 $txtCleApi = New-Object System.Windows.Forms.TextBox
@@ -1228,6 +1251,8 @@ $txtCleApiTripo.Add_TextChanged({ Mettre-A-Jour-MenuFournisseur })
 Mettre-A-Jour-MenuFournisseur
 
 # --- Dossier ou fichier(s) 3D ---
+Ajouter-EnteteSection "Source" $yActuel
+$yActuel += 34
 Ajouter-Label "Dossier ou fichier(s) 3D (.stl, .obj, .fbx, .glb, .gltf) ou image (.jpg, .png) :" 15 $yActuel
 $yActuel += 20
 $txtDossier = New-Object System.Windows.Forms.TextBox
@@ -1427,6 +1452,8 @@ $script:promptsParCategorie = [ordered]@{
     }
 }
 
+Ajouter-EnteteSection "Style et couleurs" $yActuel
+$yActuel += 34
 Ajouter-Label "Categorie :" 15 $yActuel
 $menuCategorie = New-Object System.Windows.Forms.ComboBox
 $menuCategorie.Location = New-Object System.Drawing.Point(110, ($yActuel - 2))
@@ -1536,6 +1563,13 @@ $numTriangles.Value = 30000
 $form.Controls.Add($numTriangles)
 $yActuel += 30
 
+# +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
+# rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
+# occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
+# supplementaire, l'en-tete de section chevaucherait le bas de ce champ.
+$yActuel += 24
+Ajouter-EnteteSection "Lancement" $yActuel
+$yActuel += 34
 $caseHorodatage = New-Object System.Windows.Forms.CheckBox
 $caseHorodatage.Text = "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)"
 $caseHorodatage.Location = New-Object System.Drawing.Point(15, ($yActuel + 32))
