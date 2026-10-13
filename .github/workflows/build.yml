@@ -55,8 +55,8 @@ jobs:
       # partager l'APK sur le forum. "generate_release_notes" remplit automatiquement la page de
       # la Release avec la liste des commits depuis le tag precedent, en plus du CHANGELOG.md
       # tenu a la main.
-      - name: Publier une Release (seulement sur un tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publier une Release (seulement sur un tag)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2.0.8
         with:
           files: ${{ env.APK_NOM }}.apk
