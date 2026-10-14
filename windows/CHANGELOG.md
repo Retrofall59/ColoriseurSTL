@@ -5,6 +5,24 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Refonte visuelle, 2e volet (suite) : coins arrondis + vrai bug de calage corrigé (14/10/2026,
+Tomyn : "c'est mieux mais ces rectangles blancs sont très moches").** Deux choses corrigées en
+même temps :
+1. **Style** : les panneaux de section sont passés de rectangles plats à coins carrés à des
+   cartes à coins arrondis (même traitement que les cartes de la galerie).
+2. **Bug réel découvert en creusant** : le panneau de la section "Style et couleurs" se refermait
+   trop tôt, juste avant le champ "Triangles visés" plutôt qu'après - ce dernier se serait
+   retrouvé à moitié hors de sa carte. Cause : le calcul du bas de chaque panneau se basait sur la
+   position du prochain en-tête, sans tenir compte du fait que certains champs débordent de leur
+   propre calage `$yActuel` (déjà vu une fois avec ce même champ triangles, voir plus bas). Remplacé
+   par un calcul qui scanne les vrais contrôles déjà posés sur chaque zone et prend leur bord bas
+   réel (`Obtenir-BasReelSection`), avec un garde-fou pour ne jamais chevaucher le panneau suivant
+   même quand deux sections sont peu espacées. Un peu d'espace supplémentaire (+20px) ajouté avant
+   l'en-tête "Lancement" pour laisser aux deux panneaux voisins la place de se refermer proprement
+   sans se toucher.
+
+---
+
 **Refonte visuelle, 2e volet : panneaux de section + cases à cocher maison (14/10/2026,
 Tomyn : "beaucoup mieux mais j'ai l'impression qu'il manque des choses", après vérification deux
 vrais manques identifiés).** Après relecture, l'essentiel du thème (boutons, combo-box, onglets,

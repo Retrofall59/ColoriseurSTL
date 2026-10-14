@@ -798,19 +798,63 @@ function Creer-CaseACocher([string]$texte, [int]$largeur, [int]$hauteur = 20) {
     return $conteneur
 }
 
-# Panneau de fond derriere chaque section (14/10/2026, 2e volet de la demande "il manque des
-# choses" de Tomyn) : un rectangle blanc avec une fine bordure grise, pousse derriere tous les
-# autres controles (SendToBack) au moment de sa creation. Comme tous les controles suivants sont
-# ajoutes APRES lui, ils se retrouvent automatiquement par-dessus (ordre d'empilement WinForms) -
-# cette fonction peut donc etre appelee a n'importe quel moment une fois les bornes yHaut/yBas
-# connues, sans avoir a reordonner quoi que ce soit ailleurs dans le fichier.
-function Ajouter-PanneauSection([int]$yHaut, [int]$yBas) {
-    $marge = 8
-    $espace = 18
+# Trouve le bas reel du contenu d'une section (14/10/2026, corrige une 1re version de ce panneau
+# qui coupait le champ "Triangles vises" - celui-ci deborde de son propre calage $yActuel, un
+# calcul a la main avait rate ce depassement). Parcourt les controles deja ajoutes directement a
+# $form dont le Y de depart tombe entre yHaut (inclus) et yBasLimite (exclu), et renvoie le plus grand bord bas
+# (Y + Hauteur) trouve parmi eux - fiable meme si la hauteur d'un champ change plus tard, pas
+# besoin de recalculer a la main.
+function Obtenir-BasReelSection([int]$yHaut, [int]$yBasLimite) {
+    $basMax = $yHaut
+    foreach ($ctrl in $form.Controls) {
+        $y = $ctrl.Location.Y
+        if ($y -ge $yHaut -and $y -lt $yBasLimite) {
+            $bas = $y + $ctrl.Height
+            if ($bas -gt $basMax) { $basMax = $bas }
+        }
+    }
+    return $basMax
+}
+
+# Panneau de fond "carte" derriere chaque section (14/10/2026, 2e volet de la demande "il manque
+# des choses" de Tomyn ; coins arrondis ajoutes ensuite suite a "ces rectangles blancs sont tres
+# moches" - meme traitement que les cartes de la galerie, voir Ajouter-Vignette plus bas, avec le
+# meme bemol : coins arrondis via Region, PAS TESTE PAR CLAUDE visuellement). yBasContenu doit
+# etre le bas REEL du contenu (voir Obtenir-BasReelSection ci-dessus), pas la position du
+# prochain en-tete - sinon le panneau peut couper le dernier champ de la section s'il deborde de
+# son propre calage $yActuel (c'est exactement ce qui s'est passe la 1re fois). yHautSuivant (Y de
+# l'en-tete de la section suivante, ou une grande valeur pour la derniere section) sert de garde-
+# fou : le bas souhaite est plafonne pour ne jamais chevaucher le panneau suivant, meme si une
+# section a peu de marge naturelle avant la suivante (dans ce cas les deux panneaux se touchent
+# bord a bord plutot que de se chevaucher). Pousse derriere tous les autres controles (SendToBack)
+# au moment de sa creation : comme les controles reels ont tous deja ete ajoutes avant (voir
+# l'appel plus bas, une fois tout le haut de l'ecran construit), ils se retrouvent automatiquement
+# par-dessus (ordre d'empilement WinForms), sans avoir besoin de reordonner quoi que ce soit
+# ailleurs dans le fichier.
+function Ajouter-PanneauSection([int]$yHaut, [int]$yBasContenu, [int]$yHautSuivant) {
+    $marge = 10
+    $top = $yHaut - $marge
+    $basSouhaite = $yBasContenu + $marge
+    $basMax = $yHautSuivant - $marge
+    if ($basSouhaite -gt $basMax) { $basSouhaite = $basMax }
+    if ($basSouhaite -lt ($top + 20)) { $basSouhaite = $top + 20 }
     $panneau = New-Object System.Windows.Forms.Panel
-    $panneau.Location = New-Object System.Drawing.Point(8, ($yHaut - $marge))
-    $panneau.Size = New-Object System.Drawing.Size(964, ($yBas - $yHaut - $espace))
+    $panneau.Location = New-Object System.Drawing.Point(8, $top)
+    $panneau.Size = New-Object System.Drawing.Size(964, ($basSouhaite - $top))
     $panneau.BackColor = $THEME.Surface
+
+    $rayon = 10
+    $diametre = $rayon * 2
+    $largeurCarte = $panneau.Width
+    $hauteurCarte = $panneau.Height
+    $cheminArrondi = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $cheminArrondi.AddArc(0, 0, $diametre, $diametre, 180, 90)
+    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), 0, $diametre, $diametre, 270, 90)
+    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), ($hauteurCarte - $diametre - 1), $diametre, $diametre, 0, 90)
+    $cheminArrondi.AddArc(0, ($hauteurCarte - $diametre - 1), $diametre, $diametre, 90, 90)
+    $cheminArrondi.CloseFigure()
+    $panneau.Region = New-Object System.Drawing.Region($cheminArrondi)
+
     $panneau.Add_Paint({
         param($expediteur, $evenement)
         $stylo = New-Object System.Drawing.Pen($THEME.Bordure)
@@ -1691,11 +1735,14 @@ $numTriangles.Value = 30000
 $form.Controls.Add($numTriangles)
 $yActuel += 30
 
-# +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
+# +44 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
-# occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
-# supplementaire, l'en-tete de section chevaucherait le bas de ce champ.
-$yActuel += 24
+# occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24). Les +24 initiaux evitaient
+# juste que l'en-tete "Lancement" chevauche ce champ ; portes a +44 (14/10/2026) pour laisser
+# aussi la place au panneau de fond de la section "Style et couleurs" (voir Ajouter-PanneauSection
+# plus bas) de se refermer proprement sous ce champ avant que celui de "Lancement" ne commence -
+# sans cette marge supplementaire, les deux panneaux de fond se chevaucheraient legerement.
+$yActuel += 44
 $yBlocLancement = $yActuel
 Ajouter-EnteteSection "Lancement" $yActuel
 $yActuel += 28
@@ -1774,12 +1821,19 @@ $yActuel += 17
 $yFinBlocLancement = $yActuel
 
 # Panneaux de fond "carte" derriere chacune des 4 sections ci-dessus (14/10/2026) - voir
-# Ajouter-PanneauSection plus haut : SendToBack() les pousse derriere tout le reste, l'ordre
-# d'appel ici n'a donc pas d'importance.
-Ajouter-PanneauSection $yBlocConnexion $yBlocSource
-Ajouter-PanneauSection $yBlocSource $yBlocStyle
-Ajouter-PanneauSection $yBlocStyle $yBlocLancement
-Ajouter-PanneauSection $yBlocLancement $yFinBlocLancement
+# Ajouter-PanneauSection plus haut. En deux temps : on calcule d'abord le bas reel de CHAQUE
+# section (Obtenir-BasReelSection, en scannant les vrais controles) AVANT de creer le moindre
+# panneau, pour que les panneaux eux-memes (ajoutes a $form.Controls) ne faussent pas le calcul
+# des sections suivantes. L'ordre de creation ensuite n'a pas d'importance (SendToBack).
+$yBasReelConnexion = Obtenir-BasReelSection $yBlocConnexion $yBlocSource
+$yBasReelSource = Obtenir-BasReelSection $yBlocSource $yBlocStyle
+$yBasReelStyle = Obtenir-BasReelSection $yBlocStyle $yBlocLancement
+$yBasReelLancement = Obtenir-BasReelSection $yBlocLancement ($yFinBlocLancement + 1000)
+
+Ajouter-PanneauSection $yBlocConnexion $yBasReelConnexion $yBlocSource
+Ajouter-PanneauSection $yBlocSource $yBasReelSource $yBlocStyle
+Ajouter-PanneauSection $yBlocStyle $yBasReelStyle $yBlocLancement
+Ajouter-PanneauSection $yBlocLancement $yBasReelLancement ($yBasReelLancement + 1000)
 
 # --- Onglets : galerie de depart / galerie de resultats / avancement ---
 $onglets = New-Object System.Windows.Forms.TabControl
