@@ -5,6 +5,15 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Fix : la galerie de fichiers se retrouvait coupée en bas de fenêtre (14/10/2026, signalé par
+Tomyn, capture à l'appui).** Les 4 en-têtes de section ajoutés dans la passe précédente ont fait
+grossir la zone de configuration du haut d'environ 150-190px, sans plus de place en dessous pour
+la galerie - toujours accessible en défilant (la galerie était déjà prévue pour ça), mais moins
+visible d'un coup d'œil qu'avant. Espacement sous chaque bandeau réduit (34 → 28px) et police/
+décalage du titre légèrement resserrés : quelques dizaines de pixels récupérés, correctif modeste
+mais sûr plutôt qu'une refonte plus large de la mise en page (option évoquée mais pas retenue pour
+l'instant).
+
 **Refonte visuelle, 1re passe : hiérarchie en sections (13/10/2026, Tomyn).** L'écran de
 configuration était un long mur de champs à plat, sans aucune hiérarchie visuelle. Quatre
 en-têtes de section ajoutés (bande accent violette + titre en majuscules) : **Connexion aux

@@ -1059,11 +1059,16 @@ function Ajouter-EnteteSection($texte, $y) {
     $barreAccent.BackColor = $THEME.AccentPrincipal
     $form.Controls.Add($barreAccent)
 
+    # 14/10/2026, Tomyn : capture d'ecran montrant la galerie de fichiers coupee en bas de fenetre
+    # suite a l'ajout de ces en-tetes (la zone de config du haut a grossi d'environ 150-190px sans
+    # laisser plus de place en dessous) - offset et police legerement reduits ici, plus
+    # l'espacement $yActuel += 28 (au lieu de 34) aux 4 points d'appel, pour recuperer un peu de
+    # hauteur sans supprimer la hierarchie visuelle elle-meme.
     $labelSection = New-Object System.Windows.Forms.Label
     $labelSection.Text = $texte.ToUpper()
-    $labelSection.Location = New-Object System.Drawing.Point(15, ($y + 9))
+    $labelSection.Location = New-Object System.Drawing.Point(15, ($y + 6))
     $labelSection.AutoSize = $true
-    $labelSection.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+    $labelSection.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9.5)
     $labelSection.ForeColor = $THEME.AccentPrincipal
     $form.Controls.Add($labelSection)
 }
@@ -1080,7 +1085,7 @@ function Charger-CleDepuisFichier($chemin) {
 }
 
 Ajouter-EnteteSection "Connexion aux fournisseurs" $yActuel
-$yActuel += 34
+$yActuel += 28
 Ajouter-Label "Cle API Meshy (meshy.ai/settings/api) :" 15 $yActuel
 $yActuel += 20
 $txtCleApi = New-Object System.Windows.Forms.TextBox
@@ -1252,7 +1257,7 @@ Mettre-A-Jour-MenuFournisseur
 
 # --- Dossier ou fichier(s) 3D ---
 Ajouter-EnteteSection "Source" $yActuel
-$yActuel += 34
+$yActuel += 28
 Ajouter-Label "Dossier ou fichier(s) 3D (.stl, .obj, .fbx, .glb, .gltf) ou image (.jpg, .png) :" 15 $yActuel
 $yActuel += 20
 $txtDossier = New-Object System.Windows.Forms.TextBox
@@ -1453,7 +1458,7 @@ $script:promptsParCategorie = [ordered]@{
 }
 
 Ajouter-EnteteSection "Style et couleurs" $yActuel
-$yActuel += 34
+$yActuel += 28
 Ajouter-Label "Categorie :" 15 $yActuel
 $menuCategorie = New-Object System.Windows.Forms.ComboBox
 $menuCategorie.Location = New-Object System.Drawing.Point(110, ($yActuel - 2))
@@ -1569,7 +1574,7 @@ $yActuel += 30
 # supplementaire, l'en-tete de section chevaucherait le bas de ce champ.
 $yActuel += 24
 Ajouter-EnteteSection "Lancement" $yActuel
-$yActuel += 34
+$yActuel += 28
 $caseHorodatage = New-Object System.Windows.Forms.CheckBox
 $caseHorodatage.Text = "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)"
 $caseHorodatage.Location = New-Object System.Drawing.Point(15, ($yActuel + 32))
