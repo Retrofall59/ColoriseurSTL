@@ -1104,7 +1104,7 @@ $btnVoirCle.Add_Click({
     $btnVoirCle.Text = if ($txtCleApi.UseSystemPasswordChar) { "Afficher" } else { "Masquer" }
 })
 $form.Controls.Add($btnVoirCle)
-$yActuel += 35
+$yActuel += 30
 
 Ajouter-Label "Cle API Tripo (optionnelle, fournisseur de secours) :" 15 $yActuel
 $yActuel += 20
@@ -1124,7 +1124,7 @@ $btnVoirCleTripo.Add_Click({
     $btnVoirCleTripo.Text = if ($txtCleApiTripo.UseSystemPasswordChar) { "Afficher" } else { "Masquer" }
 })
 $form.Controls.Add($btnVoirCleTripo)
-$yActuel += 35
+$yActuel += 30
 
 # --- Choix du fournisseur : ne propose que ceux dont une cle est renseignee, se met a jour en
 # direct pendant la frappe plutot que d'exiger un fournisseur precis a tout prix. ---
@@ -1135,7 +1135,7 @@ $menuFournisseur.Size = New-Object System.Drawing.Size(200, 24)
 $menuFournisseur.DropDownStyle = "DropDownList"
 $form.Controls.Add($menuFournisseur)
 $menuFournisseur.Add_SelectedIndexChanged({ Mettre-A-Jour-Estimation })
-$yActuel += 30
+$yActuel += 28
 
 # --- Mode comparaison : lance Meshy ET Tripo sur chaque fichier, affiche les deux resultats cote
 # a cote (galeries separees, voir plus bas) pour choisir celui qui convient le mieux. Desactive le
@@ -1235,7 +1235,7 @@ $caseMeshyObjExperimental.Add_CheckedChanged({
     $libellePourcent.Enabled = $caseMeshyObjExperimental.Checked
     Mettre-A-Jour-Estimation
 })
-$yActuel += 30
+$yActuel += 28
 
 function Mettre-A-Jour-MenuFournisseur {
     $selectionActuelle = $menuFournisseur.SelectedItem
@@ -1282,7 +1282,7 @@ $btnActualiser.Text = "Actualiser la liste"
 $btnActualiser.Location = New-Object System.Drawing.Point(755, ($yActuel - 1))
 $btnActualiser.Size = New-Object System.Drawing.Size(135, 26)
 $form.Controls.Add($btnActualiser)
-$yActuel += 35
+$yActuel += 30
 
 # --- Dossier de sortie ---
 Ajouter-Label "Dossier de sortie (.3mf pour Meshy, dossier .obj pour Tripo) :" 15 $yActuel
@@ -1317,7 +1317,7 @@ $btnOuvrirSortie.Add_Click({
     }
     Start-Process -FilePath "explorer.exe" -ArgumentList "`"$($txtDossierSortie.Text)`""
 })
-$yActuel += 35
+$yActuel += 30
 
 # --- Categorie de sujet + prompt predefini (par categorie) + prompt libre ---
 # Structure a deux niveaux : la categorie filtre la liste de prompts proposee. Chaque categorie
@@ -1467,14 +1467,14 @@ $menuCategorie.DropDownStyle = "DropDownList"
 foreach ($nomCategorie in $script:promptsParCategorie.Keys) { $menuCategorie.Items.Add($nomCategorie) | Out-Null }
 $menuCategorie.SelectedIndex = 0
 $form.Controls.Add($menuCategorie)
-$yActuel += 30
+$yActuel += 28
 
 Ajouter-Label "Style voulu :" 15 $yActuel
 $menuPrompt = New-Object System.Windows.Forms.ComboBox
 $menuPrompt.Location = New-Object System.Drawing.Point(110, ($yActuel - 2))
 $menuPrompt.Size = New-Object System.Drawing.Size(390, 24)
 $menuPrompt.DropDownStyle = "DropDownList"
-$yActuel += 30
+$yActuel += 28
 
 Ajouter-Label "Prompt envoye a Meshy (modifiable) :" 15 $yActuel
 $yActuel += 20
@@ -1482,7 +1482,7 @@ $txtPrompt = New-Object System.Windows.Forms.TextBox
 $txtPrompt.Location = New-Object System.Drawing.Point(15, $yActuel)
 $txtPrompt.Size = New-Object System.Drawing.Size(875, 24)
 $form.Controls.Add($txtPrompt)
-$yActuel += 35
+$yActuel += 30
 
 function Obtenir-CheminDernierPromptLibre {
     # Un fichier de memoire separe par categorie (slug simple derive du nom de la categorie).

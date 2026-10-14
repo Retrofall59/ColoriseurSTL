@@ -5,6 +5,24 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Fix (suite) : la galerie restait encore coupée après le 1er passage de rognage (14/10/2026,
+Tomyn : "C'est mieux mais c'est encore coupé", fenêtre confirmée en plein écran).** Le 1er
+passage (voir entrée précédente) ne portait que sur les 4 nouveaux en-têtes de section ; il a
+aidé mais n'a pas suffi. 2e passage, plus large : rognage de marges d'origine (pas liées aux
+en-têtes) qui avaient du jeu, sans toucher aux espacements label-champ, aux deux rangées de
+cases à cocher (volontairement généreuses) ni à la zone fragile couleurs/triangles/bouton de
+lancement : fin de ligne clé API Meshy (35→30), fin de ligne clé API Tripo (35→30), fin de ligne
+menu fournisseur (30→28), fin de ligne dossier/fichiers (35→30), fin de ligne dossier de sortie
+(35→30), fin de ligne catégorie (30→28), fin de ligne style (30→28), fin de ligne prompt (35→30).
+Au total, un peu plus de place récupérée par rapport au 1er passage. Je ne peux pas garantir que
+ça élimine complètement le besoin de défiler sans connaître la résolution d'écran exacte : si ça
+reste encore juste, les options qui restent sont soit accepter qu'un peu de défilement dans la
+galerie est normal, soit tenter une restructuration plus profonde (un panneau de configuration
+indépendamment défilant) - plus risquée car impossible à tester visuellement ici, donc pas
+retenue pour l'instant.
+
+---
+
 **Fix : la galerie de fichiers se retrouvait coupée en bas de fenêtre (14/10/2026, signalé par
 Tomyn, capture à l'appui).** Les 4 en-têtes de section ajoutés dans la passe précédente ont fait
 grossir la zone de configuration du haut d'environ 150-190px, sans plus de place en dessous pour
