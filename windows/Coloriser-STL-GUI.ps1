@@ -411,7 +411,12 @@ function Creer-ImageRemplacement($taillePixels) {
     $g.Dispose()
     return $bmp
 }
-$TailleMiniature = 220
+# Reduite de 220 a 170 le 14/10/2026 (Tomyn : "preview toujours coupe" apres 2 passes de rognage
+# de l'espacement du haut) - ces passes-la ont un plafond, le haut de l'ecran ne peut pas
+# descendre sous une certaine hauteur sans casser des champs. Une carte de galerie plus petite
+# libere plus de place d'un coup, 50px de moins en hauteur ET en largeur par carte, donc aussi
+# plus de vignettes par ligne, sans toucher au haut de l'ecran deja fragile.
+$TailleMiniature = 170
 $ImageRemplacement = Creer-ImageRemplacement $TailleMiniature
 
 # Force TLS 1.2 explicitement : sur certaines configurations de Windows PowerShell 5.1, le
@@ -1736,14 +1741,13 @@ $numTriangles.Value = 30000
 $form.Controls.Add($numTriangles)
 $yActuel += 30
 
-# +44 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
+# +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
-# occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24). Les +24 initiaux evitaient
-# juste que l'en-tete "Lancement" chevauche ce champ ; portes a +44 (14/10/2026) pour laisser
-# aussi la place au panneau de fond de la section "Style et couleurs" (voir Ajouter-PanneauSection
-# plus bas) de se refermer proprement sous ce champ avant que celui de "Lancement" ne commence -
-# sans cette marge supplementaire, les deux panneaux de fond se chevaucheraient legerement.
-$yActuel += 44
+# occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
+# supplementaire, l'en-tete de section chevaucherait le bas de ce champ. (Etait monte a +44 le
+# temps des panneaux de fond par section, retombe a +24 maintenant qu'ils sont retires - voir plus
+# bas, cette marge-la ne sert plus a rien depuis leur retrait.)
+$yActuel += 24
 $yBlocLancement = $yActuel
 Ajouter-EnteteSection "Lancement" $yActuel
 $yActuel += 28

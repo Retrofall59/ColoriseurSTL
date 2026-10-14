@@ -5,6 +5,18 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Galerie toujours coupée malgré les 2 passes de rognage : vignettes réduites (15/10/2026,
+Tomyn : "preview toujours coupé").** Le rognage de l'espacement en haut d'écran a un plafond -
+en descendre plus bas casse des champs, comme vu avec les panneaux de section retirés juste
+avant. Au lieu de continuer à gratter quelques pixels à la fois sur une zone déjà fragile, levier
+différent : taille des vignettes de la galerie réduite de 220 à 170px - 50px de moins en hauteur
+ET en largeur par carte (donc aussi plus de vignettes par ligne), sans toucher au haut d'écran.
+Au passage, le `$yActuel += 44` ajouté temporairement pour les panneaux de section (retirés dans
+l'entrée précédente) est repassé à `+= 24` - il ne servait plus à rien une fois les panneaux
+enlevés, c'était 20px perdus pour rien.
+
+---
+
 **Retrait des panneaux de fond par section (14/10/2026, Tomyn : "c'est encore pire, toujours ces
 rectangles blancs sur un fond gris").** 2e avis négatif de suite sur cette piste (après "ces
 rectangles blancs sont très moches"), malgré les coins arrondis - pas la peine d'insister, cette
