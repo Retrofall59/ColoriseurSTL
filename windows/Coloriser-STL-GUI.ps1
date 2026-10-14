@@ -703,6 +703,123 @@ function Creer-SelecteurNumerique([int]$largeur = 70, [int]$hauteur = 24) {
     return $conteneur
 }
 
+# Remplace la CheckBox native (case carree grise, impossible a repeindre sans Add-Type - meme
+# limite que le NumericUpDown ci-dessus) par une case maison : un petit Panel repeint a la main
+# (case + coche violette) + un Label pour le texte, exposes comme un seul controle avec
+# Checked/Text/ForeColor/Add_CheckedChanged pour rester un remplacement direct partout ailleurs
+# dans le script (14/10/2026, Tomyn a demande d'aller plus loin sur la coherence visuelle - seul
+# widget encore 100% natif Windows apres le niveau 1 du 10/10/2026). Contrairement a
+# Creer-SelecteurNumerique, la taille finale (largeur/hauteur) est un parametre du constructeur
+# plutot qu'une Size posee apres coup : un Panel composite ne peut pas redimensionner son Label
+# interne tout seul si on change juste sa taille globale ensuite. BoiteInterne/LabelInterne sont
+# exposes pour pouvoir y attacher une ToolTip (SetToolTip sur le conteneur seul ne se declenche
+# pas quand la souris survole un controle enfant).
+function Creer-CaseACocher([string]$texte, [int]$largeur, [int]$hauteur = 20) {
+    $tailleCase = 16
+    $conteneur = New-Object System.Windows.Forms.Panel
+    $conteneur.Size = New-Object System.Drawing.Size($largeur, $hauteur)
+    # Fond blanc pose en dur plutot que transparent : les 4 usages actuels de cette case sont
+    # tous poses sur une carte blanche (panneau de section ou carte de la galerie), donc pas
+    # besoin de reproduire une vraie transparence (rendu Panel peu fiable) pour rester coherent.
+    $conteneur.BackColor = $THEME.Surface
+    $conteneur.Cursor = "Hand"
+
+    $conteneur | Add-Member -MemberType NoteProperty -Name EstCoche -Value $false
+    $conteneur | Add-Member -MemberType NoteProperty -Name GestionnairesChangement -Value (New-Object System.Collections.ArrayList)
+
+    $boiteCase = New-Object System.Windows.Forms.Panel
+    $boiteCase.Size = New-Object System.Drawing.Size($tailleCase, $tailleCase)
+    $boiteCase.Location = New-Object System.Drawing.Point(0, [int](($hauteur - $tailleCase) / 2))
+    $boiteCase.BackColor = $THEME.Surface
+    $boiteCase.Cursor = "Hand"
+    $conteneur.Controls.Add($boiteCase)
+    $conteneur | Add-Member -MemberType NoteProperty -Name BoiteInterne -Value $boiteCase
+
+    $labelTexte = New-Object System.Windows.Forms.Label
+    $labelTexte.Text = $texte
+    $labelTexte.AutoSize = $false
+    $labelTexte.Size = New-Object System.Drawing.Size(($largeur - $tailleCase - 8), $hauteur)
+    $labelTexte.Location = New-Object System.Drawing.Point(($tailleCase + 8), 0)
+    $labelTexte.TextAlign = "MiddleLeft"
+    $labelTexte.Cursor = "Hand"
+    $conteneur.Controls.Add($labelTexte)
+    $conteneur | Add-Member -MemberType NoteProperty -Name LabelInterne -Value $labelTexte
+
+    $boiteCase.Add_Paint({
+        param($expediteur, $evenement)
+        $g = $evenement.Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $fond = if ($conteneur.EstCoche) { $THEME.AccentPrincipal } else { $THEME.Surface }
+        $bordure = if ($conteneur.EstCoche) { $THEME.AccentPrincipal } else { $THEME.Bordure }
+        $g.FillRectangle((New-Object System.Drawing.SolidBrush($fond)), 0, 0, ($tailleCase - 1), ($tailleCase - 1))
+        $g.DrawRectangle((New-Object System.Drawing.Pen($bordure, 1.5)), 0, 0, ($tailleCase - 1), ($tailleCase - 1))
+        if ($conteneur.EstCoche) {
+            $stylo = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2)
+            $g.DrawLines($stylo, @(
+                (New-Object System.Drawing.Point(3, 8)),
+                (New-Object System.Drawing.Point(6, 12)),
+                (New-Object System.Drawing.Point(13, 3))
+            ))
+        }
+    }.GetNewClosure())
+
+    $basculer = {
+        $conteneur.EstCoche = -not $conteneur.EstCoche
+        $boiteCase.Invalidate()
+        foreach ($gestionnaire in $conteneur.GestionnairesChangement) { & $gestionnaire }
+    }.GetNewClosure()
+    $boiteCase.Add_Click($basculer)
+    $labelTexte.Add_Click($basculer)
+
+    $conteneur | Add-Member -Force -MemberType ScriptProperty -Name Checked -Value {
+        $this.EstCoche
+    } -SecondValue {
+        param($valeur)
+        $this.EstCoche = [bool]$valeur
+        $this.BoiteInterne.Invalidate()
+    }
+    $conteneur | Add-Member -Force -MemberType ScriptProperty -Name Text -Value {
+        $this.LabelInterne.Text
+    } -SecondValue {
+        param($valeur)
+        $this.LabelInterne.Text = $valeur
+    }
+    $conteneur | Add-Member -Force -MemberType ScriptProperty -Name ForeColor -Value {
+        $this.LabelInterne.ForeColor
+    } -SecondValue {
+        param($valeur)
+        $this.LabelInterne.ForeColor = $valeur
+    }
+    $conteneur | Add-Member -MemberType ScriptMethod -Name Add_CheckedChanged -Value {
+        param($gestionnaire)
+        [void]$this.GestionnairesChangement.Add($gestionnaire)
+    }
+
+    return $conteneur
+}
+
+# Panneau de fond derriere chaque section (14/10/2026, 2e volet de la demande "il manque des
+# choses" de Tomyn) : un rectangle blanc avec une fine bordure grise, pousse derriere tous les
+# autres controles (SendToBack) au moment de sa creation. Comme tous les controles suivants sont
+# ajoutes APRES lui, ils se retrouvent automatiquement par-dessus (ordre d'empilement WinForms) -
+# cette fonction peut donc etre appelee a n'importe quel moment une fois les bornes yHaut/yBas
+# connues, sans avoir a reordonner quoi que ce soit ailleurs dans le fichier.
+function Ajouter-PanneauSection([int]$yHaut, [int]$yBas) {
+    $marge = 8
+    $espace = 18
+    $panneau = New-Object System.Windows.Forms.Panel
+    $panneau.Location = New-Object System.Drawing.Point(8, ($yHaut - $marge))
+    $panneau.Size = New-Object System.Drawing.Size(964, ($yBas - $yHaut - $espace))
+    $panneau.BackColor = $THEME.Surface
+    $panneau.Add_Paint({
+        param($expediteur, $evenement)
+        $stylo = New-Object System.Drawing.Pen($THEME.Bordure)
+        $evenement.Graphics.DrawRectangle($stylo, 0, 0, ($expediteur.Width - 1), ($expediteur.Height - 1))
+    })
+    $form.Controls.Add($panneau)
+    $panneau.SendToBack()
+}
+
 function Rendre-OngletsPlats($tabControl) {
     $tabControl.DrawMode = "OwnerDrawFixed"
     $tabControl.SizeMode = "Fixed"
@@ -1084,6 +1201,7 @@ function Charger-CleDepuisFichier($chemin) {
     } catch { return "" }
 }
 
+$yBlocConnexion = $yActuel
 Ajouter-EnteteSection "Connexion aux fournisseurs" $yActuel
 $yActuel += 28
 Ajouter-Label "Cle API Meshy (meshy.ai/settings/api) :" 15 $yActuel
@@ -1140,13 +1258,11 @@ $yActuel += 28
 # --- Mode comparaison : lance Meshy ET Tripo sur chaque fichier, affiche les deux resultats cote
 # a cote (galeries separees, voir plus bas) pour choisir celui qui convient le mieux. Desactive le
 # choix de fournisseur ci-dessus (plus pertinent dans ce mode) et exige les deux cles API. ---
-$caseComparerFournisseurs = New-Object System.Windows.Forms.CheckBox
-$caseComparerFournisseurs.Text = "Comparer Meshy et Tripo (lance les deux sur chaque fichier, necessite les deux cles API, double le cout en credits)"
-$caseComparerFournisseurs.Location = New-Object System.Drawing.Point(15, $yActuel)
 # Hauteur 34 (pas 20) : le texte est assez long pour parfois passer sur deux lignes selon la
 # police reellement installee - une case trop basse coupe la 2e ligne au lieu de l'afficher, et
 # chevauche le controle suivant (corrige le 2026-10-07, signale par Tomyn).
-$caseComparerFournisseurs.Size = New-Object System.Drawing.Size(930, 34)
+$caseComparerFournisseurs = Creer-CaseACocher "Comparer Meshy et Tripo (lance les deux sur chaque fichier, necessite les deux cles API, double le cout en credits)" 930 34
+$caseComparerFournisseurs.Location = New-Object System.Drawing.Point(15, $yActuel)
 $caseComparerFournisseurs.Checked = $false
 $form.Controls.Add($caseComparerFournisseurs)
 $caseComparerFournisseurs.Add_CheckedChanged({
@@ -1166,13 +1282,11 @@ $yActuel += 38
 # fidele au modele que l'equivalent Tripo (moins "pastelise"). Ignoree en mode comparaison (reste
 # sur le Multi-Color Print habituel pour Meshy dans ce mode, pour ne pas complexifier le bilan a
 # deux fournisseurs avec une troisieme variante).
-$caseMeshyObjExperimental = New-Object System.Windows.Forms.CheckBox
-$caseMeshyObjExperimental.Text = "Pour Meshy : exporter en .obj texture plutot qu'en .3mf (sans Multi-Color Print, moins cher, couleurs plus fideles - voir l'infobulle)"
-$caseMeshyObjExperimental.Location = New-Object System.Drawing.Point(15, $yActuel)
 # Texte plus court qu'avant (le detail complet est dans l'infobulle juste en dessous) - tient sur
 # une seule ligne dans la plupart des cas, mais la hauteur reste a 34 par securite si une police
 # plus large force un retour a la ligne.
-$caseMeshyObjExperimental.Size = New-Object System.Drawing.Size(930, 34)
+$caseMeshyObjExperimental = Creer-CaseACocher "Pour Meshy : exporter en .obj texture plutot qu'en .3mf (sans Multi-Color Print, moins cher, couleurs plus fideles - voir l'infobulle)" 930 34
+$caseMeshyObjExperimental.Location = New-Object System.Drawing.Point(15, $yActuel)
 $caseMeshyObjExperimental.Checked = $false
 $form.Controls.Add($caseMeshyObjExperimental)
 $caseMeshyObjExperimental.Add_CheckedChanged({ Mettre-A-Jour-Estimation })
@@ -1183,14 +1297,21 @@ $caseMeshyObjExperimental.Add_CheckedChanged({ Mettre-A-Jour-Estimation })
 $astuceMeshyObj = New-Object System.Windows.Forms.ToolTip
 $astuceMeshyObj.AutoPopDelay = 20000
 $astuceMeshyObj.InitialDelay = 400
-$astuceMeshyObj.SetToolTip($caseMeshyObjExperimental,
+$texteInfobulleMeshyObj = (
     "Au lieu du .3mf habituel (palette a N couleurs figee par Meshy), tu recuperes un .obj texture + son .mtl + son image de texture dans un sous-dossier dedie.`n`n" +
     "A l'ouverture dans Bambu Studio, une boite de dialogue de correspondance automatique des couleurs s'affiche (comme avec un .obj Tripo) - pratique quand tu n'as pas exactement les filaments que Meshy avait choisis. Bambu peut proposer de `"reparer`" le maillage avant : normal pour un import OBJ, pas un signe de probleme.`n`n" +
     "Une seule etape facturee (Retexture) au lieu de deux : moins cher. Confirme a l'usage le 07/10/2026 : couleurs plus fideles au modele que l'equivalent Tripo (moins delavees).`n`n" +
     "A savoir (precise le 08/10/2026) : ni le .obj ni le .3mf ne t'evitent le travail de A a Z. Le .obj te fait gagner le bouton auto de Bambu (pratique, parfois pas fidele). Le .3mf te garantit la bonne palette des le depart, mais sans ce bouton : c'est toi qui assignes les couleurs/slots AMS a la main dans Bambu Studio.`n`n" +
     "Astuce de Tomyn pour un .obj plus fidele : dans la boite de dialogue de correspondance de Bambu Studio, mets le nombre de teintes nettement plus haut que ton nombre reel de filaments (ex. 18-19) avant de lancer le melange automatique avec tes filaments choisis (RYBW ou CMYW par exemple). Ce nombre ne correspond PAS a des filaments en plus - tu gardes les memes 4 filaments physiques dans l'AMS, ca indique juste a Bambu sur combien de paliers repartir le degrade entre eux : plus fin, donc plus fidele qu'un simple plaquage de 4 couleurs plates.`n`n" +
     "Revers de la medaille (note par Tomyn le 08/10/2026) : le filament inclus tire le rendu dans un sens ou dans l'autre, logique comme en peinture - du blanc dans la liste pastellise (eclaircit tout), du bleu assombrit. A garder en tete en choisissant les filaments, pas juste le nombre de teintes demande.`n`n" +
-    "Ne pas depasser 18-19 teintes (constate par Tomyn le 08/10/2026) : au-dela, certains filaments ne sont plus melanges du tout par Bambu Studio, ce qui annule le benefice de l'astuce au lieu de l'ameliorer.")
+    "Ne pas depasser 18-19 teintes (constate par Tomyn le 08/10/2026) : au-dela, certains filaments ne sont plus melanges du tout par Bambu Studio, ce qui annule le benefice de l'astuce au lieu de l'ameliorer."
+)
+$astuceMeshyObj.SetToolTip($caseMeshyObjExperimental, $texteInfobulleMeshyObj)
+# La case etant maintenant un Panel composite (voir Creer-CaseACocher), SetToolTip sur le
+# conteneur seul ne se declenche pas si la souris survole directement la case ou le texte -
+# il faut l'attacher aussi aux deux controles enfants (14/10/2026).
+$astuceMeshyObj.SetToolTip($caseMeshyObjExperimental.BoiteInterne, $texteInfobulleMeshyObj)
+$astuceMeshyObj.SetToolTip($caseMeshyObjExperimental.LabelInterne, $texteInfobulleMeshyObj)
 $yActuel += 38
 
 # --- Reglage d'assombrissement de la texture .obj Meshy (ajoute le 08/10/2026, demande de Tomyn)
@@ -1256,6 +1377,7 @@ $txtCleApiTripo.Add_TextChanged({ Mettre-A-Jour-MenuFournisseur })
 Mettre-A-Jour-MenuFournisseur
 
 # --- Dossier ou fichier(s) 3D ---
+$yBlocSource = $yActuel
 Ajouter-EnteteSection "Source" $yActuel
 $yActuel += 28
 Ajouter-Label "Dossier ou fichier(s) 3D (.stl, .obj, .fbx, .glb, .gltf) ou image (.jpg, .png) :" 15 $yActuel
@@ -1457,6 +1579,7 @@ $script:promptsParCategorie = [ordered]@{
     }
 }
 
+$yBlocStyle = $yActuel
 Ajouter-EnteteSection "Style et couleurs" $yActuel
 $yActuel += 28
 Ajouter-Label "Categorie :" 15 $yActuel
@@ -1573,12 +1696,11 @@ $yActuel += 30
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
 # supplementaire, l'en-tete de section chevaucherait le bas de ce champ.
 $yActuel += 24
+$yBlocLancement = $yActuel
 Ajouter-EnteteSection "Lancement" $yActuel
 $yActuel += 28
-$caseHorodatage = New-Object System.Windows.Forms.CheckBox
-$caseHorodatage.Text = "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)"
+$caseHorodatage = Creer-CaseACocher "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)" 600 20
 $caseHorodatage.Location = New-Object System.Drawing.Point(15, ($yActuel + 32))
-$caseHorodatage.Size = New-Object System.Drawing.Size(600, 20)
 $caseHorodatage.Checked = $false
 $form.Controls.Add($caseHorodatage)
 
@@ -1649,6 +1771,15 @@ $barreProgression.Style = "Continuous"
 $barreProgression.Visible = $false
 $form.Controls.Add($barreProgression)
 $yActuel += 17
+$yFinBlocLancement = $yActuel
+
+# Panneaux de fond "carte" derriere chacune des 4 sections ci-dessus (14/10/2026) - voir
+# Ajouter-PanneauSection plus haut : SendToBack() les pousse derriere tout le reste, l'ordre
+# d'appel ici n'a donc pas d'importance.
+Ajouter-PanneauSection $yBlocConnexion $yBlocSource
+Ajouter-PanneauSection $yBlocSource $yBlocStyle
+Ajouter-PanneauSection $yBlocStyle $yBlocLancement
+Ajouter-PanneauSection $yBlocLancement $yFinBlocLancement
 
 # --- Onglets : galerie de depart / galerie de resultats / avancement ---
 $onglets = New-Object System.Windows.Forms.TabControl
@@ -1837,11 +1968,9 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
         # Permet d'exclure un fichier precis avant de lancer (ex: une variante "_Supported.stl"
         # ramassee par la recherche recursive mais qu'on ne veut pas traiter) sans devoir changer
         # de dossier ou refaire toute la selection.
-        $caseACocher = New-Object System.Windows.Forms.CheckBox
+        $caseACocher = Creer-CaseACocher "Inclure" ($TailleMiniature + 2) 20
         $caseACocher.Checked = $true
         $caseACocher.Location = New-Object System.Drawing.Point(8, 6)
-        $caseACocher.Size = New-Object System.Drawing.Size(($TailleMiniature + 2), 20)
-        $caseACocher.Text = "Inclure"
         $panneau.Controls.Add($caseACocher)
         $script:casesACocher[$cheminFichier] = $caseACocher
         $caseACocher.Add_CheckedChanged({ Mettre-A-Jour-Estimation }.GetNewClosure())

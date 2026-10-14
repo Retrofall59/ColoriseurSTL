@@ -5,6 +5,27 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Refonte visuelle, 2e volet : panneaux de section + cases à cocher maison (14/10/2026,
+Tomyn : "beaucoup mieux mais j'ai l'impression qu'il manque des choses", après vérification deux
+vrais manques identifiés).** Après relecture, l'essentiel du thème (boutons, combo-box, onglets,
+compteurs, cartes de galerie, police) était déjà fait lors d'une session précédente - pas la
+peine de refaire ce qui existait déjà. Deux manques réels corrigés :
+1. **Panneaux de fond par section** : chacune des 4 sections (Connexion, Source, Style et
+   couleurs, Lancement) a maintenant une carte blanche avec une fine bordure derrière ses champs,
+   au lieu de flotter directement sur le fond gris-bleu de la fenêtre - cohérent avec les cartes
+   de la galerie, qui avaient déjà ce traitement. Pousser le panneau derrière tous les autres
+   contrôles (SendToBack) évite d'avoir à réordonner quoi que ce soit ailleurs dans le fichier.
+2. **Cases à cocher** (Comparer fournisseurs, .obj expérimental Meshy, Historique, Inclure sur
+   chaque vignette) : remplacées par une case maison (case violette + coche blanche dessinées à
+   la main, au lieu du carré gris Windows natif - resté 100% natif au 1er passage du 10/10/2026,
+   seul widget encore non retouché). Même principe que le compteur numérique maison déjà en place
+   (un Panel composite qui expose Checked/Text/ForeColor/Add_CheckedChanged), pas de nouveau
+   risque technique introduit. L'infobulle sur la case .obj Meshy est désormais aussi attachée aux
+   deux contrôles internes de la case (sinon elle ne se déclenchait pas en survolant une case
+   composite).
+
+---
+
 **Fix (suite) : la galerie restait encore coupée après le 1er passage de rognage (14/10/2026,
 Tomyn : "C'est mieux mais c'est encore coupé", fenêtre confirmée en plein écran).** Le 1er
 passage (voir entrée précédente) ne portait que sur les 4 nouveaux en-têtes de section ; il a
