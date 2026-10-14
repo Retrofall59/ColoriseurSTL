@@ -5,6 +5,18 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Retrait des panneaux de fond par section (14/10/2026, Tomyn : "c'est encore pire, toujours ces
+rectangles blancs sur un fond gris").** 2e avis négatif de suite sur cette piste (après "ces
+rectangles blancs sont très moches"), malgré les coins arrondis - pas la peine d'insister, cette
+idée ne passe pas visuellement. Retiré : les 4 sections sont de nouveau à fond uni (gris-bleu du
+formulaire), seuls les bandeaux d'en-tête (ligne violette + titre en majuscules) marquent les
+sections, comme à la 1re passe du 13/10. Les cases à cocher refaites juste avant (voir l'entrée
+suivante) restent, mais leur fond repasse en gris pour matcher le formulaire plutôt que le blanc
+des cartes disparues. Les fonctions `Ajouter-PanneauSection` / `Obtenir-BasReelSection` restent
+dans le fichier (plus appelées) au cas où l'idée reviendrait sous une autre forme plus tard.
+
+---
+
 **Refonte visuelle, 2e volet (suite) : coins arrondis + vrai bug de calage corrigé (14/10/2026,
 Tomyn : "c'est mieux mais ces rectangles blancs sont très moches").** Deux choses corrigées en
 même temps :

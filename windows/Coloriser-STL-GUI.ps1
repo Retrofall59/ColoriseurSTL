@@ -714,14 +714,15 @@ function Creer-SelecteurNumerique([int]$largeur = 70, [int]$hauteur = 24) {
 # interne tout seul si on change juste sa taille globale ensuite. BoiteInterne/LabelInterne sont
 # exposes pour pouvoir y attacher une ToolTip (SetToolTip sur le conteneur seul ne se declenche
 # pas quand la souris survole un controle enfant).
-function Creer-CaseACocher([string]$texte, [int]$largeur, [int]$hauteur = 20) {
+function Creer-CaseACocher([string]$texte, [int]$largeur, [int]$hauteur = 20, $fond = $THEME.Surface) {
     $tailleCase = 16
     $conteneur = New-Object System.Windows.Forms.Panel
     $conteneur.Size = New-Object System.Drawing.Size($largeur, $hauteur)
-    # Fond blanc pose en dur plutot que transparent : les 4 usages actuels de cette case sont
-    # tous poses sur une carte blanche (panneau de section ou carte de la galerie), donc pas
-    # besoin de reproduire une vraie transparence (rendu Panel peu fiable) pour rester coherent.
-    $conteneur.BackColor = $THEME.Surface
+    # Fond pose en dur plutot que transparent (rendu Panel peu fiable en transparence) : $fond
+    # doit correspondre a ce sur quoi la case est posee - carte blanche de la galerie par defaut,
+    # ou $THEME.FondApp explicitement pour les 3 cases posees a meme le fond gris du formulaire
+    # (voir plus bas, depuis le retrait des panneaux de section le 14/10/2026).
+    $conteneur.BackColor = $fond
     $conteneur.Cursor = "Hand"
 
     $conteneur | Add-Member -MemberType NoteProperty -Name EstCoche -Value $false
@@ -730,7 +731,7 @@ function Creer-CaseACocher([string]$texte, [int]$largeur, [int]$hauteur = 20) {
     $boiteCase = New-Object System.Windows.Forms.Panel
     $boiteCase.Size = New-Object System.Drawing.Size($tailleCase, $tailleCase)
     $boiteCase.Location = New-Object System.Drawing.Point(0, [int](($hauteur - $tailleCase) / 2))
-    $boiteCase.BackColor = $THEME.Surface
+    $boiteCase.BackColor = $fond
     $boiteCase.Cursor = "Hand"
     $conteneur.Controls.Add($boiteCase)
     $conteneur | Add-Member -MemberType NoteProperty -Name BoiteInterne -Value $boiteCase
@@ -1305,7 +1306,7 @@ $yActuel += 28
 # Hauteur 34 (pas 20) : le texte est assez long pour parfois passer sur deux lignes selon la
 # police reellement installee - une case trop basse coupe la 2e ligne au lieu de l'afficher, et
 # chevauche le controle suivant (corrige le 2026-10-07, signale par Tomyn).
-$caseComparerFournisseurs = Creer-CaseACocher "Comparer Meshy et Tripo (lance les deux sur chaque fichier, necessite les deux cles API, double le cout en credits)" 930 34
+$caseComparerFournisseurs = Creer-CaseACocher "Comparer Meshy et Tripo (lance les deux sur chaque fichier, necessite les deux cles API, double le cout en credits)" 930 34 $THEME.FondApp
 $caseComparerFournisseurs.Location = New-Object System.Drawing.Point(15, $yActuel)
 $caseComparerFournisseurs.Checked = $false
 $form.Controls.Add($caseComparerFournisseurs)
@@ -1329,7 +1330,7 @@ $yActuel += 38
 # Texte plus court qu'avant (le detail complet est dans l'infobulle juste en dessous) - tient sur
 # une seule ligne dans la plupart des cas, mais la hauteur reste a 34 par securite si une police
 # plus large force un retour a la ligne.
-$caseMeshyObjExperimental = Creer-CaseACocher "Pour Meshy : exporter en .obj texture plutot qu'en .3mf (sans Multi-Color Print, moins cher, couleurs plus fideles - voir l'infobulle)" 930 34
+$caseMeshyObjExperimental = Creer-CaseACocher "Pour Meshy : exporter en .obj texture plutot qu'en .3mf (sans Multi-Color Print, moins cher, couleurs plus fideles - voir l'infobulle)" 930 34 $THEME.FondApp
 $caseMeshyObjExperimental.Location = New-Object System.Drawing.Point(15, $yActuel)
 $caseMeshyObjExperimental.Checked = $false
 $form.Controls.Add($caseMeshyObjExperimental)
@@ -1746,7 +1747,7 @@ $yActuel += 44
 $yBlocLancement = $yActuel
 Ajouter-EnteteSection "Lancement" $yActuel
 $yActuel += 28
-$caseHorodatage = Creer-CaseACocher "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)" 600 20
+$caseHorodatage = Creer-CaseACocher "Garder un historique des essais (ajoute la date/heure au nom du fichier, jamais d'ecrasement)" 600 20 $THEME.FondApp
 $caseHorodatage.Location = New-Object System.Drawing.Point(15, ($yActuel + 32))
 $caseHorodatage.Checked = $false
 $form.Controls.Add($caseHorodatage)
@@ -1820,20 +1821,12 @@ $form.Controls.Add($barreProgression)
 $yActuel += 17
 $yFinBlocLancement = $yActuel
 
-# Panneaux de fond "carte" derriere chacune des 4 sections ci-dessus (14/10/2026) - voir
-# Ajouter-PanneauSection plus haut. En deux temps : on calcule d'abord le bas reel de CHAQUE
-# section (Obtenir-BasReelSection, en scannant les vrais controles) AVANT de creer le moindre
-# panneau, pour que les panneaux eux-memes (ajoutes a $form.Controls) ne faussent pas le calcul
-# des sections suivantes. L'ordre de creation ensuite n'a pas d'importance (SendToBack).
-$yBasReelConnexion = Obtenir-BasReelSection $yBlocConnexion $yBlocSource
-$yBasReelSource = Obtenir-BasReelSection $yBlocSource $yBlocStyle
-$yBasReelStyle = Obtenir-BasReelSection $yBlocStyle $yBlocLancement
-$yBasReelLancement = Obtenir-BasReelSection $yBlocLancement ($yFinBlocLancement + 1000)
-
-Ajouter-PanneauSection $yBlocConnexion $yBasReelConnexion $yBlocSource
-Ajouter-PanneauSection $yBlocSource $yBasReelSource $yBlocStyle
-Ajouter-PanneauSection $yBlocStyle $yBasReelStyle $yBlocLancement
-Ajouter-PanneauSection $yBlocLancement $yBasReelLancement ($yBasReelLancement + 1000)
+# Panneaux de fond "carte" derriere chaque section : essayes le 14/10/2026, retires le meme jour
+# suite au retour de Tomyn ("c'est encore pire, toujours ces rectangles blancs sur un fond gris" -
+# 2e avis negatif de suite sur cette piste, pas la peine d'insister). Ajouter-PanneauSection et
+# Obtenir-BasReelSection restent definies plus haut mais ne sont plus appelees ici - fond uni du
+# formulaire (THEME.FondApp) derriere les sections, seuls les bandeaux d'en-tete (accent + titre)
+# restent comme marqueurs visuels de section.
 
 # --- Onglets : galerie de depart / galerie de resultats / avancement ---
 $onglets = New-Object System.Windows.Forms.TabControl
