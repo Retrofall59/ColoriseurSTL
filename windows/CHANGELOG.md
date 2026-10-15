@@ -5,6 +5,24 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Simplification automatique des gros maillages .stl avant colorisation + alerte solde
+insuffisant (15/10/2026, idées de Tomyn).** Deux chantiers, dont un déjà fait :
+- **Alerte solde insuffisant avant de lancer un gros lot** : déjà en place (vérifié en relisant
+  le code avant de recoder) - l'appli compare le solde Meshy au coût estimé du lot et demande
+  confirmation si ça semble insuffisant, avant même de commencer. Rien à ajouter.
+- **Simplification automatique des gros .stl** (nouveau) : fait suite au souci de Tomyn avec un
+  maillage à 1M+ triangles qui perdait ses couleurs en le simplifiant après coup dans Bambu
+  Studio. Ici la simplification se fait désormais AVANT la colorisation (donc pas de couleurs à
+  perdre, le problème ne se pose plus) : un .stl **binaire** de plus de 500 000 triangles
+  (`$SEUIL_TRIANGLES_REMESH_AUTO`) passe automatiquement par l'API **Remesh** de Meshy avant
+  d'être envoyé à Retexture, avec pour cible le même réglage "Triangles visés" déjà utilisé pour
+  Image to 3D (son champ et son infobulle ont été mis à jour en conséquence). Limité aux .stl
+  binaires pour l'instant - le nombre de triangles est lu directement dans l'en-tête du fichier
+  (standard du format, rapide et fiable), pas encore étendu à l'ASCII ni à l'.obj. Les crédits de
+  cette étape de Remesh s'ajoutent au bilan de credits affiché comme ceux d'Image to 3D.
+
+---
+
 **Galerie toujours coupée malgré les 2 passes de rognage : vignettes réduites (15/10/2026,
 Tomyn : "preview toujours coupé").** Le rognage de l'espacement en haut d'écran a un plafond -
 en descendre plus bas casse des champs, comme vu avec les panneaux de section retirés juste

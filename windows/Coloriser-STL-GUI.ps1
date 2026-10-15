@@ -328,6 +328,28 @@ function Obtenir-Miniature($cheminFichier, $taillePixels) {
     }
 }
 
+# Nombre de triangles d'un .stl BINAIRE, lu directement dans son en-tete (octets 80-83, entier
+# non signe sur 4 octets) - standard du format, pas besoin de parser toute la geometrie comme le
+# fait RenduSTL pour l'apercu (15/10/2026, pour decider si une simplification automatique est
+# utile avant envoi, voir $SEUIL_TRIANGLES_REMESH_AUTO plus haut). Verification croisee : la
+# taille de fichier attendue pour ce nombre de triangles (84 + N*50 octets, format binaire STL)
+# doit correspondre exactement a la taille reelle - sinon c'est tres probablement de l'ASCII (qui
+# peut aussi commencer par n'importe quoi dans ses 80 premiers octets, donc ne pas se fier au
+# header seul) ou un fichier corrompu, et on renvoie $null plutot que de risquer un faux resultat.
+function Obtenir-NombreTrianglesSTL($cheminFichier) {
+    try {
+        if ([System.IO.Path]::GetExtension($cheminFichier).ToLower() -ne ".stl") { return $null }
+        $octets = [System.IO.File]::ReadAllBytes($cheminFichier)
+        if ($octets.Length -lt 84) { return $null }
+        $nbTriangles = [BitConverter]::ToUInt32($octets, 80)
+        $tailleAttendue = 84 + ([int64]$nbTriangles * 50)
+        if ($tailleAttendue -eq $octets.Length) { return [int]$nbTriangles }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
 function Obtenir-ImageDepuisUrl($url) {
     try {
         $octets = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
@@ -473,6 +495,16 @@ $EXTENSIONS_SUPPORTEES = $EXTENSIONS_MODELES_3D + $EXTENSIONS_IMAGES
 # AVANT les credits de colorisation habituels (Retexture +/- Multi-Color Print) quand la source
 # est une image plutot qu'un modele 3D deja existant.
 $CREDITS_ESTIMES_IMAGE_VERS_3D = 20
+
+# Simplification automatique des gros maillages avant Retexture (15/10/2026, idee de Tomyn,
+# suite a son souci de maillage a 1M+ triangles qui perdait ses couleurs en le simplifiant APRES
+# coup dans Bambu Studio). Seuil au-dela duquel un .stl binaire est passe par l'API Remesh de
+# Meshy (voir Lancer-Remesh et Obtenir-NombreTrianglesSTL plus bas) avant d'etre envoye a
+# Retexture, plutot que tel quel - evite d'envoyer un maillage inutilement lourd (credits, temps)
+# et evite le probleme de depart (ici la simplification se fait AVANT la colorisation, donc pas de
+# couleurs a perdre). Limite aux .stl BINAIRES pour l'instant (comptage fiable et rapide via
+# l'en-tete du fichier, voir Obtenir-NombreTrianglesSTL) - pas encore etendu a l'ASCII ni a l'OBJ.
+$SEUIL_TRIANGLES_REMESH_AUTO = 500000
 
 # ============================== THEME "ATELIER" ==============================
 # Ajoute le 10/10/2026 (demande de Tomyn : l'appli "faisait trop fenetre Windows", trop grise et
@@ -1731,7 +1763,13 @@ $form.Controls.Add($numCouleurs)
 # IA). Les deux sont maintenant envoyes ensemble a chaque appel "Image to 3D" (voir Lancer-Image3D
 # plus bas) - actif uniquement quand le fichier d'entree est une image, ignore sinon. Valeur par
 # defaut = 30 000, identique au defaut documente par Meshy pour un remaillage active.
-Ajouter-Label "Triangles vises (image uniquement, 100-300000) :" 15 ($yActuel + 32)
+# 15/10/2026 : ce champ sert maintenant aussi de cible pour la simplification automatique d'un
+# .stl trop lourd avant Retexture (voir Lancer-Remesh et $SEUIL_TRIANGLES_REMESH_AUTO plus bas) -
+# label mis a jour en consequence ("image uniquement" n'est plus exact).
+# Texte raccourci pour rester sur une seule ligne avant le champ numerique a x=400 (meme
+# contrainte de largeur que l'ancien texte "image uniquement" - le detail complet du seuil
+# automatique est dans l'infobulle du champ juste en dessous plutot que dans ce label).
+Ajouter-Label "Triangles vises (image ou gros .stl, 100-300000) :" 15 ($yActuel + 32)
 $numTriangles = Creer-SelecteurNumerique 90 24
 $numTriangles.Location = New-Object System.Drawing.Point(400, ($yActuel + 28))
 $numTriangles.Minimum = 100
@@ -1739,6 +1777,14 @@ $numTriangles.Maximum = 300000
 $numTriangles.Increment = 1000
 $numTriangles.Value = 30000
 $form.Controls.Add($numTriangles)
+
+$astuceTriangles = New-Object System.Windows.Forms.ToolTip
+$astuceTriangles.AutoPopDelay = 20000
+$astuceTriangles.InitialDelay = 400
+$astuceTriangles.SetToolTip($numTriangles,
+    "Sert a deux choses :`n`n" +
+    "- Image en entree : nombre de triangles vise pour le maillage genere par l'IA (Image to 3D).`n`n" +
+    "- .stl en entree, binaire, et au-dela de $SEUIL_TRIANGLES_REMESH_AUTO triangles : utilise comme cible pour une simplification automatique (API Remesh de Meshy) avant la colorisation, histoire de ne pas envoyer un maillage inutilement lourd. En dessous de ce seuil, le fichier part tel quel, ce reglage ne sert a rien dans ce cas.")
 $yActuel += 30
 
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
@@ -2564,12 +2610,31 @@ function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000) 
     return $tache
 }
 
+# Simplifie un .stl trop lourd via l'API Remesh de Meshy, AVANT la Retexture (15/10/2026, voir
+# $SEUIL_TRIANGLES_REMESH_AUTO plus haut) - meme principe d'enchainement que Lancer-Image3D
+# ci-dessus (input_task_id de cette tache reutilise comme point de depart de la Retexture qui
+# suit, au lieu de renvoyer le fichier d'origine tel quel).
+function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTrianglesDepart) {
+    Ecrire-Journal "  Maillage volumineux ($NbTrianglesDepart triangles) - simplification (Remesh) avant Retexture, cible ~$TargetPolycount triangle(s)..."
+    $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
+    $base64 = [Convert]::ToBase64String($octets)
+    $dataUri = "data:application/octet-stream;base64,$base64"
+    $corps = @{ model_url = $dataUri; target_polycount = $TargetPolycount; target_formats = @("stl") } | ConvertTo-Json
+    $reponse = Invoke-RestMethod -Uri "$BaseUrl/remesh" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
+    $tache = Attendre-Tache "$BaseUrl/remesh/$($reponse.result)" $Entetes "Remesh"
+    Ecrire-Journal "  Maillage simplifie ($($tache.consumed_credits) credits) - Retexture va repartir de ce resultat."
+    return $tache
+}
+
 function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
     $estUneImage = $FichierStl.Extension.ToLower() -in $EXTENSIONS_IMAGES
-    $creditsImage3D = 0
+    # Credits d'une eventuelle etape prealable a la Retexture (Image to 3D si la source est une
+    # image, Remesh si c'est un .stl trop lourd - les deux sont mutuellement exclusifs pour un
+    # meme fichier, mais partagent ce meme compteur pour le bilan de credits en fin de fonction).
+    $creditsEtapePrealable = 0
 
     if (-not $estUneImage) {
         $tailleMo = $FichierStl.Length / 1MB
@@ -2582,16 +2647,24 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
 
     if ($estUneImage) {
         $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount
-        $creditsImage3D = [int]$tacheImage3D.consumed_credits
+        $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
     } else {
-        $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
-        $base64 = [Convert]::ToBase64String($octets)
-        $dataUri = "data:application/octet-stream;base64,$base64"
+        $nbTriangles = Obtenir-NombreTrianglesSTL $FichierStl.FullName
+        if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
+            $tacheRemesh = Lancer-Remesh $FichierStl $Entetes $TargetPolycount $nbTriangles
+            $creditsEtapePrealable = [int]$tacheRemesh.consumed_credits
+            Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage simplifie)..."
+            $corps = @{ input_task_id = $tacheRemesh.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+        } else {
+            $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
+            $base64 = [Convert]::ToBase64String($octets)
+            $dataUri = "data:application/octet-stream;base64,$base64"
 
-        Ecrire-Journal "  Envoi a l'API Retexture..."
-        $corps = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+            Ecrire-Journal "  Envoi a l'API Retexture..."
+            $corps = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+        }
     }
     $reponse = Invoke-RestMethod -Uri "$BaseUrl/retexture" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
     $idRetexture = $reponse.result
@@ -2654,7 +2727,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
 
         # Une seule etape facturee dans cette variante (pas de Multi-Color Print), plus le
         # maillage Image to 3D si la source etait une image (0 si c'etait deja un modele 3D).
-        $creditsTotal = $creditsImage3D + [int]$tacheRetexture.consumed_credits
+        $creditsTotal = $creditsEtapePrealable + [int]$tacheRetexture.consumed_credits
         Enregistrer-HistoriqueFichier $FichierStl.Name "Meshy (.obj)" $creditsTotal $cheminObjFinal
         return $creditsTotal
     }
@@ -2683,7 +2756,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     # Credits reellement consommes pour ce fichier (les deux etapes, plus l'Image to 3D en amont
     # si la source etait une image), pour le total du lot dans l'historique - distinct de
     # l'estimation affichee avant de lancer.
-    $creditsTotal = $creditsImage3D + [int]$tacheRetexture.consumed_credits + [int]$tacheImpression.consumed_credits
+    $creditsTotal = $creditsEtapePrealable + [int]$tacheRetexture.consumed_credits + [int]$tacheImpression.consumed_credits
     Enregistrer-HistoriqueFichier $FichierStl.Name "Meshy" $creditsTotal $cheminSortie
     return $creditsTotal
 }
