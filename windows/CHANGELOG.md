@@ -3,6 +3,16 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Correction : la boîte "localiser Melange-Couleurs" s'ouvrait dans le mauvais dossier
+(16/10/2026).** Chez Tomyn, les deux outils sont à plat dans un seul et même dossier (pas dans deux
+dossiers frères séparés comme supposé au départ) - aucun des noms de dossier devinés
+automatiquement ne correspondait donc, et la boîte de dialogue de secours s'ouvrait dans un dossier
+Windows par défaut quelconque plutôt que dans celui du script, donnant l'impression que le fichier
+était "introuvable" alors qu'il était juste ailleurs que ce qui s'affichait. Deux corrections :
+la détection automatique vérifie maintenant D'ABORD le même dossier que `Coloriser-STL-GUI.ps1`
+(son cas réel) avant les dossiers frères, et si la boîte de dialogue doit quand même s'ouvrir, elle
+démarre directement dans ce même dossier.
+
 ---
 
 **Correction : la passerelle ouvrait Melange-Couleurs mais chargeait le mauvais fichier

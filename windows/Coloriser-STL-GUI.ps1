@@ -2093,9 +2093,19 @@ function Obtenir-CheminMelangeCouleurs {
         } catch { }
     }
 
-    # Emplacements freres plausibles - couvre le cas le plus probable (les deux outils installes
-    # cote a cote, sous l'un ou l'autre nom de dossier/depot connu) sans jamais supposer que c'est
-    # garanti : juste une tentative avant de deranger Tomyn avec un selecteur.
+    # 16/10/2026 : verifie d'abord le MEME dossier que ce script (Tomyn garde tout a plat - Coloriser-
+    # STL et Melange-Couleurs dans un seul et meme dossier, pas dans des dossiers freres separes comme
+    # suppose initialement) - couvre son cas reel directement, sans meme passer par la boite de
+    # dialogue.
+    $candidatMemeDossier = Join-Path $PSScriptRoot "Lancer-Melange-Couleurs.vbs"
+    if (Test-Path $candidatMemeDossier) {
+        Sauvegarder-CheminMelangeCouleurs $candidatMemeDossier
+        return $candidatMemeDossier
+    }
+
+    # Emplacements freres plausibles - couvre le cas ou les deux outils sont installes cote a cote
+    # dans des dossiers SEPARES (sous l'un ou l'autre nom de dossier/depot connu) sans jamais supposer
+    # que c'est garanti : juste une tentative avant de deranger Tomyn avec un selecteur.
     $dossierParent = Split-Path $PSScriptRoot -Parent
     $candidatsPossibles = @(
         "MelangeCouleurs3MF", "melangecouleurs3mf", "Melange-Couleurs-3MF", "Melange-Couleurs",
@@ -2112,6 +2122,14 @@ function Obtenir-CheminMelangeCouleurs {
     $dialogue = New-Object System.Windows.Forms.OpenFileDialog
     $dialogue.Title = "Localiser Melange-Couleurs (fichier Lancer-Melange-Couleurs.vbs)"
     $dialogue.Filter = "Lanceur Melange-Couleurs (Lancer-Melange-Couleurs.vbs)|Lancer-Melange-Couleurs.vbs|Tous les fichiers (*.*)|*.*"
+    # 16/10/2026, correctif - Tomyn : chez lui, Melange-Couleurs est a PLAT dans le MEME dossier que
+    # Coloriser-STL, pas dans un dossier frere separe - donc aucun des $candidatsPossibles ci-dessus
+    # ne matchait, et cette boite de dialogue s'ouvrait dans un dossier Windows par defaut
+    # quelconque, PAS dans $PSScriptRoot ou le fichier se trouvait reellement. Resultat : "introuvable"
+    # alors que le fichier etait juste dans un autre dossier que celui affiche. Demarre maintenant
+    # directement dans le dossier de CE script (Coloriser-STL-GUI.ps1) - le cas le plus probable
+    # (meme dossier) est maintenant couvert sans que Tomyn ait besoin de naviguer manuellement.
+    $dialogue.InitialDirectory = $PSScriptRoot
     if ($dialogue.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
     Sauvegarder-CheminMelangeCouleurs $dialogue.FileName
     return $dialogue.FileName
