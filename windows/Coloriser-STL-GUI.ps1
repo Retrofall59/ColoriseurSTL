@@ -1837,6 +1837,139 @@ $txtPrompt.Add_TextChanged({
     }
 })
 
+# --- Prompts favoris (16/10/2026, idee d'amelioration validee "Ok pour tout") ---
+# Meme principe que les trios favoris de Melange-Couleurs : un favori est un texte de prompt
+# explicitement sauve par Tomyn sous un nom, retrouvable ensuite dans une categorie speciale
+# "Mes favoris" placee en tete de la liste des categories (voir le peuplement de $menuCategorie
+# juste au-dessus). Persiste dans prompts-favoris.json a cote du script, meme format que
+# trios-favoris.json cote Melange-Couleurs (objet JSON plat Nom -> Texte).
+function Obtenir-CheminPromptsFavoris {
+    if ($PSScriptRoot) { Join-Path $PSScriptRoot "prompts-favoris.json" } else { Join-Path (Get-Location) "prompts-favoris.json" }
+}
+
+function Charger-PromptsFavoris {
+    $chemin = Obtenir-CheminPromptsFavoris
+    $resultat = [ordered]@{}
+    if (Test-Path $chemin) {
+        try {
+            $donnees = Get-Content $chemin -Raw | ConvertFrom-Json
+            foreach ($prop in $donnees.PSObject.Properties) { $resultat[$prop.Name] = $prop.Value }
+        } catch { Ecrire-Journal "(Impossible de charger les prompts favoris : $_)" }
+    }
+    return $resultat
+}
+
+function Sauvegarder-PromptsFavoris {
+    try {
+        $objetPlat = [ordered]@{}
+        foreach ($cle in $script:promptsFavoris.Keys) { $objetPlat[$cle] = $script:promptsFavoris[$cle] }
+        ($objetPlat | ConvertTo-Json) | Set-Content -Path (Obtenir-CheminPromptsFavoris) -Encoding UTF8 -ErrorAction Stop
+    } catch { Ecrire-Journal "(Impossible d'enregistrer les prompts favoris : $_)" }
+}
+
+# Reconstruit la categorie "Mes favoris" dans $script:promptsParCategorie a partir de
+# $script:promptsFavoris - appelee au demarrage et apres chaque ajout/suppression.
+function Reconstruire-CategorieFavoris {
+    $categorieFavoris = [ordered]@{}
+    foreach ($nom in $script:promptsFavoris.Keys) { $categorieFavoris[$nom] = $script:promptsFavoris[$nom] }
+    $categorieFavoris["Autre (texte libre ci-dessous)"] = $null
+    $script:promptsParCategorie["Mes favoris"] = $categorieFavoris
+}
+
+$script:promptsFavoris = Charger-PromptsFavoris
+Reconstruire-CategorieFavoris
+# "Mes favoris" vient d'etre ajoutee a la fin du dictionnaire ($script:promptsParCategorie est un
+# [ordered], pas de "prepend" natif) - le menu Categorie a deja ete rempli plus haut (sans
+# "Mes favoris", qui n'existait pas encore a ce moment-la) : on le vide et on le repeuple ici en
+# placant "Mes favoris" en tete explicitement, plutot que de reordonner le dictionnaire.
+$menuCategorie.Items.Clear()
+$menuCategorie.Items.Add("Mes favoris") | Out-Null
+foreach ($nomCategorie in $script:promptsParCategorie.Keys) {
+    if ($nomCategorie -ne "Mes favoris") { $menuCategorie.Items.Add($nomCategorie) | Out-Null }
+}
+$menuCategorie.SelectedIndex = 0
+
+# Petite fenetre de saisie du nom, meme esprit que Demander-NomEtSauvegarderTrio cote
+# Melange-Couleurs (fenetre fixe minimaliste, OK/Annuler).
+function Demander-NomEtSauvegarderPromptFavori([string]$texteASauver) {
+    if ([string]::IsNullOrWhiteSpace($texteASauver)) {
+        Afficher-Boite "Le champ de prompt est vide - rien a sauver en favori." "Prompt vide" "OK" "Warning" | Out-Null
+        return
+    }
+    $zoneNomRapide = New-Object System.Windows.Forms.Form
+    $zoneNomRapide.Text = "Nom du prompt favori"
+    $zoneNomRapide.StartPosition = "CenterParent"
+    $zoneNomRapide.FormBorderStyle = "FixedDialog"
+    $zoneNomRapide.MaximizeBox = $false
+    $zoneNomRapide.MinimizeBox = $false
+    $zoneNomRapide.ClientSize = New-Object System.Drawing.Size(320, 110)
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Nom :"
+    $lbl.Location = New-Object System.Drawing.Point(10, 12)
+    $lbl.AutoSize = $true
+    $zoneNomRapide.Controls.Add($lbl)
+    $txt = New-Object System.Windows.Forms.TextBox
+    $txt.Location = New-Object System.Drawing.Point(10, 32)
+    $txt.Size = New-Object System.Drawing.Size(300, 24)
+    $zoneNomRapide.Controls.Add($txt)
+    $btnOKNom = New-Object System.Windows.Forms.Button
+    $btnOKNom.Text = "OK"
+    $btnOKNom.Location = New-Object System.Drawing.Point(115, 68)
+    $btnOKNom.Size = New-Object System.Drawing.Size(90, 28)
+    Rendre-BoutonPlat $btnOKNom "principal"
+    $btnOKNom.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $zoneNomRapide.Controls.Add($btnOKNom)
+    $btnAnnulerNom = New-Object System.Windows.Forms.Button
+    $btnAnnulerNom.Text = "Annuler"
+    $btnAnnulerNom.Location = New-Object System.Drawing.Point(215, 68)
+    $btnAnnulerNom.Size = New-Object System.Drawing.Size(90, 28)
+    Rendre-BoutonPlat $btnAnnulerNom "discret"
+    $btnAnnulerNom.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $zoneNomRapide.Controls.Add($btnAnnulerNom)
+    $zoneNomRapide.AcceptButton = $btnOKNom
+    $zoneNomRapide.CancelButton = $btnAnnulerNom
+    if ($zoneNomRapide.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    $nomChoisi = $txt.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($nomChoisi)) { return }
+    if ($nomChoisi -eq "Autre (texte libre ci-dessous)") {
+        Afficher-Boite "Ce nom est reserve - choisis-en un autre." "Nom reserve" "OK" "Warning" | Out-Null
+        return
+    }
+    $script:promptsFavoris[$nomChoisi] = $texteASauver
+    Sauvegarder-PromptsFavoris
+    Reconstruire-CategorieFavoris
+    if ($menuCategorie.SelectedItem -and $menuCategorie.SelectedItem.ToString() -eq "Mes favoris") { Remplir-MenuPrompt }
+    Afficher-Boite "Prompt '$nomChoisi' enregistre dans tes favoris." "Favori sauvegarde" "OK" "Info" | Out-Null
+}
+
+$btnSauverPromptFavori = New-Object System.Windows.Forms.Button
+$btnSauverPromptFavori.Text = "Sauver ce prompt en favori"
+$btnSauverPromptFavori.Location = New-Object System.Drawing.Point(15, $yActuel)
+$btnSauverPromptFavori.Size = New-Object System.Drawing.Size(220, 26)
+Rendre-BoutonPlat $btnSauverPromptFavori "secondaire"
+$btnSauverPromptFavori.Add_Click({ Demander-NomEtSauvegarderPromptFavori $txtPrompt.Text })
+$form.Controls.Add($btnSauverPromptFavori)
+
+# Supprimer n'a de sens que depuis la categorie "Mes favoris", sur une entree qui n'est pas
+# "Autre" - desactive sinon plutot que de disparaitre, pour que le bouton reste a sa place.
+$btnSupprimerPromptFavori = New-Object System.Windows.Forms.Button
+$btnSupprimerPromptFavori.Text = "Supprimer ce favori"
+$btnSupprimerPromptFavori.Location = New-Object System.Drawing.Point(245, $yActuel)
+$btnSupprimerPromptFavori.Size = New-Object System.Drawing.Size(180, 26)
+Rendre-BoutonPlat $btnSupprimerPromptFavori "discret"
+$btnSupprimerPromptFavori.Add_Click({
+    $categorieActuelle = $menuCategorie.SelectedItem.ToString()
+    $nomSelectionne = $menuPrompt.SelectedItem.ToString()
+    if ($categorieActuelle -ne "Mes favoris" -or $nomSelectionne -eq "Autre (texte libre ci-dessous)") { return }
+    if ((Afficher-Boite "Supprimer le prompt favori '$nomSelectionne' ?" "Confirmer" "YesNo" "Warning") -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    $script:promptsFavoris.Remove($nomSelectionne)
+    Sauvegarder-PromptsFavoris
+    Reconstruire-CategorieFavoris
+    Remplir-MenuPrompt
+})
+$form.Controls.Add($btnSupprimerPromptFavori)
+$yActuel += 34
+
 # --- Nombre de couleurs + bouton Lancer ---
 # 13/10/2026 : memorise la ligne de "Nombre de couleurs" AVANT d'avancer $yActuel pour la ligne
 # "Triangles vises" ajoutee juste en dessous - le bouton Lancer doit rester cale sur CETTE ligne

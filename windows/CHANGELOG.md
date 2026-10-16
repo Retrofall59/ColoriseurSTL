@@ -3,6 +3,17 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Prompts favoris ("Ok pour tout", 16/10/2026).** Dernière des quatre idées d'amélioration de ce
+jour-là. Même esprit que les trios favoris de Melange-Couleurs-3MF : une nouvelle catégorie
+spéciale **"Mes favoris"**, en tête de la liste des catégories, où Tomyn peut sauver n'importe quel
+texte de prompt sous un nom de son choix (bouton "Sauver ce prompt en favori", petite fenêtre de
+saisie du nom) puis le retrouver au lancement suivant sans le retaper - utile pour un style qui
+revient souvent sur un même type de pièce, sans devoir choisir entre un des styles prédéfinis par
+catégorie ou retaper le texte libre à chaque fois. Un bouton "Supprimer ce favori" permet d'en
+retirer un (actif seulement quand la catégorie "Mes favoris" est sélectionnée et qu'une entrée au
+nom autre que "Autre" est choisie). Persisté dans `prompts-favoris.json` à côté du script, même
+format que `trios-favoris.json` côté Melange-Couleurs.
+
 **Temps restant estimé (ETA) et compteur de crédits en direct pendant un lot ("Ok pour tout",
 16/10/2026).** Deux des quatre idées d'amélioration proposées ce jour-là :
 1. **ETA affiché pendant le traitement d'un lot** : nouvelle fonction `Obtenir-TexteEtaLot`, calcul
