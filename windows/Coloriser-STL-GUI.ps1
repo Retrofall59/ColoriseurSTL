@@ -24,6 +24,13 @@ Add-Type -AssemblyName System.Drawing
 # System.IO.Compression.FileSystem fournit [System.IO.Compression.ZipFile], pas charge par defaut.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# Date de cette version locale, a comparer avec la date du dernier commit sur GitHub (voir
+# Verifier-MiseAJourDisponible plus bas) - 16/10/2026, idee d'amelioration validee "tu peux toutes
+# les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
+# seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
+# qu'on ne connait pas encore au moment d'ecrire le script).
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 16)
+
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
 # interactive, juste une miniature statique - suffisant pour un apercu en liste. ---
@@ -1234,6 +1241,31 @@ function Afficher-Boite([string]$message, [string]$titre = "", [string]$boutons 
     return $fenetre.ShowDialog($form)
 }
 
+# Verification de mise a jour (16/10/2026, idee d'amelioration validee "tu peux toutes les
+# faire") : compare $VERSION_BUILD_COLORISER a la date du dernier commit GitHub touchant ce
+# fichier precis. Pas de comparaison de SHA exact (on ne connait pas encore celui du commit au
+# moment d'ecrire le script) - juste "une version plus recente a ete publiee depuis que cette
+# copie-ci a ete construite". Declenche uniquement via un bouton (pas automatiquement au
+# demarrage) pour ne jamais faire attendre Tomyn apres un appel reseau au lancement de l'appli.
+function Verifier-MiseAJourDisponible {
+    try {
+        $reponse = Invoke-RestMethod -Uri "https://api.github.com/repos/Retrofall59/ColoriseurSTL/commits?path=windows/Coloriser-STL-GUI.ps1&per_page=1" -Headers @{ "User-Agent" = "Coloriser-STL" } -TimeoutSec 8
+    } catch {
+        Afficher-Boite "Impossible de contacter GitHub pour verifier (pas de connexion, ou GitHub inaccessible pour l'instant).`r`n`r`nDetail : $($_.Exception.Message)" "Verification impossible" "OK" "Warning" | Out-Null
+        return
+    }
+    if (-not $reponse -or $reponse.Count -eq 0) {
+        Afficher-Boite "GitHub n'a renvoye aucune information sur ce fichier - verification impossible pour l'instant." "Verification impossible" "OK" "Warning" | Out-Null
+        return
+    }
+    $dateDistante = [DateTime]::Parse($reponse[0].commit.committer.date).ToLocalTime().Date
+    if ($dateDistante -gt $script:VERSION_BUILD_COLORISER) {
+        Afficher-Boite "Une version plus recente de Coloriser-STL est disponible sur GitHub.`r`n`r`nCette copie date du $($script:VERSION_BUILD_COLORISER.ToString('dd/MM/yyyy')).`r`nLa derniere mise a jour publiee date du $($dateDistante.ToString('dd/MM/yyyy')).`r`n`r`nRecupere la derniere version depuis la session Claude ou le repo GitHub." "Mise a jour disponible" "OK" "Warning" | Out-Null
+    } else {
+        Afficher-Boite "Cette copie est a jour (version du $($script:VERSION_BUILD_COLORISER.ToString('dd/MM/yyyy')))." "A jour" "OK" "Info" | Out-Null
+    }
+}
+
 # Petit logo "bobine de filament" dessine a la volee (cercle accent + trou central couleur fond +
 # quelques brins) - evite de devoir fournir un fichier .ico externe. Utilise a la fois comme icone
 # de fenetre (format Icon) et comme logo dans la banniere (format Image, plus grand).
@@ -2185,6 +2217,15 @@ $btnEnregistrerJournal.Text = "Enreg. journal"
 $btnEnregistrerJournal.Location = New-Object System.Drawing.Point(805, ($yActuel - 2))
 $btnEnregistrerJournal.Size = New-Object System.Drawing.Size(85, 22)
 $form.Controls.Add($btnEnregistrerJournal)
+
+$btnGraphiqueCredits = New-Object System.Windows.Forms.Button
+$btnGraphiqueCredits.Text = "Graphique credits"
+$btnGraphiqueCredits.Location = New-Object System.Drawing.Point(715, ($yActuel + 20))
+$btnGraphiqueCredits.Size = New-Object System.Drawing.Size(130, 22)
+Rendre-BoutonPlat $btnGraphiqueCredits "discret"
+$btnGraphiqueCredits.Add_Click({ Afficher-FenetreGraphiqueCredits })
+$form.Controls.Add($btnGraphiqueCredits)
+
 $btnEnregistrerJournal.Add_Click({
     if (-not $txtJournal.Text) {
         Afficher-Boite "Le journal est vide pour l'instant." "Rien a enregistrer" | Out-Null
@@ -2198,7 +2239,7 @@ $btnEnregistrerJournal.Add_Click({
         Afficher-Boite "Journal enregistre." "Fait" | Out-Null
     }
 }.GetNewClosure())
-$yActuel += 22
+$yActuel += 46
 
 $barreProgression = New-Object System.Windows.Forms.ProgressBar
 $barreProgression.Location = New-Object System.Drawing.Point(15, $yActuel)
@@ -2307,7 +2348,114 @@ $btnRestaurerConfig.Add_Click({
     }
 })
 $form.Controls.Add($btnRestaurerConfig)
+
+$btnVerifierMiseAJour = New-Object System.Windows.Forms.Button
+$btnVerifierMiseAJour.Text = "Verifier mise a jour"
+$btnVerifierMiseAJour.Location = New-Object System.Drawing.Point(415, $yActuel)
+$btnVerifierMiseAJour.Size = New-Object System.Drawing.Size(165, 28)
+Rendre-BoutonPlat $btnVerifierMiseAJour "discret"
+$btnVerifierMiseAJour.Add_Click({ Verifier-MiseAJourDisponible })
+$form.Controls.Add($btnVerifierMiseAJour)
 $yActuel += 34
+
+# File d'attente de plusieurs lots (16/10/2026, idee validee "tu peux toutes les faire") :
+# permet d'empiler plusieurs lots (fichiers + reglages de CE lot-la) et de les enchainer tout
+# seul, sans devoir rester devant l'appli entre deux lots pour changer le dossier/prompt/
+# fournisseur et recliquer sur Lancer. Chaque lot ajoute est un instantane des reglages actuels
+# au moment du clic sur "Ajouter a la file" - modifier les reglages ensuite ne touche pas aux
+# lots deja empiles. Lancer-Traitement lit ses reglages directement sur les controles (pas de
+# parametres a part la liste de fichiers), donc on les restaure sur les controles juste avant
+# chaque lot plutot que de modifier la fonction.
+$script:fileAttenteLots = New-Object System.Collections.Generic.List[hashtable]
+
+$listeFileAttente = New-Object System.Windows.Forms.ListBox
+$listeFileAttente.Location = New-Object System.Drawing.Point(15, $yActuel)
+$listeFileAttente.Size = New-Object System.Drawing.Size(690, 70)
+$form.Controls.Add($listeFileAttente)
+
+$btnAjouterFileAttente = New-Object System.Windows.Forms.Button
+$btnAjouterFileAttente.Text = "Ajouter a la file"
+$btnAjouterFileAttente.Location = New-Object System.Drawing.Point(715, $yActuel)
+$btnAjouterFileAttente.Size = New-Object System.Drawing.Size(270, 22)
+Rendre-BoutonPlat $btnAjouterFileAttente "discret"
+$btnAjouterFileAttente.Add_Click({
+    $fichiersInclus = @($script:fichiersAtraiter | Where-Object {
+        $case = $script:casesACocher[$_.FullName]
+        $case -eq $null -or $case.Checked
+    })
+    if ($fichiersInclus.Count -eq 0) {
+        Afficher-Boite "Aucun fichier a ajouter a la file (coche au moins un fichier d'abord)." "Rien a ajouter" "OK" "Info" | Out-Null
+        return
+    }
+    $lot = @{
+        Fichiers = $fichiersInclus
+        Fournisseur = $menuFournisseur.SelectedItem
+        Prompt = $txtPrompt.Text
+        NombreCouleurs = $numCouleurs.Value
+        Triangles = $numTriangles.Value
+        DossierSortie = $txtDossierSortie.Text
+        Horodatage = $caseHorodatage.Checked
+        Assombrir = $assombrirTexture.Value
+        ComparerFournisseurs = $caseComparerFournisseurs.Checked
+        MeshyObjExperimental = $caseMeshyObjExperimental.Checked
+    }
+    [void]$script:fileAttenteLots.Add($lot)
+    $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
+    [void]$listeFileAttente.Items.Add("$($lot.Fichiers.Count) fichier(s) - $($lot.Fournisseur) - $promptCourt")
+}.GetNewClosure())
+$form.Controls.Add($btnAjouterFileAttente)
+
+$btnLancerFileAttente = New-Object System.Windows.Forms.Button
+$btnLancerFileAttente.Text = "Lancer la file d'attente"
+$btnLancerFileAttente.Location = New-Object System.Drawing.Point(715, ($yActuel + 24))
+$btnLancerFileAttente.Size = New-Object System.Drawing.Size(270, 22)
+Rendre-BoutonPlat $btnLancerFileAttente "chaud"
+$btnLancerFileAttente.Add_Click({
+    if ($script:fileAttenteLots.Count -eq 0) {
+        Afficher-Boite "La file d'attente est vide." "Rien a lancer" "OK" "Info" | Out-Null
+        return
+    }
+    $btnAjouterFileAttente.Enabled = $false
+    $btnLancerFileAttente.Enabled = $false
+    $btnViderFileAttente.Enabled = $false
+    $nombreLots = $script:fileAttenteLots.Count
+    try {
+        while ($script:fileAttenteLots.Count -gt 0) {
+            $lot = $script:fileAttenteLots[0]
+            $menuFournisseur.SelectedItem = $lot.Fournisseur
+            $txtPrompt.Text = $lot.Prompt
+            $numCouleurs.Value = $lot.NombreCouleurs
+            $numTriangles.Value = $lot.Triangles
+            $txtDossierSortie.Text = $lot.DossierSortie
+            $caseHorodatage.Checked = $lot.Horodatage
+            $assombrirTexture.Value = $lot.Assombrir
+            $caseComparerFournisseurs.Checked = $lot.ComparerFournisseurs
+            $caseMeshyObjExperimental.Checked = $lot.MeshyObjExperimental
+            [System.Windows.Forms.Application]::DoEvents()
+            Lancer-Traitement $lot.Fichiers
+            $script:fileAttenteLots.RemoveAt(0)
+            $listeFileAttente.Items.RemoveAt(0)
+        }
+        Afficher-Boite "File d'attente terminee ($nombreLots lot(s) traite(s) a la suite)." "File d'attente terminee" "OK" "Info" | Out-Null
+    } finally {
+        $btnAjouterFileAttente.Enabled = $true
+        $btnLancerFileAttente.Enabled = $true
+        $btnViderFileAttente.Enabled = $true
+    }
+}.GetNewClosure())
+$form.Controls.Add($btnLancerFileAttente)
+
+$btnViderFileAttente = New-Object System.Windows.Forms.Button
+$btnViderFileAttente.Text = "Vider la file"
+$btnViderFileAttente.Location = New-Object System.Drawing.Point(715, ($yActuel + 48))
+$btnViderFileAttente.Size = New-Object System.Drawing.Size(270, 22)
+Rendre-BoutonPlat $btnViderFileAttente "secondaire"
+$btnViderFileAttente.Add_Click({
+    $script:fileAttenteLots.Clear()
+    $listeFileAttente.Items.Clear()
+}.GetNewClosure())
+$form.Controls.Add($btnViderFileAttente)
+$yActuel += 80
 
 $yFinBlocLancement = $yActuel
 
@@ -2385,6 +2533,18 @@ $btnAnnulerOverlay.Add_Click({
     $btnAnnulerOverlay.Enabled = $false
     $btnAnnulerOverlay.Text = "Annulation..."
 })
+
+# Raccourci clavier (16/10/2026) : l'overlay est une fenetre a part qui recoit le focus pendant
+# le traitement, Echap ici doit donc etre gere sur l'overlay lui-meme (le KeyDown pose sur $form
+# ne recevrait rien tant que l'overlay a le focus).
+$overlayProgression.KeyPreview = $true
+$overlayProgression.Add_KeyDown({
+    param($sender, $e)
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape -and $btnAnnulerOverlay.Visible -and $btnAnnulerOverlay.Enabled) {
+        $e.Handled = $true
+        $btnAnnulerOverlay.PerformClick()
+    }
+}.GetNewClosure())
 
 # Bouton Pause (16/10/2026, idee d'amelioration validee "tu peux toutes les faire") - une vraie
 # pause EN PLEIN MILIEU d'un appel API serait trop risquee a faire a l'aveugle (pas de Windows pour
@@ -3757,6 +3917,106 @@ function Afficher-FenetreHistoriqueFichiers {
     [void]$fenetre.ShowDialog($form)
 }
 
+# Graphique de consommation de credits dans le temps (16/10/2026, idee validee "tu peux toutes
+# les faire") - dessin GDI+ maison (pas de bibliotheque de graphique disponible dans cet
+# environnement), un simple diagramme en barres a partir de historique_lots.csv (format
+# "Date;Fichiers;Reussis;Echecs;Credits", une ligne par lot - voir plus haut dans
+# Lancer-Traitement). Les 40 lots les plus recents seulement, pour garder des barres assez
+# larges pour rester lisibles. PAS TESTE VISUELLEMENT (pas de Windows sous la main) - logique de
+# calcul des coordonnees relue attentivement, meme risque que le reste du rendu GDI+ de cette
+# appli (coins arrondis, miniatures STL).
+function Afficher-FenetreGraphiqueCredits {
+    if (-not (Test-Path $CheminHistorique)) {
+        Afficher-Boite "Aucun historique de lot pour l'instant - rien a afficher (le graphique se remplit a chaque lot traite)." "Historique vide" "OK" "Info" | Out-Null
+        return
+    }
+    $points = New-Object System.Collections.Generic.List[hashtable]
+    foreach ($ligne in (Get-Content $CheminHistorique)) {
+        $champs = $ligne -split ';'
+        if ($champs.Count -lt 5) { continue }
+        $creditsLigne = 0
+        if ([int]::TryParse($champs[4], [ref]$creditsLigne)) {
+            [void]$points.Add(@{ Date = $champs[0]; Credits = $creditsLigne })
+        }
+    }
+    if ($points.Count -eq 0) {
+        Afficher-Boite "Aucune ligne d'historique exploitable pour l'instant." "Historique vide" "OK" "Info" | Out-Null
+        return
+    }
+    $pointsAffiches = @($points | Select-Object -Last 40)
+
+    $fenetre = New-Object System.Windows.Forms.Form
+    $fenetre.Text = "Consommation de credits par lot"
+    $fenetre.StartPosition = "CenterParent"
+    $fenetre.ClientSize = New-Object System.Drawing.Size(900, 480)
+    $fenetre.BackColor = $THEME.Surface
+    $fenetre.MinimizeBox = $false
+    try { $fenetre.Icon = $form.Icon } catch { }
+
+    $panneauGraphique = New-Object System.Windows.Forms.Panel
+    $panneauGraphique.Location = New-Object System.Drawing.Point(10, 10)
+    $panneauGraphique.Size = New-Object System.Drawing.Size(880, 420)
+    $panneauGraphique.Anchor = "Top, Bottom, Left, Right"
+    $panneauGraphique.BackColor = [System.Drawing.Color]::White
+    $fenetre.Controls.Add($panneauGraphique)
+
+    $panneauGraphique.Add_Paint({
+        param($sender, $e)
+        $g = $e.Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $largeur = $panneauGraphique.Width
+        $hauteur = $panneauGraphique.Height
+        $margeGauche = 55
+        $margeBas = 40
+        $margeHaut = 25
+        $margeDroite = 15
+        $zoneLargeur = $largeur - $margeGauche - $margeDroite
+        $zoneHauteur = $hauteur - $margeHaut - $margeBas
+        if ($zoneLargeur -le 10 -or $zoneHauteur -le 10) { return }
+
+        $maxCredits = [Math]::Max(1, ($pointsAffiches | ForEach-Object { $_.Credits } | Measure-Object -Maximum).Maximum)
+
+        $styloAxe = New-Object System.Drawing.Pen([System.Drawing.Color]::Gainsboro, 1)
+        $styloGrille = New-Object System.Drawing.Pen([System.Drawing.Color]::WhiteSmoke, 1)
+        $pinceauTexte = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::DimGray)
+        $policeAxe = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $policeTitre = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+
+        $g.DrawLine($styloAxe, $margeGauche, $margeHaut, $margeGauche, $margeHaut + $zoneHauteur)
+        $g.DrawLine($styloAxe, $margeGauche, $margeHaut + $zoneHauteur, $margeGauche + $zoneLargeur, $margeHaut + $zoneHauteur)
+
+        foreach ($f in @(0, 0.5, 1)) {
+            $y = $margeHaut + $zoneHauteur - ($f * $zoneHauteur)
+            $valeur = [int]([Math]::Round($maxCredits * $f))
+            $g.DrawString("$valeur", $policeAxe, $pinceauTexte, 2, ($y - 7))
+            $g.DrawLine($styloGrille, $margeGauche, $y, $margeGauche + $zoneLargeur, $y)
+        }
+
+        $nombreBarres = $pointsAffiches.Count
+        $pasBarre = $zoneLargeur / $nombreBarres
+        $largeurBarre = [Math]::Max(3, $pasBarre * 0.6)
+        $pinceauBarre = New-Object System.Drawing.SolidBrush($THEME.AccentPrincipal)
+        $sautEtiquette = [Math]::Max(1, [Math]::Ceiling($nombreBarres / 12.0))
+
+        for ($i = 0; $i -lt $nombreBarres; $i++) {
+            $pt = $pointsAffiches[$i]
+            $hauteurBarre = [Math]::Max(1, ($pt.Credits / $maxCredits) * $zoneHauteur)
+            $x = $margeGauche + ($i * $pasBarre) + (($pasBarre - $largeurBarre) / 2)
+            $y = $margeHaut + $zoneHauteur - $hauteurBarre
+            $g.FillRectangle($pinceauBarre, $x, $y, $largeurBarre, $hauteurBarre)
+            if ($i % $sautEtiquette -eq 0) {
+                $dateCourte = ($pt.Date -split ' ')[0]
+                $tailleTexte = $g.MeasureString($dateCourte, $policeAxe)
+                $g.DrawString($dateCourte, $policeAxe, $pinceauTexte, ($x + $largeurBarre / 2 - $tailleTexte.Width / 2), ($margeHaut + $zoneHauteur + 4))
+            }
+        }
+        $totalAffiche = ($pointsAffiches | ForEach-Object { $_.Credits } | Measure-Object -Sum).Sum
+        $g.DrawString("Total sur les $nombreBarres dernier(s) lot(s) : $totalAffiche credits", $policeTitre, $pinceauTexte, $margeGauche, 2)
+    }.GetNewClosure())
+
+    [void]$fenetre.ShowDialog($form)
+}
+
 # Verifie la cle ET recupere le solde en un seul appel (meme endpoint) :
 #   statut "valide"   -> $solde contient le vrai solde
 #   statut "invalide" -> cle refusee par Meshy (HTTP 401/403), bloquant
@@ -4251,6 +4511,29 @@ try {
 # qui s'ouvre en plein ecran. La fenetre reste redimensionnable ensuite (bouton "Restaurer" dans la
 # barre de titre, ou double-clic dessus) si Tomyn préfère une fenetre plus petite ensuite ;
 # $onglets.Anchor (juste au-dessus) etait deja prevu pour suivre ce genre de redimensionnement.
+# Raccourcis clavier (16/10/2026, demande de Tomyn) : Ctrl+Entree pour lancer directement sans
+# aller chercher le bouton a la souris, et Echap pour annuler un traitement en cours. On ne
+# declenche que si le bouton vise est reellement visible et actif - sinon KeyPreview ferait
+# "sauter" sur un bouton cache/desactive sans effet utile ni retour visuel pour Tomyn.
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    param($sender, $e)
+    if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+        if ($btnLancer.Visible -and $btnLancer.Enabled) {
+            $e.Handled = $true
+            $btnLancer.PerformClick()
+        }
+    } elseif ($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
+        if ($btnAnnuler.Visible -and $btnAnnuler.Enabled) {
+            $e.Handled = $true
+            $btnAnnuler.PerformClick()
+        } elseif ($overlayProgression.Visible -and $btnAnnulerOverlay.Visible -and $btnAnnulerOverlay.Enabled) {
+            $e.Handled = $true
+            $btnAnnulerOverlay.PerformClick()
+        }
+    }
+}.GetNewClosure())
+
 $form.WindowState = "Maximized"
 
 [void]$form.ShowDialog()

@@ -3,6 +3,28 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Quatre nouvelles idées d'un coup ("tu peux toutes les faire", 16/10/2026, deuxième série).**
+Proposées en prévenant que ça commençait à racler le fond du tiroir ; approuvées quand même :
+
+1. **Raccourcis clavier.** `Ctrl+Entrée` lance la colorisation (équivalent au bouton "Lancer"),
+   `Échap` annule un traitement en cours — fonctionne aussi bien depuis la fenêtre principale que
+   depuis l'overlay de progression (qui a son propre focus pendant un lot).
+2. **Vérification de mise à jour.** Nouveau bouton "Verifier mise a jour" qui compare la date de
+   cette copie locale à la date du dernier commit GitHub touchant ce fichier précis — pas une
+   comparaison de version exacte (le numéro de commit n'est pas connu au moment d'écrire le
+   script), juste "une mise à jour a été publiée depuis que cette copie a été construite".
+   Déclenché uniquement par le bouton, jamais automatiquement au démarrage (pas question de faire
+   attendre un appel réseau à chaque lancement).
+3. **File d'attente de plusieurs lots.** Le bouton "Ajouter a la file" empile un lot (fichiers +
+   réglages de ce lot précis : fournisseur, prompt, nombre de couleurs, triangles, dossier de
+   sortie, etc.) au lieu de le lancer tout de suite ; "Lancer la file d'attente" les enchaîne
+   automatiquement l'un après l'autre, sans avoir à rester devant l'appli entre deux lots pour
+   changer les réglages et recliquer sur Lancer.
+4. **Graphique de consommation de crédits.** Nouveau bouton "Graphique credits" ouvrant un
+   diagramme en barres (dessiné à la main, pas de bibliothèque de graphique disponible ici) des
+   crédits consommés par lot au fil du temps, à partir de `historique_lots.csv` — les 40 lots les
+   plus récents, pour rester lisible.
+
 **Quatre idées d'un coup ("tu peux toutes les faire", 16/10/2026).** Deux déjà couvertes
 (comparatif Meshy/Tripo : déjà fait via "Comparer Meshy et Tripo" existant) ou hors scope de ce
 fichier, donc quatre nouveautés réelles :
