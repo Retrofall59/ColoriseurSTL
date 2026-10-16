@@ -3,6 +3,15 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**L'overlay de progression est maintenant masqué avant d'afficher la boîte d'erreur en cas d'échec
+(16/10/2026, correctif préventif - même souci signalé par Tomyn côté Melange-Couleurs :
+"la barre de progression se met devant l'avertissement de la couverture donc chiant parce qu'on
+peut pas bien cliquer sur le bouton pour accepter").** L'overlay (toujours affiché au premier plan,
+TopMost) passait devant certaines boîtes modales qui ne sont pas elles-mêmes TopMost, empêchant de
+cliquer sur leurs boutons. Ici l'overlay ne s'affiche déjà qu'après les confirmations préalables
+(clé API, solde) donc le souci ne s'est pas reproduit à l'identique, mais la boîte d'erreur de fin
+de traitement était dans le même cas - elle est désormais précédée d'un masquage de l'overlay.
+
 **La barre de progression disparaît maintenant seule, quelques secondes après 100% (16/10/2026,
 Tomyn côté Melange-Couleurs, même code ici : "la barre de progression quand elle est arrivée à
 100% elle reste, il faut que je reclique de l'application pour qu'elle disparaisse, il faudrait

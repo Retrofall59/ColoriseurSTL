@@ -3496,6 +3496,10 @@ function Lancer-Traitement($fichiersStl) {
         Afficher-Boite $messageFin "Colorisation - fin du traitement" | Out-Null
     } catch {
         Ecrire-Journal "ERREUR : $_"
+        # Overlay masque AVANT la boite d'erreur - sinon, etant TopMost, il passerait devant et
+        # empecherait de cliquer sur OK (meme souci que celui signale par Tomyn sur l'avertissement
+        # de couverture dans Melange-Couleurs, 16/10/2026).
+        Masquer-OverlayProgression
         Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
     } finally {
         $btnLancer.Visible = $true
