@@ -3,6 +3,28 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Quatre idées d'un coup ("tu peux toutes les faire", 16/10/2026).** Deux déjà couvertes
+(comparatif Meshy/Tripo : déjà fait via "Comparer Meshy et Tripo" existant) ou hors scope de ce
+fichier, donc quatre nouveautés réelles :
+
+1. **Pause/Reprendre sur un lot.** Pas une vraie pause en plein milieu d'un appel API (trop risqué
+   à faire à l'aveugle sans Windows pour tester) : le fichier en cours va à son terme, puis la
+   boucle attend avant de passer au suivant. Bouton sur l'overlay de progression, juste à côté
+   d'Annuler, bascule Pause/Reprendre.
+2. **Historique par fichier, avec recherche.** Nouveau bouton "Hist. fichiers" ouvrant une fenêtre
+   listant chaque fichier individuellement (`historique_fichiers.csv`, déjà alimenté mais jamais
+   consultable dans l'appli jusqu'ici) avec un champ de recherche qui filtre en direct par nom de
+   fichier, date, fournisseur ou chemin de sortie.
+3. **Vérification de l'espace disque avant un gros lot.** Estimation large (30 Mo/fichier) comparée
+   à l'espace libre du disque de destination - avertissement (non bloquant) avant de lancer plutôt
+   que de découvrir un disque plein en cours de route.
+4. **Mode sombre.** Bouton dans la bannière, palette sombre appliquée aux fonds/textes/cases de
+   l'appli (fenêtre principale + overlay de progression), préférence retenue d'un lancement à
+   l'autre (`mode-sombre.json`, inclus dans l'export/import de config). Scope volontairement
+   "basique" : la couleur de survol exacte des boutons n'est pas re-coloriée - non vérifiable
+   visuellement sans Windows sous la main, donc limité à ce qui compte vraiment (lisibilité) plutôt
+   que de risquer une refonte complète à l'aveugle.
+
 **Export/import de toute la config en un .zip ("TOUS", 16/10/2026).** Même principe que la
 fonctionnalité déjà présente côté Melange-Couleurs-3MF : deux boutons "Sauvegarder ma config..." /
 "Restaurer ma config..." regroupent dans une seule archive les petits fichiers créés par l'outil à

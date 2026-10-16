@@ -600,6 +600,86 @@ $THEME = @{
     HauteurBanniere    = 56
 }
 
+# Mode sombre (16/10/2026, idee d'amelioration validee "tu peux toutes les faire") - "basique"
+# assume : les fonds, textes et cases passent en sombre, mais la couleur de survol/bordure exacte
+# de chaque bouton (FlatAppearance.MouseOverBackColor, jamais relue ni modifiee ici) reste celle
+# calculee au moment ou Rendre-BoutonPlat a ete appele la premiere fois - non verifiable visuellement
+# sans Windows, donc scope volontairement reduit a ce qui compte vraiment (lisibilite) plutot que
+# de risquer une refonte complete a l'aveugle.
+# $THEME_ORIGINAL : copie figee de la palette claire ci-dessus, JAMAIS modifiee - sert de reference
+# "point de depart" pour construire la correspondance couleur->couleur a chaque bascule, que $THEME
+# (lui, modifie EN PLACE a chaque bascule - voir Basculer-ModeSombre) soit actuellement clair ou
+# sombre.
+$THEME_ORIGINAL = @{}
+foreach ($cle in $THEME.Keys) { $THEME_ORIGINAL[$cle] = $THEME[$cle] }
+
+$THEME_SOMBRE = @{
+    FondApp            = [System.Drawing.Color]::FromArgb(0x1E, 0x1E, 0x24)
+    FondBanniere        = [System.Drawing.Color]::FromArgb(0x2E, 0x1C, 0x66)
+    Surface            = [System.Drawing.Color]::FromArgb(0x2A, 0x2A, 0x32)
+    AccentPrincipal    = [System.Drawing.Color]::FromArgb(0x9B, 0x7A, 0xFF)
+    AccentPrincipalTxt = [System.Drawing.Color]::White
+    AccentDanger       = [System.Drawing.Color]::FromArgb(0xFF, 0x6B, 0x6B)
+    AccentChaud        = [System.Drawing.Color]::FromArgb(0xFF, 0x7A, 0x45)
+    AccentDoux         = [System.Drawing.Color]::FromArgb(0x3D, 0x35, 0x55)
+    Texte              = [System.Drawing.Color]::FromArgb(0xEC, 0xEC, 0xF2)
+    TexteSecondaire    = [System.Drawing.Color]::FromArgb(0xB0, 0xB0, 0xBC)
+    Bordure            = [System.Drawing.Color]::FromArgb(0x44, 0x44, 0x50)
+    RayonArrondi       = 7
+    HauteurBanniere    = 56
+}
+
+$script:modeSombreActif = $false
+
+function Obtenir-CheminPreferenceModeSombre {
+    if ($PSScriptRoot) { Join-Path $PSScriptRoot "mode-sombre.json" } else { Join-Path (Get-Location) "mode-sombre.json" }
+}
+
+function Recolorer-ControlesRecursif($controle, [hashtable]$mapping) {
+    foreach ($enfant in @($controle.Controls)) {
+        try {
+            if ($mapping.ContainsKey($enfant.BackColor.ToArgb())) { $enfant.BackColor = $mapping[$enfant.BackColor.ToArgb()] }
+        } catch { }
+        try {
+            if ($mapping.ContainsKey($enfant.ForeColor.ToArgb())) { $enfant.ForeColor = $mapping[$enfant.ForeColor.ToArgb()] }
+        } catch { }
+        try {
+            if ($enfant -is [System.Windows.Forms.Button] -and $enfant.FlatAppearance -and $mapping.ContainsKey($enfant.FlatAppearance.BorderColor.ToArgb())) {
+                $enfant.FlatAppearance.BorderColor = $mapping[$enfant.FlatAppearance.BorderColor.ToArgb()]
+            }
+        } catch { }
+        if ($enfant.Controls -and $enfant.Controls.Count -gt 0) { Recolorer-ControlesRecursif $enfant $mapping }
+    }
+}
+
+# Bascule clair<->sombre. $THEME est modifie EN PLACE (jamais reassigne) pour que tout ce qui est
+# cree APRES la bascule (prochaine boite de dialogue, prochaine carte de galerie, prochain overlay)
+# parte directement avec les bonnes couleurs - seuls les controles DEJA CREES (fenetre principale +
+# overlay de progression, deja existants au demarrage) ont besoin d'etre recolories explicitement ici.
+function Basculer-ModeSombre([bool]$silencieux = $false) {
+    $versSombre = -not $script:modeSombreActif
+    $source = if ($versSombre) { $THEME_ORIGINAL } else { $THEME_SOMBRE }
+    $cible  = if ($versSombre) { $THEME_SOMBRE } else { $THEME_ORIGINAL }
+    $mapping = @{}
+    foreach ($cle in $THEME_ORIGINAL.Keys) {
+        if ($THEME_ORIGINAL[$cle] -is [System.Drawing.Color]) { $mapping[$source[$cle].ToArgb()] = $cible[$cle] }
+    }
+    try {
+        if ($mapping.ContainsKey($form.BackColor.ToArgb())) { $form.BackColor = $mapping[$form.BackColor.ToArgb()] }
+    } catch { }
+    Recolorer-ControlesRecursif $form $mapping
+    try {
+        if ($mapping.ContainsKey($overlayProgression.BackColor.ToArgb())) { $overlayProgression.BackColor = $mapping[$overlayProgression.BackColor.ToArgb()] }
+        Recolorer-ControlesRecursif $overlayProgression $mapping
+    } catch { }
+    foreach ($cle in @($cible.Keys)) { if ($cible[$cle] -is [System.Drawing.Color]) { $THEME[$cle] = $cible[$cle] } }
+    $script:modeSombreActif = $versSombre
+    if (-not $silencieux) {
+        try { (@{ ModeSombre = $script:modeSombreActif } | ConvertTo-Json) | Set-Content -Path (Obtenir-CheminPreferenceModeSombre) -Encoding UTF8 -ErrorAction Stop } catch { }
+    }
+    if ($btnModeSombre) { $btnModeSombre.Text = if ($script:modeSombreActif) { "Mode clair" } else { "Mode sombre" } }
+}
+
 # Arrondit les coins d'un controle ou d'une fenetre (Region via GraphicsPath) - factorise ici
 # (16/10/2026) a partir du code deja utilise pour les cartes de la galerie depuis le 10/10/2026,
 # pour l'appliquer maintenant aussi aux boutons et aux fenetres custom (Afficher-Boite, overlay)
@@ -1331,6 +1411,21 @@ $sousTitreBanniere.BackColor = [System.Drawing.Color]::Transparent
 $sousTitreBanniere.AutoSize = $true
 $sousTitreBanniere.Location = New-Object System.Drawing.Point(59, 32)
 $banniere.Controls.Add($sousTitreBanniere)
+
+# Bascule mode sombre (16/10/2026) - dans la banniere plutot qu'ailleurs : toujours visible, meme
+# en haut d'une appli qui scrolle, et c'est l'endroit le plus logique pour un reglage d'apparence.
+$btnModeSombre = New-Object System.Windows.Forms.Button
+$btnModeSombre.Text = "Mode sombre"
+$btnModeSombre.Size = New-Object System.Drawing.Size(110, 28)
+$btnModeSombre.Location = New-Object System.Drawing.Point(($form.ClientSize.Width - 125), (($THEME.HauteurBanniere - 28) / 2))
+$btnModeSombre.Anchor = "Top, Right"
+$btnModeSombre.FlatStyle = "Flat"
+$btnModeSombre.ForeColor = [System.Drawing.Color]::White
+$btnModeSombre.BackColor = $THEME.FondBanniere
+$btnModeSombre.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$btnModeSombre.Cursor = "Hand"
+$btnModeSombre.Add_Click({ Basculer-ModeSombre })
+$banniere.Controls.Add($btnModeSombre)
 
 $yActuel = 15 + $THEME.HauteurBanniere
 
@@ -2079,6 +2174,12 @@ $btnHistorique.Location = New-Object System.Drawing.Point(715, ($yActuel - 2))
 $btnHistorique.Size = New-Object System.Drawing.Size(85, 22)
 $form.Controls.Add($btnHistorique)
 
+$btnHistoriqueFichiers = New-Object System.Windows.Forms.Button
+$btnHistoriqueFichiers.Text = "Hist. fichiers"
+$btnHistoriqueFichiers.Location = New-Object System.Drawing.Point(895, ($yActuel - 2))
+$btnHistoriqueFichiers.Size = New-Object System.Drawing.Size(90, 22)
+$form.Controls.Add($btnHistoriqueFichiers)
+
 $btnEnregistrerJournal = New-Object System.Windows.Forms.Button
 $btnEnregistrerJournal.Text = "Enreg. journal"
 $btnEnregistrerJournal.Location = New-Object System.Drawing.Point(805, ($yActuel - 2))
@@ -2124,6 +2225,7 @@ function Obtenir-FichiersConfigConnus {
         @{ Nom = "historique_lots.csv";           Chemin = $CheminHistorique }
         @{ Nom = "historique_fichiers.csv";       Chemin = $CheminHistoriqueFichiers }
         @{ Nom = "chemin_melange_couleurs.json";  Chemin = $CheminConfigMelangeCouleurs }
+        @{ Nom = "mode-sombre.json";               Chemin = (Obtenir-CheminPreferenceModeSombre) }
     )
     # "dernier_prompt_<slug>.txt" : un fichier par categorie de style deja essayee (texte libre
     # memorise, voir Obtenir-CheminDernierPromptLibre plus haut) - noms non-fixes (derives du nom de
@@ -2270,7 +2372,7 @@ $overlayProgression.Controls.Add($labelOverlayPct)
 # instantanement, le traitement en cours sur un fichier va a son terme).
 $btnAnnulerOverlay = New-Object System.Windows.Forms.Button
 $btnAnnulerOverlay.Text = "Annuler"
-$btnAnnulerOverlay.Location = New-Object System.Drawing.Point(170, 135)
+$btnAnnulerOverlay.Location = New-Object System.Drawing.Point(225, 135)
 $btnAnnulerOverlay.Size = New-Object System.Drawing.Size(100, 28)
 $btnAnnulerOverlay.FlatStyle = "Flat"
 $btnAnnulerOverlay.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
@@ -2284,12 +2386,36 @@ $btnAnnulerOverlay.Add_Click({
     $btnAnnulerOverlay.Text = "Annulation..."
 })
 
+# Bouton Pause (16/10/2026, idee d'amelioration validee "tu peux toutes les faire") - une vraie
+# pause EN PLEIN MILIEU d'un appel API serait trop risquee a faire a l'aveugle (pas de Windows pour
+# tester) ; celle-ci est plus modeste mais sure : le fichier EN COURS va a son terme (comme pour
+# Annuler), puis la boucle attend avant de passer au suivant - cf. le point de controle juste apres
+# "if ($script:annulationDemandee)" dans la boucle du lot plus bas. Bascule Pause/Reprendre sur le
+# meme bouton, comme Annuler/Annulation....
+$script:pauseDemandeeColoriser = $false
+$btnPauseOverlay = New-Object System.Windows.Forms.Button
+$btnPauseOverlay.Text = "Pause"
+$btnPauseOverlay.Location = New-Object System.Drawing.Point(115, 135)
+$btnPauseOverlay.Size = New-Object System.Drawing.Size(100, 28)
+$btnPauseOverlay.FlatStyle = "Flat"
+$btnPauseOverlay.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$btnPauseOverlay.ForeColor = [System.Drawing.Color]::White
+$btnPauseOverlay.BackColor = $THEME.FondBanniere
+$btnPauseOverlay.Cursor = "Hand"
+$overlayProgression.Controls.Add($btnPauseOverlay)
+$btnPauseOverlay.Add_Click({
+    $script:pauseDemandeeColoriser = -not $script:pauseDemandeeColoriser
+    $btnPauseOverlay.Text = if ($script:pauseDemandeeColoriser) { "Reprendre" } else { "Pause" }
+})
+
 function Afficher-OverlayProgression([string]$titre) {
     $labelOverlayTitre.Text = $titre
     $remplissageOverlay.Width = 0
     $labelOverlayPct.Text = "0%"
     $btnAnnulerOverlay.Enabled = $true
     $btnAnnulerOverlay.Text = "Annuler"
+    $script:pauseDemandeeColoriser = $false
+    $btnPauseOverlay.Text = "Pause"
     $overlayProgression.Location = New-Object System.Drawing.Point(
         ($form.Location.X + [int](($form.Width - $overlayProgression.Width) / 2)),
         ($form.Location.Y + [int](($form.Height - $overlayProgression.Height) / 2))
@@ -3529,6 +3655,108 @@ function Afficher-FenetreHistorique {
     [void]$fenetre.ShowDialog($form)
 }
 
+# Historique PAR FICHIER avec recherche (16/10/2026, idee d'amelioration validee "tu peux toutes
+# les faire") - contrairement a Afficher-FenetreHistorique ci-dessus (un resume par LOT, pas de nom
+# de fichier dedans), celui-ci liste chaque fichier individuellement avec un champ de recherche qui
+# filtre en direct (nom de fichier, date, fournisseur, chemin de sortie) - $CheminHistoriqueFichiers
+# etait deja alimente a chaque fichier reussi (Enregistrer-HistoriqueFichier) mais n'avait jusqu'ici
+# aucune fenetre pour le consulter dans l'appli.
+function Charger-LignesHistoriqueFichiers {
+    if (-not (Test-Path $CheminHistoriqueFichiers)) { return @() }
+    $lignes = @(Get-Content $CheminHistoriqueFichiers | Where-Object { $_.Trim() })
+    if ($lignes.Count -le 1) { return @() }  # rien que l'en-tete
+    return @($lignes | Select-Object -Skip 1 | ForEach-Object {
+        $champs = $_ -split ';'
+        if ($champs.Count -ge 5) {
+            [PSCustomObject]@{ Date = $champs[0]; Fichier = $champs[1]; Fournisseur = $champs[2]; Credits = $champs[3]; Sortie = $champs[4] }
+        }
+    } | Where-Object { $_ })
+}
+
+function Afficher-FenetreHistoriqueFichiers {
+    $fenetre = New-Object System.Windows.Forms.Form
+    $fenetre.Text = "Historique par fichier"
+    $fenetre.Size = New-Object System.Drawing.Size(820, 480)
+    $fenetre.MinimumSize = New-Object System.Drawing.Size(500, 300)
+    $fenetre.StartPosition = "CenterParent"
+    $fenetre.BackColor = $THEME.FondApp
+    try { $fenetre.Icon = $form.Icon } catch { }
+
+    $labelRecherche = New-Object System.Windows.Forms.Label
+    $labelRecherche.Text = "Rechercher :"
+    $labelRecherche.Location = New-Object System.Drawing.Point(10, 14)
+    $labelRecherche.AutoSize = $true
+    $labelRecherche.ForeColor = $THEME.Texte
+    $fenetre.Controls.Add($labelRecherche)
+
+    $txtRecherche = New-Object System.Windows.Forms.TextBox
+    $txtRecherche.Location = New-Object System.Drawing.Point(95, 10)
+    $txtRecherche.Size = New-Object System.Drawing.Size(300, 24)
+    $fenetre.Controls.Add($txtRecherche)
+
+    $labelCompteur = New-Object System.Windows.Forms.Label
+    $labelCompteur.Location = New-Object System.Drawing.Point(410, 14)
+    $labelCompteur.AutoSize = $true
+    $labelCompteur.ForeColor = $THEME.TexteSecondaire
+    $fenetre.Controls.Add($labelCompteur)
+
+    $liste = New-Object System.Windows.Forms.ListView
+    $liste.View = "Details"
+    $liste.FullRowSelect = $true
+    $liste.GridLines = $true
+    $liste.Location = New-Object System.Drawing.Point(10, 44)
+    $liste.Size = New-Object System.Drawing.Size(790, 370)
+    $liste.Anchor = "Top, Bottom, Left, Right"
+    [void]$liste.Columns.Add("Date", 130)
+    [void]$liste.Columns.Add("Fichier", 260)
+    [void]$liste.Columns.Add("Fournisseur", 110)
+    [void]$liste.Columns.Add("Credits", 70)
+    [void]$liste.Columns.Add("Sortie", 210)
+    $fenetre.Controls.Add($liste)
+
+    $btnFermer = New-Object System.Windows.Forms.Button
+    $btnFermer.Text = "Fermer"
+    $btnFermer.Location = New-Object System.Drawing.Point(725, 420)
+    $btnFermer.Size = New-Object System.Drawing.Size(75, 28)
+    $btnFermer.Anchor = "Bottom, Right"
+    Rendre-BoutonPlat $btnFermer "secondaire"
+    $btnFermer.Add_Click({ $fenetre.Close() }.GetNewClosure())
+    $fenetre.Controls.Add($btnFermer)
+
+    $toutesLesLignes = @(Charger-LignesHistoriqueFichiers)
+
+    # Scriptblock plutot qu'une fonction nommee imbriquee (incertain qu'une fonction definie DANS
+    # cette fonction reste resolvable depuis la closure de l'evenement TextChanged plus bas) -
+    # capture $liste/$txtRecherche/$toutesLesLignes/$labelCompteur via GetNewClosure comme partout
+    # ailleurs dans ce fichier.
+    $rafraichirListe = {
+        $liste.Items.Clear()
+        $filtre = $txtRecherche.Text.Trim()
+        $lignesAffichees = if ($filtre) {
+            @($toutesLesLignes | Where-Object { "$($_.Date) $($_.Fichier) $($_.Fournisseur) $($_.Sortie)" -like "*$filtre*" })
+        } else { $toutesLesLignes }
+        foreach ($l in $lignesAffichees) {
+            $item = New-Object System.Windows.Forms.ListViewItem($l.Date)
+            [void]$item.SubItems.Add($l.Fichier)
+            [void]$item.SubItems.Add($l.Fournisseur)
+            [void]$item.SubItems.Add($l.Credits)
+            [void]$item.SubItems.Add($l.Sortie)
+            [void]$liste.Items.Add($item)
+        }
+        $labelCompteur.Text = "$($lignesAffichees.Count) / $($toutesLesLignes.Count) ligne(s)"
+    }.GetNewClosure()
+
+    $txtRecherche.Add_TextChanged($rafraichirListe)
+
+    if ($toutesLesLignes.Count -eq 0) {
+        $labelCompteur.Text = "Aucun fichier dans l'historique pour l'instant."
+    } else {
+        & $rafraichirListe
+    }
+
+    [void]$fenetre.ShowDialog($form)
+}
+
 # Verifie la cle ET recupere le solde en un seul appel (meme endpoint) :
 #   statut "valide"   -> $solde contient le vrai solde
 #   statut "invalide" -> cle refusee par Meshy (HTTP 401/403), bloquant
@@ -3622,6 +3850,29 @@ function Lancer-Traitement($fichiersStl) {
         Afficher-Boite "Dossier de sortie vide." "Erreur" "OK" "Error" | Out-Null
         return
     }
+
+    # Verification de l'espace disque disponible (16/10/2026, idee d'amelioration validee "tu peux
+    # toutes les faire") - estimation large (30 Mo/fichier, un resultat colorise avec sa texture
+    # peut peser plusieurs dizaines de Mo) : avertit AVANT de lancer un gros lot plutot que de
+    # decouvrir un disque plein en cours de route (echec moche, credits potentiellement deja
+    # depenses pour rien). Non bloquant, comme la verification de solde juste en dessous - jamais
+    # sur de la taille reelle avant coup, donc pas question d'empecher totalement de continuer.
+    try {
+        $dossierSortieTest = $txtDossierSortie.Text
+        if (-not (Test-Path $dossierSortieTest)) { $dossierSortieTest = Split-Path $dossierSortieTest -Parent }
+        if ($dossierSortieTest -and (Test-Path $dossierSortieTest)) {
+            $racineDisque = (Get-Item $dossierSortieTest).PSDrive.Root
+            $lecteur = New-Object System.IO.DriveInfo($racineDisque)
+            if ($lecteur.IsReady) {
+                $espaceLibreMo = [Math]::Round($lecteur.AvailableFreeSpace / 1MB)
+                $espaceEstimeMo = $fichiersStl.Count * 30
+                if ($espaceLibreMo -lt $espaceEstimeMo) {
+                    $reponseEspace = Afficher-Boite "Espace disque libre sur $($lecteur.Name) : ~$espaceLibreMo Mo. Estimation (large) pour ce lot : ~$espaceEstimeMo Mo.`r`n`r`nContinuer quand meme ?" "Espace disque potentiellement insuffisant" "YesNo" "Warning"
+                    if ($reponseEspace -ne "Yes") { return }
+                }
+            }
+        }
+    } catch { }
 
     # --- Verification de la cle API et du solde avant de lancer, selon le fournisseur choisi ---
     # Cote Tripo : desactivee pour l'instant. L'endpoint devine (/user/balance, jamais confirme)
@@ -3751,6 +4002,19 @@ function Lancer-Traitement($fichiersStl) {
                 $interrompu = $true
                 break
             }
+            if ($script:pauseDemandeeColoriser) {
+                Ecrire-Journal "  (En pause - clique sur Reprendre dans la fenetre de progression pour continuer)"
+                while ($script:pauseDemandeeColoriser -and -not $script:annulationDemandee) {
+                    Start-Sleep -Milliseconds 200
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                if ($script:annulationDemandee) {
+                    Ecrire-Journal "`n=== Annule par l'utilisateur (fichiers restants non traites) ==="
+                    $interrompu = $true
+                    break
+                }
+                Ecrire-Journal "  (Reprise du lot)"
+            }
             if ($reprendreLot) {
                 $sortiesAttendues = @($suffixesSortieActuels | ForEach-Object { Join-Path $dossierSortie ($fichier.BaseName + $_.Suffixe) })
                 if (@($sortiesAttendues | Where-Object { Test-Path $_ }).Count -eq $sortiesAttendues.Count) {
@@ -3876,6 +4140,7 @@ function Lancer-Traitement($fichiersStl) {
 }
 
 $btnHistorique.Add_Click({ Afficher-FenetreHistorique })
+$btnHistoriqueFichiers.Add_Click({ Afficher-FenetreHistoriqueFichiers })
 
 $btnAnnuler.Add_Click({
     $script:annulationDemandee = $true
@@ -3956,6 +4221,17 @@ foreach ($colonne in @($colonneMeshy, $colonneTripo)) {
 # construction des controles ci-dessus a eu le temps de se faire pendant que le splash etait
 # affiche, donc la transition se fait sans trou visible entre les deux fenetres.
 try { $splash.Close(); $splash.Dispose() } catch { }
+
+# Mode sombre : applique la preference enregistree (16/10/2026) - APRES la construction complete
+# de l'interface (tous les controles existent, y compris $overlayProgression) mais avant
+# d'afficher la fenetre, pour que Tomyn ne voie jamais un "flash" clair avant le bascule.
+try {
+    $cheminPrefModeSombre = Obtenir-CheminPreferenceModeSombre
+    if (Test-Path $cheminPrefModeSombre) {
+        $prefModeSombre = Get-Content $cheminPrefModeSombre -Raw | ConvertFrom-Json
+        if ($prefModeSombre.ModeSombre) { Basculer-ModeSombre $true }
+    }
+} catch { }
 
 # Correctif du 10/10/2026, troisieme essai (signale par Tomyn, captures a l'appui : la fenetre
 # sortait de l'ecran par le bas - "on voit pas tout", et pendant la colorisation "on voit les
