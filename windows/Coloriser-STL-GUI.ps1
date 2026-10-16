@@ -468,6 +468,13 @@ $CheminHistorique = Join-Path $PSScriptRoot "historique_lots.csv"
 # for a maximum of 3 days"), donc ceci ne remplace pas une sauvegarde du dossier de sortie
 # lui-meme, juste un journal local complementaire.
 $CheminHistoriqueFichiers = Join-Path $PSScriptRoot "historique_fichiers.csv"
+# Emplacement de l'installation de Melange-Couleurs sur cette machine (16/10/2026, passerelle
+# "Analyser les couleurs" sur un resultat .3mf - voir Ajouter-Vignette et Lancer-MelangeCouleurs
+# plus bas) - les deux outils sont des projets separes, chacun dans son propre dossier, sans lien
+# garanti entre les deux (pas forcement des dossiers freres), donc pas de chemin relatif fiable a
+# deviner. Un petit JSON a cote de CE script retient le chemin une fois que Tomyn l'a indique, pour
+# ne plus jamais avoir a redemander ensuite.
+$CheminConfigMelangeCouleurs = Join-Path $PSScriptRoot "chemin_melange_couleurs.json"
 # Rectifie le 07/10/2026 : premiere lecture du tableau de bord Meshy par Tomyn mal interpretee
 # (25+15+16 = 56), le vrai detail confirme juste apres est Retexture = 10 credits et Multi-Color
 # Print = 10 credits, soit 20 au total - l'estimation d'origine etait donc la bonne.
@@ -2023,13 +2030,77 @@ relire et completer avant de deposer le modele.)
     return @{ Titre = $titre; Texte = $texte }
 }
 
+# Passerelle vers Melange-Couleurs (16/10/2026, idee d'amelioration approuvee par Tomyn : "lier
+# les deux apps") - evite de devoir rouvrir Melange-Couleurs a la main et re-selectionner le .3mf
+# qu'on vient juste de coloriser ici. Resout puis retient l'emplacement de
+# Lancer-Melange-Couleurs.vbs chez Tomyn (voir $CheminConfigMelangeCouleurs plus haut) : essaie
+# d'abord quelques emplacements freres plausibles (les deux outils sont souvent installes cote a
+# cote), sinon demande une seule fois via un selecteur de fichier et retient le choix pour la
+# prochaine fois.
+function Obtenir-CheminMelangeCouleurs {
+    if (Test-Path $CheminConfigMelangeCouleurs) {
+        try {
+            $objet = Get-Content -Path $CheminConfigMelangeCouleurs -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($objet.Chemin -and (Test-Path $objet.Chemin)) { return [string]$objet.Chemin }
+        } catch { }
+    }
+
+    # Emplacements freres plausibles - couvre le cas le plus probable (les deux outils installes
+    # cote a cote, sous l'un ou l'autre nom de dossier/depot connu) sans jamais supposer que c'est
+    # garanti : juste une tentative avant de deranger Tomyn avec un selecteur.
+    $dossierParent = Split-Path $PSScriptRoot -Parent
+    $candidatsPossibles = @(
+        "MelangeCouleurs3MF", "melangecouleurs3mf", "Melange-Couleurs-3MF", "Melange-Couleurs",
+        "melange_couleurs_3mf", "Melange-Couleurs-GUI"
+    )
+    foreach ($nomDossier in $candidatsPossibles) {
+        $candidat = Join-Path (Join-Path $dossierParent $nomDossier) "Lancer-Melange-Couleurs.vbs"
+        if (Test-Path $candidat) {
+            Sauvegarder-CheminMelangeCouleurs $candidat
+            return $candidat
+        }
+    }
+
+    $dialogue = New-Object System.Windows.Forms.OpenFileDialog
+    $dialogue.Title = "Localiser Melange-Couleurs (fichier Lancer-Melange-Couleurs.vbs)"
+    $dialogue.Filter = "Lanceur Melange-Couleurs (Lancer-Melange-Couleurs.vbs)|Lancer-Melange-Couleurs.vbs|Tous les fichiers (*.*)|*.*"
+    if ($dialogue.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+    Sauvegarder-CheminMelangeCouleurs $dialogue.FileName
+    return $dialogue.FileName
+}
+
+function Sauvegarder-CheminMelangeCouleurs([string]$chemin) {
+    try {
+        (@{ Chemin = $chemin } | ConvertTo-Json) | Set-Content -Path $CheminConfigMelangeCouleurs -Encoding UTF8 -ErrorAction Stop
+    } catch { }
+}
+
+function Lancer-MelangeCouleurs([string]$cheminFichier3mf) {
+    $cheminVbs = Obtenir-CheminMelangeCouleurs
+    if (-not $cheminVbs) { return }
+    try {
+        # Lancer-Melange-Couleurs.vbs accepte depuis le 16/10/2026 un argument optionnel : le
+        # chemin du .3mf a charger automatiquement au demarrage, a la place du dernier fichier
+        # utilise (voir le .vbs et Melange-Couleurs-GUI.ps1, parametre -FichierInitial).
+        Start-Process -FilePath $cheminVbs -ArgumentList "`"$cheminFichier3mf`""
+    } catch {
+        Afficher-Boite "Impossible de lancer Melange-Couleurs : $_" "Erreur" "OK" "Error" | Out-Null
+    }
+}
+
 function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $avecCaseACocher = $false, [string]$texteDescription = "") {
     # 13/10/2026 : carte plus haute seulement quand une description MakerWorld est fournie (voir
     # Generer-DescriptionMakerWorld plus haut), pour garder la galerie de depart (pas de
     # description) a sa taille habituelle.
     $hauteurBoutonDescription = if ($texteDescription) { 26 } else { 0 }
+    # 16/10/2026 : bouton "Analyser les couleurs" (passerelle vers Melange-Couleurs) uniquement
+    # sur les resultats .3mf - la galerie de depart (avecCaseACocher=true, toujours des .stl) et
+    # les resultats .obj (variante "exporter en .obj" ou Tripo) n'ont pas de sens avec cet outil,
+    # qui ne lit que des .3mf.
+    $estResultat3mf = (-not $avecCaseACocher) -and ([System.IO.Path]::GetExtension($cheminFichier).ToLower() -eq ".3mf")
+    $hauteurBoutonAnalyse = if ($estResultat3mf) { 26 } else { 0 }
     $panneau = New-Object System.Windows.Forms.Panel
-    $panneau.Size = New-Object System.Drawing.Size(($TailleMiniature + 16), ($TailleMiniature + 84 + $hauteurBoutonDescription))
+    $panneau.Size = New-Object System.Drawing.Size(($TailleMiniature + 16), ($TailleMiniature + 84 + $hauteurBoutonDescription + $hauteurBoutonAnalyse))
     # Carte "carte blanche" plutot que le cadre gris FixedSingle d'origine (10/10/2026) : fond
     # blanc + une bande violette de 3px en haut, dessinee a la main (Panel ne propose pas de
     # bordure coloree nativement sans passer par un Paint custom).
@@ -2045,7 +2116,7 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     $cheminArrondi = New-Object System.Drawing.Drawing2D.GraphicsPath
     $diametre = $rayon * 2
     $largeurCarte = $TailleMiniature + 16
-    $hauteurCarte = $TailleMiniature + 84 + $hauteurBoutonDescription
+    $hauteurCarte = $TailleMiniature + 84 + $hauteurBoutonDescription + $hauteurBoutonAnalyse
     $cheminArrondi.AddArc(0, 0, $diametre, $diametre, 180, 90)
     $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), 0, $diametre, $diametre, 270, 90)
     $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), ($hauteurCarte - $diametre - 1), $diametre, $diametre, 0, 90)
@@ -2134,6 +2205,19 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
                 Afficher-Boite "Impossible de copier dans le presse-papier : $_" "Erreur" "OK" "Error" | Out-Null
             }
         }.GetNewClosure())
+    }
+
+    # 16/10/2026 : bouton "Analyser les couleurs" (voir Lancer-MelangeCouleurs plus haut) - sous
+    # le bouton "Copier description" s'il existe, sinon au meme endroit que lui aurait ete.
+    if ($estResultat3mf) {
+        $btnAnalyserCouleurs = New-Object System.Windows.Forms.Button
+        $btnAnalyserCouleurs.Text = "Analyser les couleurs..."
+        $btnAnalyserCouleurs.Size = New-Object System.Drawing.Size(($TailleMiniature + 6), 22)
+        $btnAnalyserCouleurs.Location = New-Object System.Drawing.Point(5, ($TailleMiniature + 32 + 36 + $hauteurBoutonDescription))
+        $btnAnalyserCouleurs.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+        $panneau.Controls.Add($btnAnalyserCouleurs)
+        Rendre-BoutonPlat $btnAnalyserCouleurs "discret"
+        $btnAnalyserCouleurs.Add_Click({ Lancer-MelangeCouleurs $cheminFichier }.GetNewClosure())
     }
 
     $galerie.Controls.Add($panneau)

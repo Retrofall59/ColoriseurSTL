@@ -5,6 +5,21 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Passerelle vers Melange-Couleurs : bouton "Analyser les couleurs..." sur les résultats .3mf
+(16/10/2026, idée approuvée par Tomyn : "lier les deux apps").** Jusqu'ici, pour affiner le dosage
+des couleurs d'un résultat colorisé, Tomyn devait rouvrir Melange-Couleurs à la main et
+re-sélectionner le fichier .3mf qu'il venait de produire ici. Chaque carte de résultat .3mf (pas
+les .obj, que Melange-Couleurs ne lit pas) a maintenant un bouton "Analyser les couleurs..." qui
+lance Melange-Couleurs directement sur ce fichier, sans repasser par le sélecteur. Comme les deux
+outils sont des projets séparés sans lien de dossier garanti, Coloriser-STL demande une seule fois
+où se trouve `Lancer-Melange-Couleurs.vbs` (après avoir essayé quelques emplacements frères
+plausibles) et retient le choix dans `chemin_melange_couleurs.json`, à côté du script. Côté
+Melange-Couleurs : `Lancer-Melange-Couleurs.vbs` et `Melange-Couleurs-GUI.ps1` acceptent maintenant
+un argument optionnel (le chemin du .3mf à charger directement au démarrage, à la place du dernier
+fichier utilisé) - sans argument, rien ne change pour un lancement normal.
+
+---
+
 **Simplification automatique des gros maillages .stl avant colorisation + alerte solde
 insuffisant (15/10/2026, idées de Tomyn).** Deux chantiers, dont un déjà fait :
 - **Alerte solde insuffisant avant de lancer un gros lot** : déjà en place (vérifié en relisant
