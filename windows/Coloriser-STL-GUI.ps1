@@ -2086,26 +2086,27 @@ relire et completer avant de deposer le modele.)
 # cote), sinon demande une seule fois via un selecteur de fichier et retient le choix pour la
 # prochaine fois.
 function Obtenir-CheminMelangeCouleurs {
-    if (Test-Path $CheminConfigMelangeCouleurs) {
-        try {
-            $objet = Get-Content -Path $CheminConfigMelangeCouleurs -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            if ($objet.Chemin -and (Test-Path $objet.Chemin)) { return [string]$objet.Chemin }
-        } catch { }
-    }
+    # 16/10/2026, reordonne suite au retour de Tomyn ("faut que l'application s'adapte... faut pas
+    # qu'il aille chercher un nom de fichier en particulier") : la recherche EN DIRECT (ce dossier,
+    # puis les dossiers freres connus) passe maintenant AVANT le chemin memorise sur le disque, pas
+    # apres. Avant ce changement, un chemin memorise perime (Tomyn a renomme/deplace/reorganise ses
+    # dossiers depuis) etait utilise tel quel sans meme revérifier si une recherche fraiche aurait
+    # trouve mieux - exactement ce qui causait tout le probleme precedent (chargeait un ancien
+    # dossier au lieu du bon, meme pointe droit sous son nez dans le MEME dossier que ce script).
+    # Resultat : tant que les deux outils restent dans le meme dossier (ou des dossiers freres a l'un
+    # des noms connus), AUCUNE memorisation n'est meme necessaire - tout se redecouvre a chaque
+    # lancement, meme apres un renommage ou un deplacement. Le chemin memorise ne sert plus que de
+    # tout dernier recours (machine avec une disposition vraiment inhabituelle), et seulement s'il
+    # pointe encore vers un fichier qui existe reellement.
 
-    # 16/10/2026 : verifie d'abord le MEME dossier que ce script (Tomyn garde tout a plat - Coloriser-
-    # STL et Melange-Couleurs dans un seul et meme dossier, pas dans des dossiers freres separes comme
-    # suppose initialement) - couvre son cas reel directement, sans meme passer par la boite de
-    # dialogue.
+    # Verifie d'abord le MEME dossier que ce script (cas de Tomyn : tout a plat, Coloriser-STL et
+    # Melange-Couleurs ensemble dans un seul dossier).
     $candidatMemeDossier = Join-Path $PSScriptRoot "Lancer-Melange-Couleurs.vbs"
-    if (Test-Path $candidatMemeDossier) {
-        Sauvegarder-CheminMelangeCouleurs $candidatMemeDossier
-        return $candidatMemeDossier
-    }
+    if (Test-Path $candidatMemeDossier) { return $candidatMemeDossier }
 
-    # Emplacements freres plausibles - couvre le cas ou les deux outils sont installes cote a cote
-    # dans des dossiers SEPARES (sous l'un ou l'autre nom de dossier/depot connu) sans jamais supposer
-    # que c'est garanti : juste une tentative avant de deranger Tomyn avec un selecteur.
+    # Sinon, emplacements freres plausibles - couvre le cas ou les deux outils sont installes cote a
+    # cote dans des dossiers SEPARES (sous l'un ou l'autre nom de dossier/depot connu) sans jamais
+    # supposer que c'est garanti.
     $dossierParent = Split-Path $PSScriptRoot -Parent
     $candidatsPossibles = @(
         "MelangeCouleurs3MF", "melangecouleurs3mf", "Melange-Couleurs-3MF", "Melange-Couleurs",
@@ -2113,10 +2114,16 @@ function Obtenir-CheminMelangeCouleurs {
     )
     foreach ($nomDossier in $candidatsPossibles) {
         $candidat = Join-Path (Join-Path $dossierParent $nomDossier) "Lancer-Melange-Couleurs.vbs"
-        if (Test-Path $candidat) {
-            Sauvegarder-CheminMelangeCouleurs $candidat
-            return $candidat
-        }
+        if (Test-Path $candidat) { return $candidat }
+    }
+
+    # Dernier recours : chemin memorise d'une fois precedente (disposition inhabituelle ou
+    # confirmee manuellement par Tomyn via le selecteur plus bas) - seulement s'il existe encore.
+    if (Test-Path $CheminConfigMelangeCouleurs) {
+        try {
+            $objet = Get-Content -Path $CheminConfigMelangeCouleurs -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($objet.Chemin -and (Test-Path $objet.Chemin)) { return [string]$objet.Chemin }
+        } catch { }
     }
 
     $dialogue = New-Object System.Windows.Forms.OpenFileDialog

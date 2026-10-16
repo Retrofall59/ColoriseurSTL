@@ -3,6 +3,19 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**La détection de Melange-Couleurs ne mémorise plus rien tant qu'elle peut se refaire toute seule
+(16/10/2026, Tomyn : "faut que l'application s'adapte ... faut pas qu'il aille chercher un nom de
+fichier en particulier").** Jusqu'ici, un chemin trouvé une fois était mémorisé sur le disque et
+réutilisé tel quel aux lancements suivants - donc si Tomyn renommait ou déplaçait ses dossiers
+entre-temps, l'ancien chemin (périmé) était quand même pris, SANS même revérifier si une recherche
+fraîche aurait trouvé le bon fichier droit sous son nez. Inversé l'ordre : la recherche en direct
+(même dossier que ce script, puis les dossiers frères connus) passe maintenant AVANT le chemin
+mémorisé, qui ne sert plus que de tout dernier recours. Tant que les deux outils restent dans le
+même dossier (le cas réel chez Tomyn), aucune mémorisation n'est même nécessaire - ça se
+redécouvre à chaque lancement, même après un renommage.
+
+---
+
 **Correction : la boîte "localiser Melange-Couleurs" s'ouvrait dans le mauvais dossier
 (16/10/2026).** Chez Tomyn, les deux outils sont à plat dans un seul et même dossier (pas dans deux
 dossiers frères séparés comme supposé au départ) - aucun des noms de dossier devinés
