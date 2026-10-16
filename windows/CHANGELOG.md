@@ -3,6 +3,17 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Vraie barre de progression bloquante, par-dessus l'appli (16/10/2026, Tomyn : "trop discrete, il
+faudrait un vrai barre de progression qui se mete au dessus de l'appli et qui bloque toutes action
+sur les appli tant qu'elle n'est pas finie, style comme sur les photo que je viens de t'envoyer,
+bien sur dans le style de l'application").** La fine barre au-dessus du journal ne suffisait pas.
+Nouvelle fenêtre sans bordure, toujours au premier plan, aux couleurs de l'appli (violet foncé +
+remplissage orange), affichée centrée par-dessus la fenêtre principale pendant tout le traitement
+(lancement simple ou lot) - la fenêtre principale est désactivée en dessous le temps du
+traitement, donc plus aucun clic accidentel possible pendant qu'un lot tourne. Le bouton "Annuler"
+reste disponible, directement sur cette fenêtre de progression (même action que le bouton annuler
+habituel).
+
 **Lancer sans prompt est maintenant possible pour de vrai, pas juste sans blocage (16/10/2026,
 Tomyn : "des fois je veux lancer la colonisation sans mettre de prompt donc là ça ne marche pas").**
 Premier essai (retirer le blocage du champ vide) corrigé par le test réel de Tomyn : Meshy exige un

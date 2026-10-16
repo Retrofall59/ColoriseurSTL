@@ -1926,6 +1926,105 @@ $form.Controls.Add($barreProgression)
 $yActuel += 17
 $yFinBlocLancement = $yActuel
 
+# 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete au
+# dessus de l'appli et qui bloque toutes action sur les appli tant qu'elle n'est pas finie, style
+# comme sur les photo que je viens de t'envoyer, bien sur dans le style de l'application" - meme
+# recette que cote Melange-Couleurs (voir le commentaire equivalent la-bas) : une fenetre sans
+# bordure, TopMost, aux couleurs de l'appli (violet fonce + remplissage orange), affichee par-dessus
+# avec $form.Enabled = $false pour bloquer tout clic sur la fenetre principale pendant le
+# traitement. Show() (pas ShowDialog, qui bloquerait le thread et empecherait les DoEvents()
+# necessaires pendant le traitement).
+$overlayProgression = New-Object System.Windows.Forms.Form
+$overlayProgression.FormBorderStyle = "None"
+$overlayProgression.ShowInTaskbar = $false
+$overlayProgression.TopMost = $true
+$overlayProgression.StartPosition = "Manual"
+$overlayProgression.Size = New-Object System.Drawing.Size(440, 190)
+$overlayProgression.BackColor = $THEME.FondBanniere
+
+$labelOverlayTitre = New-Object System.Windows.Forms.Label
+$labelOverlayTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
+$labelOverlayTitre.ForeColor = [System.Drawing.Color]::White
+$labelOverlayTitre.BackColor = [System.Drawing.Color]::Transparent
+$labelOverlayTitre.AutoSize = $false
+$labelOverlayTitre.TextAlign = "MiddleCenter"
+$labelOverlayTitre.Location = New-Object System.Drawing.Point(20, 25)
+$labelOverlayTitre.Size = New-Object System.Drawing.Size(400, 28)
+$overlayProgression.Controls.Add($labelOverlayTitre)
+
+$pisteOverlay = New-Object System.Windows.Forms.Panel
+$pisteOverlay.Location = New-Object System.Drawing.Point(30, 75)
+$pisteOverlay.Size = New-Object System.Drawing.Size(380, 10)
+$pisteOverlay.BackColor = [System.Drawing.Color]::FromArgb(0x36, 0x1D, 0x78)
+$overlayProgression.Controls.Add($pisteOverlay)
+
+$remplissageOverlay = New-Object System.Windows.Forms.Panel
+$remplissageOverlay.Location = New-Object System.Drawing.Point(0, 0)
+$remplissageOverlay.Size = New-Object System.Drawing.Size(0, 10)
+$remplissageOverlay.BackColor = $THEME.AccentChaud
+$pisteOverlay.Controls.Add($remplissageOverlay)
+
+$labelOverlayPct = New-Object System.Windows.Forms.Label
+$labelOverlayPct.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+$labelOverlayPct.ForeColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$labelOverlayPct.BackColor = [System.Drawing.Color]::Transparent
+$labelOverlayPct.AutoSize = $false
+$labelOverlayPct.TextAlign = "MiddleCenter"
+$labelOverlayPct.Location = New-Object System.Drawing.Point(20, 95)
+$labelOverlayPct.Size = New-Object System.Drawing.Size(400, 24)
+$labelOverlayPct.Text = "0%"
+$overlayProgression.Controls.Add($labelOverlayPct)
+
+# Bouton Annuler propre a cette fenetre (14/10/2026, Tomyn, voir $btnAnnuler plus bas) : le
+# recouvrement bloque bien $form en dessous, mais Tomyn doit pouvoir annuler un lot en cours sans
+# attendre la fin - meme action que $btnAnnuler.Add_Click (annule a la prochaine verification, pas
+# instantanement, le traitement en cours sur un fichier va a son terme).
+$btnAnnulerOverlay = New-Object System.Windows.Forms.Button
+$btnAnnulerOverlay.Text = "Annuler"
+$btnAnnulerOverlay.Location = New-Object System.Drawing.Point(170, 135)
+$btnAnnulerOverlay.Size = New-Object System.Drawing.Size(100, 28)
+$btnAnnulerOverlay.FlatStyle = "Flat"
+$btnAnnulerOverlay.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
+$btnAnnulerOverlay.ForeColor = [System.Drawing.Color]::White
+$btnAnnulerOverlay.BackColor = $THEME.FondBanniere
+$btnAnnulerOverlay.Cursor = "Hand"
+$overlayProgression.Controls.Add($btnAnnulerOverlay)
+$btnAnnulerOverlay.Add_Click({
+    $script:annulationDemandee = $true
+    $btnAnnulerOverlay.Enabled = $false
+    $btnAnnulerOverlay.Text = "Annulation..."
+})
+
+function Afficher-OverlayProgression([string]$titre) {
+    $labelOverlayTitre.Text = $titre
+    $remplissageOverlay.Width = 0
+    $labelOverlayPct.Text = "0%"
+    $btnAnnulerOverlay.Enabled = $true
+    $btnAnnulerOverlay.Text = "Annuler"
+    $overlayProgression.Location = New-Object System.Drawing.Point(
+        ($form.Location.X + [int](($form.Width - $overlayProgression.Width) / 2)),
+        ($form.Location.Y + [int](($form.Height - $overlayProgression.Height) / 2))
+    )
+    $form.Enabled = $false
+    $overlayProgression.Show()
+    $overlayProgression.BringToFront()
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Mettre-A-Jour-OverlayProgression([int]$pct, [string]$titre = $null) {
+    if ($titre) { $labelOverlayTitre.Text = $titre }
+    $pctBorne = [Math]::Max(0, [Math]::Min(100, $pct))
+    $remplissageOverlay.Width = [int]($pisteOverlay.Width * $pctBorne / 100)
+    $labelOverlayPct.Text = "$pctBorne%"
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Masquer-OverlayProgression {
+    $overlayProgression.Hide()
+    $form.Enabled = $true
+    $form.Activate()
+}
+
 # Panneaux de fond "carte" derriere chaque section : essayes le 14/10/2026, retires le meme jour
 # suite au retour de Tomyn ("c'est encore pire, toujours ces rectangles blancs sur un fond gris" -
 # 2e avis negatif de suite sur cette piste, pas la peine d'insister). Ajouter-PanneauSection et
@@ -3247,6 +3346,7 @@ function Lancer-Traitement($fichiersStl) {
         $barreProgression.Maximum = $fichiersStl.Count
         $barreProgression.Value = 0
         $barreProgression.Visible = $true
+        Afficher-OverlayProgression "Colorisation en cours..."
 
         $reussites = 0
         $echecsCeLot = New-Object System.Collections.Generic.List[System.IO.FileInfo]
@@ -3266,6 +3366,7 @@ function Lancer-Traitement($fichiersStl) {
         foreach ($fichier in $fichiersStl) {
             $script:indexFichierCourant++
             $barreProgression.Value = $script:indexFichierCourant - 1  # avant traitement : montre ce qui est deja fini
+            Mettre-A-Jour-OverlayProgression ([int](($script:indexFichierCourant - 1) / $script:totalFichiersLot * 100)) "Fichier $($script:indexFichierCourant) / $($script:totalFichiersLot) : $($fichier.Name)"
             if ($script:annulationDemandee) {
                 Ecrire-Journal "`n=== Annule par l'utilisateur (fichiers restants non traites) ==="
                 $interrompu = $true
@@ -3375,6 +3476,7 @@ function Lancer-Traitement($fichiersStl) {
         $script:annulationDemandee = $false
         $script:debutTraitement = $null
         $barreProgression.Visible = $false
+        Masquer-OverlayProgression
         Mettre-A-Jour-Estimation  # restaure l'affichage du cout estime, a la place du temps ecoule
     }
 }
