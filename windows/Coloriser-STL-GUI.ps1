@@ -2145,8 +2145,17 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     # sur les resultats .3mf - la galerie de depart (avecCaseACocher=true, toujours des .stl) et
     # les resultats .obj (variante "exporter en .obj" ou Tripo) n'ont pas de sens avec cet outil,
     # qui ne lit que des .3mf.
+    # Correction du 16/10/2026 (Tomyn : "coupe" et "presque invisible") : la premiere version
+    # ajoutait systematiquement une ligne de 26px aux cartes de resultat .3mf, ce qui recreait
+    # exactement le probleme de galerie coupee regle la veille en reduisant $TailleMiniature. Une
+    # description MakerWorld est TOUJOURS generee pour un resultat .3mf (voir les 3 appels a
+    # Generer-DescriptionMakerWorld plus haut), donc $texteDescription est pour ainsi dire toujours
+    # rempli ici : le bouton partage maintenant la ligne du bouton "Copier description" (cote a
+    # cote) au lieu d'ajouter sa propre ligne - zero hauteur en plus dans le cas normal. La ligne
+    # dediee ne sert plus que de filet de securite pour le cas (imprevu en pratique) ou
+    # $texteDescription serait vide malgre tout.
     $estResultat3mf = (-not $avecCaseACocher) -and ([System.IO.Path]::GetExtension($cheminFichier).ToLower() -eq ".3mf")
-    $hauteurBoutonAnalyse = if ($estResultat3mf) { 26 } else { 0 }
+    $hauteurBoutonAnalyse = if ($estResultat3mf -and -not $texteDescription) { 26 } else { 0 }
     $panneau = New-Object System.Windows.Forms.Panel
     $panneau.Size = New-Object System.Drawing.Size(($TailleMiniature + 16), ($TailleMiniature + 84 + $hauteurBoutonDescription + $hauteurBoutonAnalyse))
     # Carte "carte blanche" plutot que le cadre gris FixedSingle d'origine (10/10/2026) : fond
@@ -2237,31 +2246,70 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     # copie titre + description dans le presse-papier, a coller a la main dans le formulaire de
     # depot MakerWorld (pas d'automatisation possible cote depot, voir le commentaire sur cette
     # fonction).
+    # 16/10/2026 : partage desormais sa ligne avec "Analyser les couleurs..." (cote a cote) sur un
+    # resultat .3mf, plutot que d'empiler une ligne de plus sous lui - voir le commentaire sur
+    # $hauteurBoutonAnalyse plus haut pour pourquoi (carte qui repoussait la galerie hors de vue).
     if ($texteDescription) {
-        $btnCopierDescription = New-Object System.Windows.Forms.Button
-        $btnCopierDescription.Text = "Copier description"
-        $btnCopierDescription.Size = New-Object System.Drawing.Size(($TailleMiniature + 6), 22)
-        $btnCopierDescription.Location = New-Object System.Drawing.Point(5, ($TailleMiniature + 32 + 36))
-        $btnCopierDescription.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
-        $panneau.Controls.Add($btnCopierDescription)
-        Rendre-BoutonPlat $btnCopierDescription "discret"
-        $btnCopierDescription.Add_Click({
-            try {
-                [System.Windows.Forms.Clipboard]::SetText($texteDescription)
-                $btnCopierDescription.Text = "Copie dans le presse-papier !"
-            } catch {
-                Afficher-Boite "Impossible de copier dans le presse-papier : $_" "Erreur" "OK" "Error" | Out-Null
-            }
-        }.GetNewClosure())
-    }
+        $yLigneBoutons = $TailleMiniature + 32 + 36
+        if ($estResultat3mf) {
+            $largeurDemiBouton = [math]::Floor((($TailleMiniature + 6) - 4) / 2)
 
-    # 16/10/2026 : bouton "Analyser les couleurs" (voir Lancer-MelangeCouleurs plus haut) - sous
-    # le bouton "Copier description" s'il existe, sinon au meme endroit que lui aurait ete.
-    if ($estResultat3mf) {
+            $btnCopierDescription = New-Object System.Windows.Forms.Button
+            $btnCopierDescription.Text = "Copier desc."
+            $btnCopierDescription.AutoEllipsis = $true
+            $btnCopierDescription.Size = New-Object System.Drawing.Size($largeurDemiBouton, 22)
+            $btnCopierDescription.Location = New-Object System.Drawing.Point(5, $yLigneBoutons)
+            $btnCopierDescription.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+            $panneau.Controls.Add($btnCopierDescription)
+            Rendre-BoutonPlat $btnCopierDescription "discret"
+            $infobulleCopier = New-Object System.Windows.Forms.ToolTip
+            $infobulleCopier.SetToolTip($btnCopierDescription, "Copier le titre et la description generes (a coller dans le formulaire de depot MakerWorld)")
+            $btnCopierDescription.Add_Click({
+                try {
+                    [System.Windows.Forms.Clipboard]::SetText($texteDescription)
+                    $btnCopierDescription.Text = "Copie !"
+                } catch {
+                    Afficher-Boite "Impossible de copier dans le presse-papier : $_" "Erreur" "OK" "Error" | Out-Null
+                }
+            }.GetNewClosure())
+
+            $btnAnalyserCouleurs = New-Object System.Windows.Forms.Button
+            $btnAnalyserCouleurs.Text = "Couleurs..."
+            $btnAnalyserCouleurs.AutoEllipsis = $true
+            $btnAnalyserCouleurs.Size = New-Object System.Drawing.Size($largeurDemiBouton, 22)
+            $btnAnalyserCouleurs.Location = New-Object System.Drawing.Point((5 + $largeurDemiBouton + 4), $yLigneBoutons)
+            $btnAnalyserCouleurs.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+            $panneau.Controls.Add($btnAnalyserCouleurs)
+            Rendre-BoutonPlat $btnAnalyserCouleurs "discret"
+            $infobulleAnalyser = New-Object System.Windows.Forms.ToolTip
+            $infobulleAnalyser.SetToolTip($btnAnalyserCouleurs, "Analyser les couleurs de ce resultat dans Melange-Couleurs")
+            $btnAnalyserCouleurs.Add_Click({ Lancer-MelangeCouleurs $cheminFichier }.GetNewClosure())
+        } else {
+            $btnCopierDescription = New-Object System.Windows.Forms.Button
+            $btnCopierDescription.Text = "Copier description"
+            $btnCopierDescription.Size = New-Object System.Drawing.Size(($TailleMiniature + 6), 22)
+            $btnCopierDescription.Location = New-Object System.Drawing.Point(5, $yLigneBoutons)
+            $btnCopierDescription.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
+            $panneau.Controls.Add($btnCopierDescription)
+            Rendre-BoutonPlat $btnCopierDescription "discret"
+            $btnCopierDescription.Add_Click({
+                try {
+                    [System.Windows.Forms.Clipboard]::SetText($texteDescription)
+                    $btnCopierDescription.Text = "Copie dans le presse-papier !"
+                } catch {
+                    Afficher-Boite "Impossible de copier dans le presse-papier : $_" "Erreur" "OK" "Error" | Out-Null
+                }
+            }.GetNewClosure())
+        }
+    } elseif ($estResultat3mf) {
+        # Filet de securite (voir le commentaire sur $hauteurBoutonAnalyse plus haut) : ce cas
+        # n'arrive pas en pratique aujourd'hui (une description est toujours generee pour un
+        # resultat .3mf), mais si ca changeait un jour, le bouton garde sa propre ligne plutot que
+        # de disparaitre silencieusement.
         $btnAnalyserCouleurs = New-Object System.Windows.Forms.Button
         $btnAnalyserCouleurs.Text = "Analyser les couleurs..."
         $btnAnalyserCouleurs.Size = New-Object System.Drawing.Size(($TailleMiniature + 6), 22)
-        $btnAnalyserCouleurs.Location = New-Object System.Drawing.Point(5, ($TailleMiniature + 32 + 36 + $hauteurBoutonDescription))
+        $btnAnalyserCouleurs.Location = New-Object System.Drawing.Point(5, ($TailleMiniature + 32 + 36))
         $btnAnalyserCouleurs.Font = New-Object System.Drawing.Font("Segoe UI", 7.5)
         $panneau.Controls.Add($btnAnalyserCouleurs)
         Rendre-BoutonPlat $btnAnalyserCouleurs "discret"

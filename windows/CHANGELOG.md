@@ -5,6 +5,20 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Correction : bouton "Analyser les couleurs..." coupé/invisible (16/10/2026, Tomyn : "le bouton
+analyser les couleur est coupeur est presque invisible" + "et de plus il ne marche pas").** La
+première version ajoutait une ligne de 26px à CHAQUE carte de résultat .3mf pour ce bouton -
+exactement le problème de galerie coupée réglé la veille en réduisant `$TailleMiniature`, en
+pire : ça repoussait le bas de la carte (bouton compris) hors de la zone visible, donc un bouton
+à peine visible et quasiment impossible à cliquer franchement dessus (d'où "ça ne marche pas" -
+très probablement un clic qui tombait à côté). Corrigé : le bouton partage maintenant la ligne du
+bouton "Copier description" (côte à côte, chacun avec un texte raccourci + une infobulle pour le
+détail) au lieu d'empiler une ligne en plus - zéro hauteur de carte ajoutée dans le cas normal
+(une description MakerWorld est toujours générée pour un résultat .3mf). Une ligne dédiée ne sert
+plus que de filet de sécurité pour le cas, imprévu en pratique, où ça ne serait pas le cas.
+
+---
+
 **Simplification automatique étendue aux .obj (16/10/2026, idée approuvée par Tomyn).** Le seuil
 auto-remesh (voir plus bas, 15/10/2026) ne détectait jusqu'ici que les gros .stl binaires, car le
 nombre de triangles s'y lit directement dans l'en-tête du fichier - un .obj n'a pas cet en-tête,
