@@ -2000,6 +2000,7 @@ $labelOverlayTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12
 $labelOverlayTitre.ForeColor = [System.Drawing.Color]::White
 $labelOverlayTitre.BackColor = [System.Drawing.Color]::Transparent
 $labelOverlayTitre.AutoSize = $false
+$labelOverlayTitre.AutoEllipsis = $true
 $labelOverlayTitre.TextAlign = "MiddleCenter"
 $labelOverlayTitre.Location = New-Object System.Drawing.Point(20, 25)
 $labelOverlayTitre.Size = New-Object System.Drawing.Size(400, 28)
@@ -2022,6 +2023,7 @@ $labelOverlayPct.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 $labelOverlayPct.ForeColor = [System.Drawing.Color]::FromArgb(0xD8, 0xCC, 0xF5)
 $labelOverlayPct.BackColor = [System.Drawing.Color]::Transparent
 $labelOverlayPct.AutoSize = $false
+$labelOverlayPct.AutoEllipsis = $true
 $labelOverlayPct.TextAlign = "MiddleCenter"
 $labelOverlayPct.Location = New-Object System.Drawing.Point(20, 95)
 $labelOverlayPct.Size = New-Object System.Drawing.Size(400, 24)
@@ -2070,11 +2072,14 @@ function Afficher-OverlayProgression([string]$titre) {
     [System.Windows.Forms.Application]::DoEvents()
 }
 
-function Mettre-A-Jour-OverlayProgression([int]$pct, [string]$titre = $null) {
+function Mettre-A-Jour-OverlayProgression([int]$pct, [string]$titre = $null, [string]$suffixePct = "") {
     if ($titre) { $labelOverlayTitre.Text = $titre }
     $pctBorne = [Math]::Max(0, [Math]::Min(100, $pct))
     $remplissageOverlay.Width = [int]($pisteOverlay.Width * $pctBorne / 100)
-    $labelOverlayPct.Text = "$pctBorne%"
+    # 16/10/2026, Tomyn : "ok pour tout" - $suffixePct (optionnel, "" par defaut, aucun changement
+    # pour les appels existants) sert a afficher les credits reellement depenses juste a cote du
+    # pourcentage, sans surcharger le titre (deja occupe par le nom du fichier + l'ETA).
+    $labelOverlayPct.Text = "$pctBorne%$suffixePct"
     [System.Windows.Forms.Application]::DoEvents()
 }
 
@@ -2706,6 +2711,11 @@ $script:annulationDemandee = $false
 $script:debutTraitement = $null
 $script:indexFichierCourant = 0
 $script:totalFichiersLot = 0
+# Credits reellement consommes sur le lot EN COURS (16/10/2026, Tomyn : "ok pour tout" - compteur
+# en direct) - deja accumule plus bas dans Lancer-Traitement (promu en variable de script pour
+# qu'Afficher-ProgressionEnCours, definie ici, puisse l'afficher pendant le traitement et pas
+# seulement a la toute fin dans la ligne d'historique).
+$script:creditsReelsLot = 0
 
 # Regex partagee pour reconnaitre une erreur reseau/serveur TRANSITOIRE (16/10/2026, idee en
 # passant validee par Tomyn - "tu peux tout faire") : timeout, connexion coupee/refusee, DNS,
@@ -2745,11 +2755,38 @@ function Invoquer-AvecReessaiReseau([scriptblock]$Action, [string]$Libelle, [int
     }
 }
 
+# Estimation du temps restant sur un lot (16/10/2026, Tomyn : "ok pour tout" - meme recette que
+# cote Melange-Couleurs, voir le commentaire equivalent la-bas) : moyenne glissante simple (temps
+# ecoule / fichiers deja faits) x fichiers restants - pas une vraie prediction, mais largement
+# suffisant pour se faire une idee sur un gros lot plutot que de n'avoir que le chrono ecoule.
+# Chaine vide tant qu'aucun fichier n'est encore termine (pas d'estimation fiable sur un seul
+# point de mesure). $nombreFaits est le compte APRES le dernier fichier termine, pas le fichier en
+# cours de traitement.
+function Obtenir-TexteEtaLot([double]$secondesEcoulees, [int]$nombreFaits, [int]$nombreTotal) {
+    if ($nombreFaits -le 0 -or $nombreFaits -ge $nombreTotal) { return "" }
+    $dureeMoyenneParFichier = $secondesEcoulees / $nombreFaits
+    $secondesRestantes = $dureeMoyenneParFichier * ($nombreTotal - $nombreFaits)
+    $resteTxt = if ($secondesRestantes -ge 3600) {
+        "{0}h{1:00}" -f [int]([Math]::Floor($secondesRestantes / 3600)), [int]([Math]::Floor(($secondesRestantes % 3600) / 60))
+    } elseif ($secondesRestantes -ge 60) {
+        "~{0} min" -f [int][Math]::Ceiling($secondesRestantes / 60)
+    } else {
+        "moins d'1 min"
+    }
+    return " - reste $resteTxt"
+}
+
 function Afficher-ProgressionEnCours($etapeTexte) {
     if ($script:debutTraitement -eq $null) { return }
     $ecoule = (Get-Date) - $script:debutTraitement
     $ecouleTexte = "{0:00}:{1:00}" -f [int]$ecoule.TotalMinutes, $ecoule.Seconds
-    $txtEstimationCout.Text = "Fichier $($script:indexFichierCourant)/$($script:totalFichiersLot) - ecoule : $ecouleTexte - $etapeTexte"
+    $etaTexte = Obtenir-TexteEtaLot $ecoule.TotalSeconds ($script:indexFichierCourant - 1) $script:totalFichiersLot
+    # 16/10/2026, Tomyn : "ok pour tout" - compteur de credits reellement depenses EN DIRECT
+    # pendant le lot (jusqu'ici $script:creditsReelsLot n'etait affiche qu'a la toute fin, dans la
+    # ligne d'historique) - utile pour reperer un derapage avant la fin plutot qu'apres, surtout
+    # sur un gros lot paye par le collegue dessinateur de Tomyn.
+    $creditsTexte = " - $([Math]::Round($script:creditsReelsLot, 1)) credit(s) depenses"
+    $txtEstimationCout.Text = "Fichier $($script:indexFichierCourant)/$($script:totalFichiersLot) - ecoule : $ecouleTexte$etaTexte$creditsTexte - $etapeTexte"
 }
 
 function Attendre-Tache($UrlTache, $Entetes, $Libelle) {
@@ -3457,7 +3494,7 @@ function Lancer-Traitement($fichiersStl) {
         $reussites = 0
         $echecsCeLot = New-Object System.Collections.Generic.List[System.IO.FileInfo]
         $interrompu = $false
-        $creditsReelsLot = 0
+        $script:creditsReelsLot = 0
         # Nombre de fichiers sautes car deja traites lors d'un lancement precedent (reprise, voir
         # $reprendreLot plus haut) - compte a part pour pouvoir l'afficher clairement dans le bilan
         # final, distinct des vraies reussites de CE lancement.
@@ -3472,7 +3509,9 @@ function Lancer-Traitement($fichiersStl) {
         foreach ($fichier in $fichiersStl) {
             $script:indexFichierCourant++
             $barreProgression.Value = $script:indexFichierCourant - 1  # avant traitement : montre ce qui est deja fini
-            Mettre-A-Jour-OverlayProgression ([int](($script:indexFichierCourant - 1) / $script:totalFichiersLot * 100)) "Fichier $($script:indexFichierCourant) / $($script:totalFichiersLot) : $($fichier.Name)"
+            $etaOverlayTexte = Obtenir-TexteEtaLot ((Get-Date) - $script:debutTraitement).TotalSeconds ($script:indexFichierCourant - 1) $script:totalFichiersLot
+            $creditsOverlayTexte = " - $([Math]::Round($script:creditsReelsLot, 1)) credit(s)"
+            Mettre-A-Jour-OverlayProgression ([int](($script:indexFichierCourant - 1) / $script:totalFichiersLot * 100)) "Fichier $($script:indexFichierCourant) / $($script:totalFichiersLot) : $($fichier.Name)$etaOverlayTexte" $creditsOverlayTexte
             if ($script:annulationDemandee) {
                 Ecrire-Journal "`n=== Annule par l'utilisateur (fichiers restants non traites) ==="
                 $interrompu = $true
@@ -3498,7 +3537,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -3507,7 +3546,7 @@ function Lancer-Traitement($fichiersStl) {
                         $echecsMeshy++
                     }
                     try {
-                        $creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo"
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo"
                         $reussiTripo = $true
                         $reussitesTripo++
                     } catch {
@@ -3518,9 +3557,9 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
                     } else {
-                        $creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
                     }
                     $reussites++
                 }
@@ -3555,9 +3594,9 @@ function Lancer-Traitement($fichiersStl) {
             # avec le cumul reellement consomme sur les deux plateformes - le detail par fournisseur
             # reste visible dans le journal de ce lot, pas dans cette ligne recapitulative globale.
             if ($caseComparerFournisseurs.Checked) {
-                $ligneHistorique = "$(Get-Date -Format 'dd/MM/yyyy HH:mm');$($fichiersStl.Count * 2);$($reussitesMeshy + $reussitesTripo);$($echecsMeshy + $echecsTripo);$creditsReelsLot"
+                $ligneHistorique = "$(Get-Date -Format 'dd/MM/yyyy HH:mm');$($fichiersStl.Count * 2);$($reussitesMeshy + $reussitesTripo);$($echecsMeshy + $echecsTripo);$script:creditsReelsLot"
             } else {
-                $ligneHistorique = "$(Get-Date -Format 'dd/MM/yyyy HH:mm');$($fichiersStl.Count);$reussites;$echecs;$creditsReelsLot"
+                $ligneHistorique = "$(Get-Date -Format 'dd/MM/yyyy HH:mm');$($fichiersStl.Count);$reussites;$echecs;$script:creditsReelsLot"
             }
             Add-Content -Path $CheminHistorique -Value $ligneHistorique
         } catch { }  # pas grave si l'ecriture de l'historique echoue, ca ne doit jamais bloquer le vrai traitement

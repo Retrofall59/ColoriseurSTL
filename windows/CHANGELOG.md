@@ -3,6 +3,23 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Temps restant estimé (ETA) et compteur de crédits en direct pendant un lot ("Ok pour tout",
+16/10/2026).** Deux des quatre idées d'amélioration proposées ce jour-là :
+1. **ETA affiché pendant le traitement d'un lot** : nouvelle fonction `Obtenir-TexteEtaLot`, calcul
+   simple par moyenne glissante (`temps écoulé / fichiers faits × fichiers restants`), formaté en
+   minutes ou en heures selon la durée. Affiché à la fois dans le champ de statut sous la liste
+   (`Fichier X/Y - écoulé : MM:SS - reste ~N min - ...`) et dans le titre de l'overlay de
+   progression bloquant.
+2. **Compteur de crédits dépensés affiché en direct pendant un lot**, pas seulement à la fin dans
+   l'historique : la variable `$creditsReelsLot` est passée en portée script (`$script:`) pour
+   rester accessible depuis les fonctions d'affichage, et son total courant apparaît aussi bien
+   dans le champ de statut que sur l'overlay de progression (nouveau paramètre `$suffixePct` sur
+   `Mettre-A-Jour-OverlayProgression`).
+
+Comme pour le reste de ce fichier, non testé en conditions réelles faute de Windows disponible ici
+(calcul vérifié isolément par un petit script PowerShell de test, mais pas l'affichage réel) : à
+valider par Tomyn à l'usage.
+
 **Deuxième passe de relookage visuel ("vas-y", 16/10/2026) : coins arrondis partout, fond et
 bordures retintés vers le violet de marque.** La base violette "atelier" posée le 10/10/2026
 reste (cohérence avec l'appli Android, demandée explicitement) - affinée plutôt que jetée. Trois
