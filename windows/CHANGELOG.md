@@ -3,6 +3,14 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Correctif urgent : la barre bloquante ralentissait vraiment le traitement (16/10/2026, Tomyn
+côté Melange-Couleurs, même code ici : "ça bloque complètement la prix ça fait 5 minutes que
+j'attends, d'habitude ça se trouve pas si longtemps").** `$form.Enabled = $false` (ajouté juste
+avant pour bloquer les clics pendant l'overlay) ralentissait réellement le traitement, pas juste
+visuellement - très probablement un conflit de focus/activation entre la fenêtre désactivée et
+l'overlay TopMost au-dessus. Retiré : l'overlay reste affiché par-dessus mais la fenêtre principale
+n'est plus désactivée - les boutons d'action restent désactivés individuellement comme avant.
+
 **Vraie barre de progression bloquante, par-dessus l'appli (16/10/2026, Tomyn : "trop discrete, il
 faudrait un vrai barre de progression qui se mete au dessus de l'appli et qui bloque toutes action
 sur les appli tant qu'elle n'est pas finie, style comme sur les photo que je viens de t'envoyer,
