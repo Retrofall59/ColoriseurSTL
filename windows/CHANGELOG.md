@@ -5,6 +5,19 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Correction : la passerelle ouvrait Melange-Couleurs mais chargeait le mauvais fichier
+(16/10/2026, Tomyn : "il prend toujours pas le bon il prend celui [non] genere par
+colorisation").** `Lancer-MelangeCouleurs` lançait `Lancer-Melange-Couleurs.vbs` via
+`Start-Process -FilePath` sur le .vbs lui-même - ce qui passe par l'association de fichier .vbs de
+Windows (ShellExecute) pour deviner comment le lancer, et selon la machine, cette association ne
+transmet pas forcément les arguments en plus du fichier (le `%*` de la commande d'ouverture
+associée aux .vbs n'est pas garanti partout). Résultat : Melange-Couleurs s'ouvrait bien, mais sans
+recevoir le chemin du .3mf, donc retombait sur le "dernier fichier utilisé" au lieu du résultat
+tout juste colorisé. Corrigé en appelant `wscript.exe` directement, avec le .vbs et le chemin du
+.3mf comme deux arguments explicites et séparés - plus de dépendance à cette association.
+
+---
+
 **Correction : bouton "Analyser les couleurs..." coupé/invisible (16/10/2026, Tomyn : "le bouton
 analyser les couleur est coupeur est presque invisible" + "et de plus il ne marche pas").** La
 première version ajoutait une ligne de 26px à CHAQUE carte de résultat .3mf pour ce bouton -

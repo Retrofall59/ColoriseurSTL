@@ -2130,7 +2130,16 @@ function Lancer-MelangeCouleurs([string]$cheminFichier3mf) {
         # Lancer-Melange-Couleurs.vbs accepte depuis le 16/10/2026 un argument optionnel : le
         # chemin du .3mf a charger automatiquement au demarrage, a la place du dernier fichier
         # utilise (voir le .vbs et Melange-Couleurs-GUI.ps1, parametre -FichierInitial).
-        Start-Process -FilePath $cheminVbs -ArgumentList "`"$cheminFichier3mf`""
+        # 16/10/2026, correctif (Tomyn : "il prend toujours pas le bon, il prend celui [non] genere
+        # par colorisation") : "Start-Process -FilePath $cheminVbs -ArgumentList ..." passe par
+        # l'association de fichier .vbs de Windows (ShellExecute) pour deviner comment lancer le
+        # .vbs - et selon la configuration de la machine, cette association ne transmet pas
+        # forcement les arguments en plus du fichier lui-meme (le "%*" de la commande d'ouverture
+        # associee aux .vbs n'est pas garanti partout), d'ou Melange-Couleurs qui s'ouvrait bien
+        # mais retombait sur le dernier fichier utilise au lieu du resultat tout juste colorise.
+        # Appelle maintenant wscript.exe DIRECTEMENT avec le .vbs et le chemin du .3mf comme deux
+        # arguments explicites et separes - plus besoin de compter sur cette association.
+        Start-Process -FilePath "wscript.exe" -ArgumentList "`"$cheminVbs`"", "`"$cheminFichier3mf`""
     } catch {
         Afficher-Boite "Impossible de lancer Melange-Couleurs : $_" "Erreur" "OK" "Error" | Out-Null
     }
