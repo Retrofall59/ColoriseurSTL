@@ -3,6 +3,15 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**La barre de progression disparaît maintenant seule, quelques secondes après 100% (16/10/2026,
+Tomyn côté Melange-Couleurs, même code ici : "la barre de progression quand elle est arrivée à
+100% elle reste, il faut que je reclique de l'application pour qu'elle disparaisse, il faudrait
+qu'elle disparaisse au bout d'un certain moment ... au bout de 5 ou 6 secondes dès qu'elle est à
+100% elle disparaît d'elle-même").** Jusqu'ici l'overlay restait affiché jusqu'au clic sur la boîte
+de dialogue de fin qui suit. Désormais, une fois le traitement terminé (sans annulation), la barre
+est forcée à 100% puis l'overlay se referme tout seul 5 secondes plus tard, sans action de Tomyn -
+en cas d'annulation, il disparaît tout de suite comme avant.
+
 **Correctif urgent : la barre bloquante ralentissait vraiment le traitement (16/10/2026, Tomyn
 côté Melange-Couleurs, même code ici : "ça bloque complètement la prix ça fait 5 minutes que
 j'attends, d'habitude ça se trouve pas si longtemps").** `$form.Enabled = $false` (ajouté juste

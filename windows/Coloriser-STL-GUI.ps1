@@ -2029,6 +2029,21 @@ function Masquer-OverlayProgression {
     $overlayProgression.Hide()
 }
 
+# Disparition automatique de l'overlay quelques secondes apres avoir atteint 100% (16/10/2026,
+# Tomyn, sur Melange-Couleurs mais meme recette ici : "il faudrait qu'elle disparaisse au bout
+# d'un certain moment ... au bout de 5 ou 6 secondes des qu'elle est a 100% elle disparait
+# d'elle-meme") - sans ca, l'overlay restait visible jusqu'au clic sur la boite de dialogue de
+# resultat qui suit. Boucle non-bloquante (DoEvents) plutot qu'un Start-Sleep unique, pour garder
+# l'IHM reactive pendant l'attente.
+function Masquer-OverlayProgressionApresDelai([int]$delaiSecondes = 5) {
+    $finAttente = (Get-Date).AddSeconds($delaiSecondes)
+    while ((Get-Date) -lt $finAttente) {
+        Start-Sleep -Milliseconds 100
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    Masquer-OverlayProgression
+}
+
 # Panneaux de fond "carte" derriere chaque section : essayes le 14/10/2026, retires le meme jour
 # suite au retour de Tomyn ("c'est encore pire, toujours ces rectangles blancs sur un fond gris" -
 # 2e avis negatif de suite sur cette piste, pas la peine d'insister). Ajouter-PanneauSection et
@@ -3435,6 +3450,17 @@ function Lancer-Traitement($fichiersStl) {
 
         $script:dernierLotEchecs = @($echecsCeLot)
         $echecs = $echecsCeLot.Count
+
+        # Barre de progression de l'overlay forcee a 100% puis disparition automatique (16/10/2026,
+        # Tomyn, retour sur Melange-Couleurs mais meme recette ici : "il faudrait qu'elle disparaisse
+        # au bout d'un certain moment ... au bout de 5 ou 6 secondes des qu'elle est a 100% elle
+        # disparait d'elle-meme") - sauf si annule, ou l'overlay doit disparaitre tout de suite.
+        if (-not $interrompu) {
+            Mettre-A-Jour-OverlayProgression 100
+            Masquer-OverlayProgressionApresDelai 5
+        } else {
+            Masquer-OverlayProgression
+        }
 
         try {
             # En mode comparaison, "fichiers"/"reussites"/"echecs" comptent les deux generations
