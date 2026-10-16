@@ -3,6 +3,11 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Le prompt n'est plus obligatoire pour lancer la colorisation (16/10/2026, Tomyn : "des fois je
+veux lancer la colonisation sans mettre de prompt donc là ça ne marche pas").** Le champ "Prompt
+envoyé à Meshy" bloquait le lancement avec une erreur s'il était vide. Retiré : un prompt vide part
+tel quel vers l'API choisie (Meshy ou Tripo), qui applique alors son rendu par défaut.
+
 **La détection de Melange-Couleurs ne mémorise plus rien tant qu'elle peut se refaire toute seule
 (16/10/2026, Tomyn : "faut que l'application s'adapte ... faut pas qu'il aille chercher un nom de
 fichier en particulier").** Jusqu'ici, un chemin trouvé une fois était mémorisé sur le disque et

@@ -3112,10 +3112,9 @@ function Lancer-Traitement($fichiersStl) {
             return
         }
     }
-    if (-not $txtPrompt.Text) {
-        Afficher-Boite "Le style/couleurs voulues est vide." "Erreur" "OK" "Error" | Out-Null
-        return
-    }
+    # 16/10/2026, Tomyn : "des fois je veux lancer la colorisation sans mettre de prompt" - le champ
+    # etait obligatoire avant de lancer. Retire le blocage : un prompt vide est envoye tel quel a
+    # l'API (Meshy/Tripo), qui applique alors son propre rendu par defaut.
     if (-not $txtDossierSortie.Text) {
         Afficher-Boite "Dossier de sortie vide." "Erreur" "OK" "Error" | Out-Null
         return
