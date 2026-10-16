@@ -5,6 +5,17 @@ Voir [README.md](README.md) pour l'état actuel de cette version.
 
 ---
 
+**Simplification automatique étendue aux .obj (16/10/2026, idée approuvée par Tomyn).** Le seuil
+auto-remesh (voir plus bas, 15/10/2026) ne détectait jusqu'ici que les gros .stl binaires, car le
+nombre de triangles s'y lit directement dans l'en-tête du fichier - un .obj n'a pas cet en-tête,
+donc un gros .obj passait jusqu'ici inaperçu et partait tel quel. Ajout de
+`Obtenir-NombreTrianglesOBJ` (compte les lignes de face "f ...", en tenant compte des polygones à
+plus de 3 sommets - chaque face à N sommets vaut N-2 triangles une fois triangulée) et d'un petit
+`Obtenir-NombreTriangles` qui choisit le bon compteur (.stl ou .obj) selon l'extension. Le reste du
+mécanisme (seuil, Remesh, chaînage vers Retexture) ne change pas.
+
+---
+
 **Passerelle vers Melange-Couleurs : bouton "Analyser les couleurs..." sur les résultats .3mf
 (16/10/2026, idée approuvée par Tomyn : "lier les deux apps").** Jusqu'ici, pour affiner le dosage
 des couleurs d'un résultat colorisé, Tomyn devait rouvrir Melange-Couleurs à la main et

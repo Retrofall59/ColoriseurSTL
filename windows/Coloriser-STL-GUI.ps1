@@ -350,6 +350,51 @@ function Obtenir-NombreTrianglesSTL($cheminFichier) {
     }
 }
 
+# Nombre de triangles d'un .obj - contrairement au .stl binaire, l'en-tete .obj ne contient
+# aucun compteur : il faut compter les lignes de face ("f ...") (16/10/2026, meme besoin que
+# Obtenir-NombreTrianglesSTL ci-dessus mais pour le format accepte par Tripo/l'export "experimental
+# .obj" de Meshy, non couvert jusqu'ici par la simplification automatique). Un .obj peut melanger
+# des faces triangulaires et des polygones a plus de 3 sommets (quads, etc.) - chaque face a N
+# sommets correspond a N-2 triangles une fois triangulee (triangulation en eventail, la plus
+# courante), donc le compte final est une estimation du nombre de triangles APRES triangulation,
+# pas un simple compte de lignes "f". Lecture ligne par ligne (pas ReadAllLines/ReadAllText) pour
+# rester leger en memoire meme sur un gros fichier, puisque c'est justement les gros fichiers que
+# ce compteur sert a detecter.
+function Obtenir-NombreTrianglesOBJ($cheminFichier) {
+    try {
+        if ([System.IO.Path]::GetExtension($cheminFichier).ToLower() -ne ".obj") { return $null }
+        $total = [int64]0
+        $lecteur = [System.IO.File]::OpenText($cheminFichier)
+        try {
+            while (($ligne = $lecteur.ReadLine()) -ne $null) {
+                $ligne = $ligne.TrimStart()
+                if ($ligne.Length -lt 3 -or $ligne[0] -ne 'f' -or ($ligne[1] -ne ' ' -and $ligne[1] -ne "`t")) { continue }
+                $sommets = @($ligne.Substring(1).Trim() -split '\s+' | Where-Object { $_ })
+                if ($sommets.Count -ge 3) { $total += ($sommets.Count - 2) }
+            }
+        } finally {
+            $lecteur.Close()
+        }
+        if ($total -le 0) { return $null }
+        if ($total -gt [int]::MaxValue) { return [int]::MaxValue }
+        return [int]$total
+    } catch {
+        return $null
+    }
+}
+
+# Point d'entree unique pour la detection auto-remesh (16/10/2026) - choisit le bon compteur selon
+# l'extension (.stl binaire ou .obj) sans que l'appelant ait besoin de savoir lequel utiliser.
+# Renvoie $null pour toute autre extension (ASCII .stl, .3mf, images...) - pas de simplification
+# automatique pour ces cas, exactement comme avant pour tout ce qui n'etait pas du .stl binaire.
+function Obtenir-NombreTriangles($cheminFichier) {
+    switch ([System.IO.Path]::GetExtension($cheminFichier).ToLower()) {
+        ".stl" { return Obtenir-NombreTrianglesSTL $cheminFichier }
+        ".obj" { return Obtenir-NombreTrianglesOBJ $cheminFichier }
+        default { return $null }
+    }
+}
+
 function Obtenir-ImageDepuisUrl($url) {
     try {
         $octets = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
@@ -1776,7 +1821,10 @@ $form.Controls.Add($numCouleurs)
 # Texte raccourci pour rester sur une seule ligne avant le champ numerique a x=400 (meme
 # contrainte de largeur que l'ancien texte "image uniquement" - le detail complet du seuil
 # automatique est dans l'infobulle du champ juste en dessous plutot que dans ce label).
-Ajouter-Label "Triangles vises (image ou gros .stl, 100-300000) :" 15 ($yActuel + 32)
+# 16/10/2026 : le seuil auto-remesh couvre maintenant aussi les .obj (voir
+# Obtenir-NombreTrianglesOBJ et Obtenir-NombreTriangles plus haut), pas juste le .stl - label
+# toujours raccourci pour la meme contrainte de largeur, detail complet dans l'infobulle.
+Ajouter-Label "Triangles vises (image, gros .stl/.obj, 100-300000) :" 15 ($yActuel + 32)
 $numTriangles = Creer-SelecteurNumerique 90 24
 $numTriangles.Location = New-Object System.Drawing.Point(400, ($yActuel + 28))
 $numTriangles.Minimum = 100
@@ -1791,7 +1839,7 @@ $astuceTriangles.InitialDelay = 400
 $astuceTriangles.SetToolTip($numTriangles,
     "Sert a deux choses :`n`n" +
     "- Image en entree : nombre de triangles vise pour le maillage genere par l'IA (Image to 3D).`n`n" +
-    "- .stl en entree, binaire, et au-dela de $SEUIL_TRIANGLES_REMESH_AUTO triangles : utilise comme cible pour une simplification automatique (API Remesh de Meshy) avant la colorisation, histoire de ne pas envoyer un maillage inutilement lourd. En dessous de ce seuil, le fichier part tel quel, ce reglage ne sert a rien dans ce cas.")
+    "- .stl (binaire) ou .obj en entree, et au-dela de $SEUIL_TRIANGLES_REMESH_AUTO triangles : utilise comme cible pour une simplification automatique (API Remesh de Meshy) avant la colorisation, histoire de ne pas envoyer un maillage inutilement lourd. En dessous de ce seuil (ou pour un .stl ASCII, non detecte), le fichier part tel quel, ce reglage ne sert a rien dans ce cas.")
 $yActuel += 30
 
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
@@ -2735,7 +2783,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
     } else {
-        $nbTriangles = Obtenir-NombreTrianglesSTL $FichierStl.FullName
+        $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
         if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
             $tacheRemesh = Lancer-Remesh $FichierStl $Entetes $TargetPolycount $nbTriangles
             $creditsEtapePrealable = [int]$tacheRemesh.consumed_credits
