@@ -561,23 +561,65 @@ $SEUIL_TRIANGLES_REMESH_AUTO = 500000
 # ============================== THEME "ATELIER" ==============================
 # Ajoute le 10/10/2026 (demande de Tomyn : l'appli "faisait trop fenetre Windows", trop grise et
 # austere). Palette violette reprise de l'appli Android ColoriserSTL (meme outil, deux
-# plateformes) pour une identite visuelle coherente entre les deux. PAS TESTE PAR CLAUDE (meme
-# limite que le reste du fichier, voir l'en-tete) : aucun Windows/PowerShell disponible ici pour
-# verifier le rendu reel (notamment Creer-IconeSpool et le SendMessage de la barre de
-# progression, les deux morceaux les plus a risque de ce theme).
+# plateformes) pour une identite visuelle coherente entre les deux.
+#
+# 16/10/2026 (Tomyn : "vas-y" sur la refonte visuelle mise en attente plus tot) - deuxieme passe,
+# volontairement bornee plutot qu'une refonte totale : la base violette "atelier" posee le
+# 10/10/2026 reste (coherence avec l'appli Android, demandee explicitement), on l'affine plutot
+# que la jeter. Trois changements, centralises dans $THEME/Rendre-BoutonPlat/Definir-RegionArrondie
+# pour se propager a TOUTE l'appli sans retoucher chaque bouton/fenetre a la main :
+#   1. Fond et bordure legerement retintes vers le violet de marque (au lieu d'un gris-bleu
+#      neutre) - renforce l'identite au lieu de la diluer sur un fond generique.
+#      AccentDoux ajoute (le lilas tres clair deja utilise en survol de bouton, promu en token
+#      nomme pour servir aussi de fond de bloc/encadre discret).
+#   2. Coins arrondis sur TOUS les boutons (meme rayon que les cartes de la galerie, deja
+#      arrondies depuis le 10/10) - jusqu'ici les boutons restaient des rectangles nets au milieu
+#      d'une appli autrement toute en courbes, un des signes les plus "fenetre Windows par
+#      defaut" qui restaient.
+#   3. Les fenetres custom (boites de dialogue Afficher-Boite, overlay de progression) arrondies
+#      elles aussi, memes coins que les cartes et les boutons - coherence visuelle de bout en bout.
+# PAS TESTE PAR CLAUDE (meme limite que le reste du fichier, voir l'en-tete) : aucun
+# Windows/PowerShell disponible ici pour verifier le rendu reel - a verifier par Tomyn comme
+# toujours, mais c'est une technique standard et bien documentee (Control.Region via
+# GraphicsPath), deja utilisee ici meme pour les cartes de galerie depuis le 10/10/2026 sans
+# souci rapporte.
 
 $THEME = @{
-    FondApp            = [System.Drawing.Color]::FromArgb(0xEE, 0xF1, 0xF3)   # gris-bleu clair (plan de travail)
+    FondApp            = [System.Drawing.Color]::FromArgb(0xEB, 0xE9, 0xF4)   # lilas tres pale (plan de travail) - avant : gris-bleu neutre EEF1F3, retinte vers la marque
     FondBanniere       = [System.Drawing.Color]::FromArgb(0x45, 0x27, 0xA0)   # violet fonce (accent_violet_fonce, cote Android)
     Surface            = [System.Drawing.Color]::White
     AccentPrincipal    = [System.Drawing.Color]::FromArgb(0x7C, 0x4D, 0xFF)   # violet (accent_violet, cote Android)
     AccentPrincipalTxt = [System.Drawing.Color]::White
     AccentDanger       = [System.Drawing.Color]::FromArgb(0xD3, 0x2F, 0x2F)
     AccentChaud        = [System.Drawing.Color]::FromArgb(0xFF, 0x5A, 0x1F)   # orange nozzle - relance/alerte douce
+    AccentDoux         = [System.Drawing.Color]::FromArgb(0xF1, 0xEC, 0xFF)   # lilas tres clair - deja la couleur de survol des boutons "secondaire", promu en token nomme
     Texte              = [System.Drawing.Color]::FromArgb(0x1A, 0x1A, 0x1A)
     TexteSecondaire    = [System.Drawing.Color]::FromArgb(0x5C, 0x5C, 0x5C)
-    Bordure            = [System.Drawing.Color]::FromArgb(0xD8, 0xDA, 0xDD)
+    Bordure            = [System.Drawing.Color]::FromArgb(0xDC, 0xD6, 0xEC)   # avant : gris neutre D8DADD, retinte vers le violet plutot qu'un gris pur
+    RayonArrondi       = 7                                                     # rayon de coin partage par boutons/fenetres custom/cartes (point d'ajustement unique)
     HauteurBanniere    = 56
+}
+
+# Arrondit les coins d'un controle ou d'une fenetre (Region via GraphicsPath) - factorise ici
+# (16/10/2026) a partir du code deja utilise pour les cartes de la galerie depuis le 10/10/2026,
+# pour l'appliquer maintenant aussi aux boutons et aux fenetres custom (Afficher-Boite, overlay)
+# sans dupliquer le meme trace de chemin a chaque fois. Un $rayon de 0 ou une taille nulle/negative
+# ne touche a rien (evite une Region vide/invalide si appelee trop tot, avant que Windows ait
+# attribue une vraie taille au controle).
+function Definir-RegionArrondie($controle, [int]$rayon = 0) {
+    if ($rayon -le 0 -or $controle.Width -le 0 -or $controle.Height -le 0) { return }
+    $diametre = $rayon * 2
+    if ($diametre -ge $controle.Width) { $diametre = [Math]::Max(2, $controle.Width - 2) }
+    if ($diametre -ge $controle.Height) { $diametre = [Math]::Max(2, [Math]::Min($diametre, $controle.Height - 2)) }
+    $chemin = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $largeur = $controle.Width
+    $hauteur = $controle.Height
+    $chemin.AddArc(0, 0, $diametre, $diametre, 180, 90)
+    $chemin.AddArc(($largeur - $diametre - 1), 0, $diametre, $diametre, 270, 90)
+    $chemin.AddArc(($largeur - $diametre - 1), ($hauteur - $diametre - 1), $diametre, $diametre, 0, 90)
+    $chemin.AddArc(0, ($hauteur - $diametre - 1), $diametre, $diametre, 90, 90)
+    $chemin.CloseFigure()
+    $controle.Region = New-Object System.Drawing.Region($chemin)
 }
 
 # SendMessage (PBM_SETBARCOLOR / PBM_SETBKCOLOR) pour recolorer la ProgressBar - l'API WinForms
@@ -639,9 +681,16 @@ function Rendre-BoutonPlat($bouton, [string]$role = "secondaire") {
             $bouton.BackColor = $THEME.Surface
             $bouton.ForeColor = $THEME.AccentPrincipal
             $bouton.FlatAppearance.BorderColor = $THEME.AccentPrincipal
-            $bouton.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(0xF1, 0xEC, 0xFF)
+            $bouton.FlatAppearance.MouseOverBackColor = $THEME.AccentDoux
         }
     }
+    # 16/10/2026 : coins arrondis sur tous les boutons (voir Definir-RegionArrondie et le
+    # commentaire du THEME plus haut) - fixe tout de suite (le bouton a deja sa taille reelle a
+    # cet instant, voir plus haut, tous les appels existants font Size puis Rendre-BoutonPlat) et
+    # recalcule a chaque redimensionnement reel du controle (barre de titre maximisee/restauree,
+    # DPI...), pas seulement a la creation.
+    Definir-RegionArrondie $bouton $THEME.RayonArrondi
+    $bouton.Add_Resize({ param($sender, $e) Definir-RegionArrondie $sender $THEME.RayonArrondi })
 }
 
 # Rendu "plat" d'une ComboBox (10/10/2026, niveau 1 du relookage - avec le NumericUpDown et le
@@ -933,17 +982,10 @@ function Ajouter-PanneauSection([int]$yHaut, [int]$yBasContenu, [int]$yHautSuiva
     $panneau.Size = New-Object System.Drawing.Size(964, ($basSouhaite - $top))
     $panneau.BackColor = $THEME.Surface
 
-    $rayon = 10
-    $diametre = $rayon * 2
-    $largeurCarte = $panneau.Width
-    $hauteurCarte = $panneau.Height
-    $cheminArrondi = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $cheminArrondi.AddArc(0, 0, $diametre, $diametre, 180, 90)
-    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), 0, $diametre, $diametre, 270, 90)
-    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), ($hauteurCarte - $diametre - 1), $diametre, $diametre, 0, 90)
-    $cheminArrondi.AddArc(0, ($hauteurCarte - $diametre - 1), $diametre, $diametre, 90, 90)
-    $cheminArrondi.CloseFigure()
-    $panneau.Region = New-Object System.Drawing.Region($cheminArrondi)
+    # 16/10/2026 : utilise desormais Definir-RegionArrondie (voir le commentaire du THEME plus
+    # haut) au lieu de reconstruire le meme GraphicsPath a la main ici - comportement identique
+    # (meme rayon de 10 qu'avant), juste factorise.
+    Definir-RegionArrondie $panneau 10
 
     $panneau.Add_Paint({
         param($expediteur, $evenement)
@@ -1102,6 +1144,13 @@ function Afficher-Boite([string]$message, [string]$titre = "", [string]$boutons 
     }
 
     $fenetre.Height = $yBoutons + $hauteurBouton + 28
+    # 16/10/2026 : coins arrondis sur la fenetre elle-meme (voir le commentaire du THEME plus
+    # haut) - a cet instant Width/Height sont definitifs (toutes les branches ci-dessus les ont
+    # deja fixes), donc la Region calculee correspond bien a la taille reelle affichee. Arrondit
+    # au passage le bandeau colore du haut (Dock="Top"), qui est un simple Panel rectangulaire :
+    # tout ce qui depasse la Region de la fenetre est automatiquement decoupe, meme principe que
+    # les cartes de la galerie.
+    Definir-RegionArrondie $fenetre ($THEME.RayonArrondi + 3)
     return $fenetre.ShowDialog($form)
 }
 
@@ -1941,6 +1990,10 @@ $overlayProgression.TopMost = $true
 $overlayProgression.StartPosition = "Manual"
 $overlayProgression.Size = New-Object System.Drawing.Size(440, 190)
 $overlayProgression.BackColor = $THEME.FondBanniere
+# 16/10/2026 : coins arrondis (voir le commentaire du THEME plus haut) - taille fixe des la
+# creation ici (contrairement a Afficher-Boite, pas besoin d'attendre une branche conditionnelle),
+# donc la Region peut etre posee tout de suite.
+Definir-RegionArrondie $overlayProgression ($THEME.RayonArrondi + 5)
 
 $labelOverlayTitre = New-Object System.Windows.Forms.Label
 $labelOverlayTitre.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 12)
@@ -2321,17 +2374,11 @@ function Ajouter-Vignette($galerie, $cheminFichier, $imageDejaFournie = $null, $
     # pas d'option "coin arrondi" native - on definit sa Region sur un rectangle arrondi via GDI+.
     # Tout ce qui est peint (bande violette, bordure, miniature) se retrouve automatiquement
     # decoupe a cette forme, sans rien changer au Paint ci-dessous.
-    $rayon = 10
-    $cheminArrondi = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $diametre = $rayon * 2
-    $largeurCarte = $TailleMiniature + 16
-    $hauteurCarte = $TailleMiniature + 84 + $hauteurBoutonDescription + $hauteurBoutonAnalyse
-    $cheminArrondi.AddArc(0, 0, $diametre, $diametre, 180, 90)
-    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), 0, $diametre, $diametre, 270, 90)
-    $cheminArrondi.AddArc(($largeurCarte - $diametre - 1), ($hauteurCarte - $diametre - 1), $diametre, $diametre, 0, 90)
-    $cheminArrondi.AddArc(0, ($hauteurCarte - $diametre - 1), $diametre, $diametre, 90, 90)
-    $cheminArrondi.CloseFigure()
-    $panneau.Region = New-Object System.Drawing.Region($cheminArrondi)
+    # 16/10/2026 : factorise dans Definir-RegionArrondie (voir le commentaire du THEME plus haut),
+    # appelee avec $panneau directement plutot que de recalculer largeur/hauteur a la main - $panneau.Size
+    # vient juste d'etre fixe ci-dessus avec exactement la meme formule, donc $panneau.Width/.Height
+    # valent deja ce que $largeurCarte/$hauteurCarte valaient ici. Meme rayon de 10 qu'avant.
+    Definir-RegionArrondie $panneau 10
 
     $panneau.Add_Paint({
         param($expediteur, $evenement)

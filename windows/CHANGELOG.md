@@ -3,6 +3,30 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Deuxième passe de relookage visuel ("vas-y", 16/10/2026) : coins arrondis partout, fond et
+bordures retintés vers le violet de marque.** La base violette "atelier" posée le 10/10/2026
+reste (cohérence avec l'appli Android, demandée explicitement) - affinée plutôt que jetée. Trois
+changements, tous centralisés dans `$THEME`/`Rendre-BoutonPlat`/une nouvelle fonction
+`Definir-RegionArrondie` partagée, donc propagés à toute l'appli sans retoucher chaque bouton ou
+fenêtre à la main :
+1. **Tous les boutons ont maintenant des coins arrondis** (même rayon que les cartes de la
+   galerie, déjà arrondies depuis le 10/10) - jusqu'ici les boutons restaient des rectangles nets
+   au milieu d'une appli autrement toute en courbes, un des signes les plus "fenêtre Windows par
+   défaut" qui restaient.
+2. **Les fenêtres custom (boîtes de dialogue, overlay de progression) sont arrondies elles
+   aussi**, mêmes coins que les cartes et les boutons - cohérence visuelle de bout en bout.
+3. **Fond et bordures légèrement retintés vers le violet de marque** (au lieu d'un gris-bleu
+   neutre générique) - renforce l'identité visuelle plutôt que de la diluer. Nouveau token
+   `AccentDoux` (le lilas déjà utilisé en survol de bouton, promu en couleur nommée).
+
+Le code dupliqué des coins arrondis des cartes de galerie (déjà présent depuis le 10/10) a été
+factorisé dans cette même fonction `Definir-RegionArrondie` au passage, plutôt que de garder deux
+copies du même calcul GDI+.
+
+Technique standard et bien documentée (`Control.Region` via `GraphicsPath`), déjà utilisée ici
+même pour les cartes de galerie sans souci rapporté depuis le 10/10 - mais, comme tout ce fichier,
+non testée par Claude faute de Windows disponible ici : à valider par Tomyn à l'usage.
+
 **Retry automatique sur une erreur réseau transitoire, avant d'abandonner un fichier pour de vrai
 (16/10/2026, "tu peux tout faire").** Jusqu'ici, un simple hoquet réseau (timeout, connexion
 coupée, erreur serveur 5xx côté Meshy/Tripo) sur n'importe quel appel API faisait échouer tout de
