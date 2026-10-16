@@ -3,10 +3,16 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
-**Le prompt n'est plus obligatoire pour lancer la colorisation (16/10/2026, Tomyn : "des fois je
-veux lancer la colonisation sans mettre de prompt donc là ça ne marche pas").** Le champ "Prompt
-envoyé à Meshy" bloquait le lancement avec une erreur s'il était vide. Retiré : un prompt vide part
-tel quel vers l'API choisie (Meshy ou Tripo), qui applique alors son rendu par défaut.
+**Lancer sans prompt est maintenant possible pour de vrai, pas juste sans blocage (16/10/2026,
+Tomyn : "des fois je veux lancer la colonisation sans mettre de prompt donc là ça ne marche pas").**
+Premier essai (retirer le blocage du champ vide) corrigé par le test réel de Tomyn : Meshy exige un
+`text_style_prompt`, `image_style_url` ou `multiview_image_urls` sur la Retexture - sans prompt,
+l'appel échouait net avec "Either text_style_prompt, image_style_url or multiview_image_urls must
+be provided", APRÈS avoir déjà dépensé les crédits de l'étape Image to 3D. Coloriser-UnFichier (cas
+image, fournisseur Meshy) repasse maintenant l'image source elle-même comme référence de style
+quand le prompt est vide, au lieu d'un texte vide. Le champ reste obligatoire dans les autres cas
+(fichier .stl/.obj sans photo source, Tripo qui ne prend pas les images, mode comparaison) où rien
+ne peut remplacer le prompt.
 
 **La détection de Melange-Couleurs ne mémorise plus rien tant qu'elle peut se refaire toute seule
 (16/10/2026, Tomyn : "faut que l'application s'adapte ... faut pas qu'il aille chercher un nom de

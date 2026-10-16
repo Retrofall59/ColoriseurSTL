@@ -2863,7 +2863,19 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
         $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount
         $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
-        $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+        if ([string]::IsNullOrWhiteSpace($Prompt)) {
+            # 16/10/2026, Tomyn : veut parfois lancer sans prompt. Meshy exige pourtant un de
+            # text_style_prompt / image_style_url / multiview_image_urls sur la Retexture - sans
+            # prompt texte, on repasse l'image source elle-meme en "image_style_url" (meme principe
+            # que image_url en data URI deja utilise dans Lancer-Image3D ci-dessus) : Meshy reapplique
+            # alors les couleurs/le style de la photo d'origine plutot que d'echouer.
+            $extensionImg = $FichierStl.Extension.ToLower()
+            $mimeImg = if ($extensionImg -in @(".jpg", ".jpeg")) { "image/jpeg" } else { "image/png" }
+            $dataUriStyle = "data:$mimeImg;base64," + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($FichierStl.FullName))
+            $corps = @{ input_task_id = $tacheImage3D.id; image_style_url = $dataUriStyle; enable_original_uv = $false } | ConvertTo-Json
+        } else {
+            $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+        }
     } else {
         $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
         if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
@@ -3112,9 +3124,24 @@ function Lancer-Traitement($fichiersStl) {
             return
         }
     }
-    # 16/10/2026, Tomyn : "des fois je veux lancer la colorisation sans mettre de prompt" - le champ
-    # etait obligatoire avant de lancer. Retire le blocage : un prompt vide est envoye tel quel a
-    # l'API (Meshy/Tripo), qui applique alors son propre rendu par defaut.
+    # 16/10/2026, Tomyn : "des fois je veux lancer la colorisation sans mettre de prompt". Premier
+    # essai (retirer purement et simplement le blocage) corrige par son propre test reel : Meshy
+    # EXIGE un de text_style_prompt / image_style_url / multiview_image_urls sur la Retexture, sinon
+    # elle echoue net APRES avoir deja depense les credits de l'etape Image to 3D ("Either
+    # text_style_prompt, image_style_url or multiview_image_urls must be provided"). Coloriser-
+    # UnFichier (Meshy, cas image) sait maintenant repasser l'image source elle-meme comme reference
+    # de style quand le prompt est vide - mais seulement dans CE cas precis (Meshy + image source).
+    # Dans tous les autres cas (fichier 3D sans photo source, Tripo qui ne prend pas les images, mode
+    # comparaison qui utilise les deux), il n'y a pas d'image a reutiliser comme repli : le prompt
+    # reste obligatoire pour ne pas gaspiller un appel API voue a l'echec.
+    if (-not $txtPrompt.Text) {
+        $toutesImages = -not ($fichiersStl | Where-Object { $_.Extension.ToLower() -notin $EXTENSIONS_IMAGES })
+        $exemptionPossible = ($fournisseur -eq "Meshy") -and (-not $caseComparerFournisseurs.Checked) -and $toutesImages
+        if (-not $exemptionPossible) {
+            Afficher-Boite "Le style/couleurs voulues est vide.`r`n`r`n(Sans prompt, Meshy a besoin de repartir du style de l'image source - possible seulement avec Meshy seul, sur des fichiers image, pas de .stl/.obj ni Tripo.)" "Erreur" "OK" "Error" | Out-Null
+            return
+        }
+    }
     if (-not $txtDossierSortie.Text) {
         Afficher-Boite "Dossier de sortie vide." "Erreur" "OK" "Error" | Out-Null
         return
