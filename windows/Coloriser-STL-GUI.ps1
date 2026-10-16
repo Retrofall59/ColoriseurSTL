@@ -2106,6 +2106,107 @@ $barreProgression.Style = "Continuous"
 $barreProgression.Visible = $false
 $form.Controls.Add($barreProgression)
 $yActuel += 17
+
+# Sauvegarde/restauration groupee de toute la config (16/10/2026, idee d'amelioration validee
+# "TOUS") - meme principe que la fonctionnalite equivalente deja presente cote Melange-Couleurs
+# (sauvegarde/restauration groupee en un seul .zip) : regroupe les petits fichiers crees par cet
+# outil a cote de lui-meme (prompts favoris, historiques, chemin de Melange-Couleurs) dans une
+# seule archive, pratique en cas de changement de PC plutot que de devoir retrouver et recopier
+# chaque fichier a la main.
+# Les cles API (cle_api.enc / cle_api_tripo.enc) sont VOLONTAIREMENT exclues : chiffrees via DPAPI
+# (ConvertTo-SecureString/ConvertFrom-SecureString sans -Key), donc liees au compte Windows ET a la
+# machine qui les a chiffrees - les inclure donnerait l'illusion d'une sauvegarde complete alors
+# qu'elles seraient illisibles une fois restaurees ailleurs. A ressaisir a la main sur la nouvelle
+# machine (le champ se re-chiffre tout seul a la prochaine saisie, comme d'habitude).
+function Obtenir-FichiersConfigConnus {
+    $fixes = @(
+        @{ Nom = "prompts-favoris.json";          Chemin = (Obtenir-CheminPromptsFavoris) }
+        @{ Nom = "historique_lots.csv";           Chemin = $CheminHistorique }
+        @{ Nom = "historique_fichiers.csv";       Chemin = $CheminHistoriqueFichiers }
+        @{ Nom = "chemin_melange_couleurs.json";  Chemin = $CheminConfigMelangeCouleurs }
+    )
+    # "dernier_prompt_<slug>.txt" : un fichier par categorie de style deja essayee (texte libre
+    # memorise, voir Obtenir-CheminDernierPromptLibre plus haut) - noms non-fixes (derives du nom de
+    # la categorie), decouverts ici au lieu d'une liste figee.
+    $dynamiques = @()
+    if ($PSScriptRoot -and (Test-Path $PSScriptRoot)) {
+        $dynamiques = @(Get-ChildItem -Path $PSScriptRoot -Filter "dernier_prompt_*.txt" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            @{ Nom = $_.Name; Chemin = $_.FullName }
+        })
+    }
+    return ,@($fixes + $dynamiques)
+}
+
+$btnSauvegarderConfig = New-Object System.Windows.Forms.Button
+$btnSauvegarderConfig.Text = "Sauvegarder ma config..."
+$btnSauvegarderConfig.Location = New-Object System.Drawing.Point(15, $yActuel)
+$btnSauvegarderConfig.Size = New-Object System.Drawing.Size(195, 28)
+Rendre-BoutonPlat $btnSauvegarderConfig "discret"
+$btnSauvegarderConfig.Add_Click({
+    $fichiersConnus = @(Obtenir-FichiersConfigConnus | Where-Object { Test-Path $_.Chemin })
+    if ($fichiersConnus.Count -eq 0) {
+        Afficher-Boite "Aucun fichier de config a sauvegarder pour l'instant (rien n'a encore ete cree - prompt favori, historique, etc.)." "Rien a sauvegarder" "OK" "Info" | Out-Null
+        return
+    }
+    $dialogue = New-Object System.Windows.Forms.SaveFileDialog
+    $dialogue.Filter = "Archive ZIP (*.zip)|*.zip"
+    $dialogue.FileName = "coloriser-stl-config_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
+    if ($dialogue.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("configstl_" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $dossierTemp | Out-Null
+    try {
+        foreach ($f in $fichiersConnus) { Copy-Item -Path $f.Chemin -Destination (Join-Path $dossierTemp $f.Nom) -Force }
+        if (Test-Path $dialogue.FileName) { Remove-Item -Path $dialogue.FileName -Force }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($dossierTemp, $dialogue.FileName)
+        Afficher-Boite "Config sauvegardee ($($fichiersConnus.Count) fichier(s)) :`r`n$($dialogue.FileName)`r`n`r`n(Les cles API ne sont pas incluses - chiffrees pour cette machine/ce compte Windows precis, a ressaisir a la main sur une nouvelle machine.)" "Sauvegarde terminee" "OK" "Info" | Out-Null
+    } catch {
+        Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
+    } finally {
+        Remove-Item -Path $dossierTemp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+})
+$form.Controls.Add($btnSauvegarderConfig)
+
+$btnRestaurerConfig = New-Object System.Windows.Forms.Button
+$btnRestaurerConfig.Text = "Restaurer ma config..."
+$btnRestaurerConfig.Location = New-Object System.Drawing.Point(215, $yActuel)
+$btnRestaurerConfig.Size = New-Object System.Drawing.Size(195, 28)
+Rendre-BoutonPlat $btnRestaurerConfig "discret"
+$btnRestaurerConfig.Add_Click({
+    $dialogue = New-Object System.Windows.Forms.OpenFileDialog
+    $dialogue.Filter = "Archive ZIP (*.zip)|*.zip"
+    if ($dialogue.ShowDialog($form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+    if ((Afficher-Boite "Ceci va REMPLACER ta config actuelle (prompts favoris, historiques, chemin de Melange-Couleurs) par celle de cette archive. Les cles API ne sont pas concernees (jamais incluses dans la sauvegarde).`r`n`r`nContinuer ?" "Restaurer la config" "YesNo" "Warning") -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("configstl_" + [guid]::NewGuid().ToString("N"))
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($dialogue.FileName, $dossierTemp)
+        $nombreRestaures = 0
+        foreach ($fichierExtrait in (Get-ChildItem -Path $dossierTemp -File)) {
+            # Accepte tout fichier de l'archive (fixes + "dernier_prompt_*.txt" dynamiques), sauf
+            # les cles API au cas ou une archive plus ancienne (ou faite a la main) les contiendrait
+            # - jamais restaurees ici, cf. note sur le chiffrement DPAPI plus haut.
+            if ($fichierExtrait.Name -eq "cle_api.enc" -or $fichierExtrait.Name -eq "cle_api_tripo.enc") { continue }
+            Copy-Item -Path $fichierExtrait.FullName -Destination (Join-Path $PSScriptRoot $fichierExtrait.Name) -Force
+            $nombreRestaures++
+        }
+        # Les prompts favoris sont charges en memoire une seule fois au demarrage - sans ce
+        # rechargement explicite, la restauration ecrirait bien le nouveau fichier sur le disque mais
+        # l'appli continuerait d'afficher les anciens favoris jusqu'au prochain lancement.
+        $script:promptsFavoris = Charger-PromptsFavoris
+        Reconstruire-CategorieFavoris
+        if ($menuCategorie.SelectedItem -and $menuCategorie.SelectedItem.ToString() -eq "Mes favoris") { Remplir-MenuPrompt }
+        Afficher-Boite "Config restauree ($nombreRestaures fichier(s) trouve(s) dans l'archive)." "Restauration terminee" "OK" "Info" | Out-Null
+    } catch {
+        Afficher-Boite "$_" "Erreur" "OK" "Error" | Out-Null
+    } finally {
+        Remove-Item -Path $dossierTemp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+})
+$form.Controls.Add($btnRestaurerConfig)
+$yActuel += 34
+
 $yFinBlocLancement = $yActuel
 
 # 16/10/2026, Tomyn : "trop discrete, il faudrait un vrai barre de progression qui se mete au

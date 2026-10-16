@@ -3,6 +3,26 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Export/import de toute la config en un .zip ("TOUS", 16/10/2026).** Même principe que la
+fonctionnalité déjà présente côté Melange-Couleurs-3MF : deux boutons "Sauvegarder ma config..." /
+"Restaurer ma config..." regroupent dans une seule archive les petits fichiers créés par l'outil à
+côté de lui-même (prompts favoris, historiques de lots et de fichiers, chemin vers
+Melange-Couleurs), pratique en cas de changement de PC plutôt que de retrouver et recopier chaque
+fichier à la main. Les clés API (`cle_api.enc`/`cle_api_tripo.enc`) sont **volontairement exclues**
+de la sauvegarde : elles sont chiffrées via DPAPI, donc liées au compte Windows **et** à la machine
+qui les a créées - les inclure donnerait l'illusion d'une sauvegarde complète alors qu'elles
+seraient illisibles une fois restaurées sur une autre machine. À ressaisir à la main après une
+restauration sur un nouveau PC.
+
+**Deux vérifications qui ont tourné à vide ("TOUS", 16/10/2026).** Deux des quatre idées de ce
+jour-là étaient déjà implémentées avant même d'être proposées, vérifié dans le code avant de s'y
+remettre - rien à refaire :
+- "Reprise ciblée d'un lot (fichiers ratés)" : déjà couvert par le bouton "Relancer les échecs"
+  existant (`$script:dernierLotEchecs`) et le dialogue "Reprendre/Tout/Annuler" au relancement sur
+  un dossier déjà partiellement traité.
+- "Notification Windows en fin de lot" : déjà présent (icône dans la zone de notification +
+  `ShowBalloonTip` à la fin d'un lot).
+
 **Prompts favoris ("Ok pour tout", 16/10/2026).** Dernière des quatre idées d'amélioration de ce
 jour-là. Même esprit que les trios favoris de Melange-Couleurs-3MF : une nouvelle catégorie
 spéciale **"Mes favoris"**, en tête de la liste des catégories, où Tomyn peut sauver n'importe quel
