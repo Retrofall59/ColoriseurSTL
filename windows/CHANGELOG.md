@@ -3,6 +3,18 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
+**Retry automatique sur une erreur réseau transitoire, avant d'abandonner un fichier pour de vrai
+(16/10/2026, "tu peux tout faire").** Jusqu'ici, un simple hoquet réseau (timeout, connexion
+coupée, erreur serveur 5xx côté Meshy/Tripo) sur n'importe quel appel API faisait échouer tout de
+suite le fichier entier - avec ses crédits déjà dépensés sur une étape précédente (Image to 3D,
+par exemple) perdus pour rien, et "Relancer les échecs" à faire à la main. Nouvelle fonction
+`Invoquer-AvecReessaiReseau`, posée devant chaque appel réseau (lancement d'étape, polling de
+tâche, téléchargement, vérification de clé/solde) : jusqu'à 3 tentatives avec une courte pause
+entre chacune, mais SEULEMENT sur un sous-ensemble reconnu d'erreurs réseau/serveur transitoires -
+une vraie erreur "métier" (clé invalide, crédits insuffisants, prompt manquant...) n'est jamais
+réessayée, ça ne servirait à rien. Surtout utile sur les gros lots du collègue dessinateur (jusqu'à
+250 fichiers).
+
 **L'overlay de progression est maintenant masqué avant d'afficher la boîte d'erreur en cas d'échec
 (16/10/2026, correctif préventif - même souci signalé par Tomyn côté Melange-Couleurs :
 "la barre de progression se met devant l'avertissement de la couverture donc chiant parce qu'on

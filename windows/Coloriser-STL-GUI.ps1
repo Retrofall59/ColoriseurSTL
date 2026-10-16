@@ -2660,6 +2660,44 @@ $script:debutTraitement = $null
 $script:indexFichierCourant = 0
 $script:totalFichiersLot = 0
 
+# Regex partagee pour reconnaitre une erreur reseau/serveur TRANSITOIRE (16/10/2026, idee en
+# passant validee par Tomyn - "tu peux tout faire") : timeout, connexion coupee/refusee, DNS,
+# erreur 5xx cote serveur (Meshy/Tripo en surcharge momentanee) - a bien distinguer d'une vraie
+# erreur "metier" (cle API invalide, credits insuffisants, prompt manquant, 4xx en general) qui ne
+# doit SURTOUT PAS etre reessayee automatiquement (relancer 3 fois une cle invalide ne sert a
+# rien et fait juste perdre du temps). Couverture volontairement large (anglais + francais, .NET
+# et messages d'erreur HTTP) plutot qu'une liste figee de codes - mieux vaut reessayer une fois de
+# trop sur un message ambigu que perdre un fichier entier (et ses credits deja depenses sur une
+# etape precedente) pour un simple hoquet reseau, surtout sur un gros lot de 250 fichiers.
+$script:REGEX_ERREUR_RESEAU_TRANSITOIRE = '(?i)timed?(-|\s)?out|a expire|delai d''attente|unable to connect|impossible de se connecter|connexion.*(reinitialisee|refusee|fermee|interrompue)|forcibly closed|existing connection was closed|remote name could not be resolved|nom distant n''a pas pu|no such host|temporarily unavailable|service unavailable|gateway time-?out|bad gateway|task was canceled|\(5(0[0-9]|[1-9][0-9])\)|: 5(0[0-9]|[1-9][0-9])\b'
+
+# Reessaie automatiquement un appel reseau (Meshy/Tripo) en cas d'erreur TRANSITOIRE (voir la
+# regex ci-dessus) avant d'abandonner le fichier pour de vrai - jusqu'ici, un seul hoquet reseau
+# sur n'importe quel appel ponctuel (lancement d'etape, telechargement...) faisait echouer tout de
+# suite le fichier entier, obligeant a repasser par "Relancer les echecs" a la main. Attente non
+# bloquante (DoEvents) entre deux tentatives, et verification de l'annulation a chaque tour - pas
+# question de reessayer bêtement 3 fois si Tomyn a deja clique Annuler pendant l'attente.
+function Invoquer-AvecReessaiReseau([scriptblock]$Action, [string]$Libelle, [int]$TentativesMax = 3, [int]$DelaiSecondes = 4) {
+    for ($tentative = 1; $tentative -le $TentativesMax; $tentative++) {
+        if ($script:annulationDemandee) { throw $script:ANNULATION_MARQUEUR }
+        try {
+            return & $Action
+        } catch {
+            if ("$_" -eq $script:ANNULATION_MARQUEUR) { throw }
+            $messageErreur = "$_"
+            $estTransitoire = $messageErreur -match $script:REGEX_ERREUR_RESEAU_TRANSITOIRE
+            if (-not $estTransitoire -or $tentative -ge $TentativesMax) { throw }
+            Ecrire-Journal "    ($Libelle : erreur reseau transitoire, tentative $tentative/$TentativesMax - '$messageErreur' - nouvel essai dans ${DelaiSecondes}s)"
+            $finAttente = (Get-Date).AddSeconds($DelaiSecondes)
+            while ((Get-Date) -lt $finAttente) {
+                if ($script:annulationDemandee) { throw $script:ANNULATION_MARQUEUR }
+                Start-Sleep -Milliseconds 200
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+        }
+    }
+}
+
 function Afficher-ProgressionEnCours($etapeTexte) {
     if ($script:debutTraitement -eq $null) { return }
     $ecoule = (Get-Date) - $script:debutTraitement
@@ -2674,7 +2712,7 @@ function Attendre-Tache($UrlTache, $Entetes, $Libelle) {
         if (((Get-Date) - $debut).TotalSeconds -gt $TimeoutTacheSecondes) {
             throw "$Libelle : pas de reponse apres $($TimeoutTacheSecondes / 60) min"
         }
-        $tache = Invoke-RestMethod -Uri $UrlTache -Headers $Entetes -Method Get
+        $tache = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri $UrlTache -Headers $Entetes -Method Get } $Libelle
         switch ($tache.status) {
             "SUCCEEDED" { return $tache }
             "FAILED"    { throw "$Libelle a echoue : $($tache.task_error.message)" }
@@ -2710,7 +2748,7 @@ function Attendre-TacheTripo($UrlTache, $Entetes, $Libelle) {
         if (((Get-Date) - $debut).TotalSeconds -gt $TimeoutTacheSecondes) {
             throw "$Libelle : pas de reponse apres $($TimeoutTacheSecondes / 60) min"
         }
-        $reponse = Invoke-RestMethod -Uri $UrlTache -Headers $Entetes -Method Get -TimeoutSec 15
+        $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri $UrlTache -Headers $Entetes -Method Get -TimeoutSec 15 } $Libelle
         # La reponse Tripo enveloppe les donnees dans un champ "data" (confirme par plusieurs
         # exemples de SDK), contrairement a Meshy qui renvoie directement l'objet a plat.
         $tache = if ($reponse.data) { $reponse.data } else { $reponse }
@@ -2761,7 +2799,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # --- Etape 1 : reserver une URL d'upload ---
     Ecrire-Journal "  Reservation d'un upload (Tripo)..."
     $corps = @{ format = $extension } | ConvertTo-Json
-    $reponsePresign = Invoke-RestMethod -Uri "$BaseUrlTripo/files/presign" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30
+    $reponsePresign = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/files/presign" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Reservation upload Tripo"
     $donneesPresign = if ($reponsePresign.data) { $reponsePresign.data } else { $reponsePresign }
     # "upload_url" est accepte comme alias de "presigned_url" selon la doc trouvee - on essaie
     # les deux noms plutot que de ne tenter qu'un seul et echouer silencieusement si c'est l'autre.
@@ -2794,10 +2832,12 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # envoi fragmente que la signature S3 n'accepte pas), WebClient.UploadData envoie le Content-
     # Length exact sans ce probleme, comme le fait curl.
     try {
-        $clientWeb = New-Object System.Net.WebClient
-        $clientWeb.Headers.Add("Content-Type", "application/octet-stream")
-        $clientWeb.UploadData($urlPresignee, "PUT", $octets) | Out-Null
-        $clientWeb.Dispose()
+        Invoquer-AvecReessaiReseau {
+            $clientWeb = New-Object System.Net.WebClient
+            $clientWeb.Headers.Add("Content-Type", "application/octet-stream")
+            $clientWeb.UploadData($urlPresignee, "PUT", $octets) | Out-Null
+            $clientWeb.Dispose()
+        } "Envoi du fichier (Tripo)"
     } catch {
         throw "echec de l'envoi du fichier vers l'URL presignee : $_"
     }
@@ -2814,7 +2854,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # systematiques observes jusqu'ici (meme sur un simple cube de test).
     Ecrire-Journal "  Import du modele (Tripo)..."
     $corps = @{ type = "import_model"; file = @{ file_token = $jetonFichier } } | ConvertTo-Json
-    $reponseImport = Invoke-RestMethod -Uri "$BaseUrlTripo/models/import" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30
+    $reponseImport = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/import" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Import Tripo"
     $idImportReponse = if ($reponseImport.data) { $reponseImport.data } else { $reponseImport }
     $idImport = $idImportReponse.task_id
 
@@ -2835,7 +2875,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # "prompt" a plat.
     Ecrire-Journal "  Envoi a l'API Texture (Tripo)..."
     $corps = @{ original_model_task_id = $idImport; texture_prompt = @{ text = $Prompt } } | ConvertTo-Json
-    $reponseTexture = Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30
+    $reponseTexture = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Texture Tripo"
     $idTextureReponse = if ($reponseTexture.data) { $reponseTexture.data } else { $reponseTexture }
     $idTexture = $idTextureReponse.task_id
 
@@ -2852,7 +2892,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # format-la a la place.
     Ecrire-Journal "  Envoi a l'API Convert (Tripo, format OBJ)..."
     $corps = @{ input = $idTexture; format = "OBJ"; export_vertex_colors = $true } | ConvertTo-Json
-    $reponseConvert = Invoke-RestMethod -Uri "$BaseUrlTripo/models/convert" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30
+    $reponseConvert = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/convert" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Convert Tripo"
     $idConvertReponse = if ($reponseConvert.data) { $reponseConvert.data } else { $reponseConvert }
     $idConvert = $idConvertReponse.task_id
 
@@ -2884,7 +2924,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     New-Item -ItemType Directory -Force -Path $dossierResultat | Out-Null
 
     $cheminZip = Join-Path ([System.IO.Path]::GetTempPath()) ("tripo_" + [System.Guid]::NewGuid().ToString() + ".zip")
-    Invoke-WebRequest -Uri $urlSortie -OutFile $cheminZip -TimeoutSec 60
+    Invoquer-AvecReessaiReseau { Invoke-WebRequest -Uri $urlSortie -OutFile $cheminZip -TimeoutSec 60 } "Telechargement du resultat (Tripo)" | Out-Null
     try {
         [System.IO.Compression.ZipFile]::ExtractToDirectory($cheminZip, $dossierResultat)
     } catch {
@@ -2936,7 +2976,7 @@ function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000) 
     # remaillage avant ce correctif - d'ou le maillage brut, parfois clairseme, de la generation).
     Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $TargetPolycount triangle(s) vises)..."
     $corps = @{ image_url = $dataUri; should_texture = $false; should_remesh = $true; target_polycount = $TargetPolycount } | ConvertTo-Json
-    $reponse = Invoke-RestMethod -Uri "$BaseUrl/image-to-3d" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/image-to-3d" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Image to 3D"
     $tache = Attendre-Tache "$BaseUrl/image-to-3d/$($reponse.result)" $Entetes "Image to 3D"
     Ecrire-Journal "  Maillage genere depuis l'image ($($tache.consumed_credits) credits)."
     return $tache
@@ -2952,7 +2992,7 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
     $base64 = [Convert]::ToBase64String($octets)
     $dataUri = "data:application/octet-stream;base64,$base64"
     $corps = @{ model_url = $dataUri; target_polycount = $TargetPolycount; target_formats = @("stl") } | ConvertTo-Json
-    $reponse = Invoke-RestMethod -Uri "$BaseUrl/remesh" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/remesh" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Remesh"
     $tache = Attendre-Tache "$BaseUrl/remesh/$($reponse.result)" $Entetes "Remesh"
     Ecrire-Journal "  Maillage simplifie ($($tache.consumed_credits) credits) - Retexture va repartir de ce resultat."
     return $tache
@@ -3010,7 +3050,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             $corps = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
         }
     }
-    $reponse = Invoke-RestMethod -Uri "$BaseUrl/retexture" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/retexture" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Retexture"
     $idRetexture = $reponse.result
 
     $tacheRetexture = Attendre-Tache "$BaseUrl/retexture/$idRetexture" $Entetes "Retexture"
@@ -3048,7 +3088,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             # risquer de la casser en renommant nous-memes.
             $nomFichier = [System.IO.Path]::GetFileName(([Uri]$url).AbsolutePath)
             $cheminTelecharge = Join-Path $dossierResultat $nomFichier
-            Invoke-WebRequest -Uri $url -OutFile $cheminTelecharge -TimeoutSec 60
+            Invoquer-AvecReessaiReseau { Invoke-WebRequest -Uri $url -OutFile $cheminTelecharge -TimeoutSec 60 } "Telechargement du resultat" | Out-Null
 
             # Assombrissement (demande de Tomyn le 08/10/2026) : uniquement l'image de texture,
             # pas le .obj ni le .mtl - precompense l'eclaircissement du melange automatique Bambu
@@ -3078,14 +3118,14 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
 
     Ecrire-Journal "  Envoi a l'API Multi-Color Print..."
     $corps = @{ input_task_id = $idRetexture; max_colors = $MaxCouleurs; style = "cartoon"; printer_brand = "bambu" } | ConvertTo-Json
-    $reponse = Invoke-RestMethod -Uri "$BaseUrl/print/multi-color" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/print/multi-color" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Multi-Color Print"
     $idImpression = $reponse.result
 
     $tacheImpression = Attendre-Tache "$BaseUrl/print/multi-color/$idImpression" $Entetes "Multi-Color Print"
     Ecrire-Journal "  Multi-Color Print terminee ($($tacheImpression.consumed_credits) credits)."
 
     $cheminSortie = Join-Path $DossierSortie ($FichierStl.BaseName + $suffixe + ".3mf")
-    Invoke-WebRequest -Uri $tacheImpression.model_urls.'3mf' -OutFile $cheminSortie
+    Invoquer-AvecReessaiReseau { Invoke-WebRequest -Uri $tacheImpression.model_urls.'3mf' -OutFile $cheminSortie } "Telechargement du .3mf final" | Out-Null
     Ecrire-Journal "  -> Enregistre : $cheminSortie"
 
     # 13/10/2026 : voir le commentaire equivalent dans Coloriser-UnFichierTripo plus haut. Fichier
@@ -3178,7 +3218,7 @@ function Afficher-FenetreHistorique {
 #                        on ne peut juste pas confirmer - a l'utilisateur de decider s'il continue
 function Verifier-CleEtSolde($cleApi) {
     try {
-        $reponse = Invoke-RestMethod -Uri "$BaseUrl/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get
+        $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get } "Verification cle Meshy" 2 3
         return @{ Statut = "valide"; Solde = [int]$reponse.balance }
     } catch {
         $codeHttp = $null
@@ -3195,7 +3235,7 @@ function Verifier-CleEtSolde($cleApi) {
 # "impossible de verifier" plutot qu'un plantage.
 function Verifier-CleEtSoldeTripo($cleApi) {
     try {
-        $reponse = Invoke-RestMethod -Uri "$BaseUrlTripo/user/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get -TimeoutSec 15
+        $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/user/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get -TimeoutSec 15 } "Verification cle Tripo" 2 3
         $donnees = if ($reponse.data) { $reponse.data } else { $reponse }
         $solde = if ($donnees.balance -ne $null) { [int]$donnees.balance } else { $null }
         return @{ Statut = "valide"; Solde = $solde }
