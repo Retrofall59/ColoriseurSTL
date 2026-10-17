@@ -1690,6 +1690,43 @@ Mettre-A-Jour-MenuFournisseur
 $yBlocSource = $yActuel
 Ajouter-EnteteSection "Source" $yActuel
 $yActuel += 28
+
+# --- Apercu du fichier source (17/10/2026, Tomyn, sur capture avec fleche : a cote des sections
+# "Source"/"Style et couleurs", dans la bande vide a droite - pas a cote de "Connexion", essaye
+# une premiere fois trop haut, retour "ta rien modifier cest meme pire ta pas compris"). Grande
+# vignette fixe (pas une par fichier - juste le premier de la selection), mise a jour dans
+# Afficher-GalerieDepart (seul point de passage commun a "Dossier...", "Fichier(s)..." et
+# "Actualiser la liste") - evite de devoir ouvrir l'onglet "Fichiers 3D" plus bas juste pour voir
+# a quoi ressemble le fichier charge.
+$libelleApercuSource = New-Object System.Windows.Forms.Label
+$libelleApercuSource.Text = "Apercu"
+$libelleApercuSource.Location = New-Object System.Drawing.Point(895, $yBlocSource)
+$libelleApercuSource.AutoSize = $true
+$libelleApercuSource.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
+$libelleApercuSource.ForeColor = $THEME.Texte
+$form.Controls.Add($libelleApercuSource)
+
+# Taille volontairement limitee a ce qui tient dans les 1000px de largeur de $form SANS y toucher
+# (895 + 95 = 990, 10px de marge) : $form.Size est deja delicat a cause de l'ancrage de $onglets
+# (voir le gros commentaire juste au-dessus, "ShowDialog()" - l'elargir pour une vignette plus
+# grande aurait pu recasser ce retrecissement deja patche une fois). Si la fenetre est elargie a la
+# main (Tomyn le fait souvent), $apercuSource garde sa position fixe (pas d'Anchor "Right" ici) et
+# profite simplement de l'espace vide qui s'ouvre a sa droite.
+$apercuSource = New-Object System.Windows.Forms.PictureBox
+$apercuSource.Location = New-Object System.Drawing.Point(895, ($yBlocSource + 20))
+$apercuSource.Size = New-Object System.Drawing.Size(95, 95)
+$apercuSource.BorderStyle = "FixedSingle"
+$apercuSource.SizeMode = "Zoom"
+$apercuSource.BackColor = $THEME.Surface
+$form.Controls.Add($apercuSource)
+$apercuSource.BringToFront()
+
+function Mettre-A-Jour-ApercuSource {
+    if ($apercuSource.Image) { $apercuSource.Image.Dispose() }
+    $apercuSource.Image = $null
+    if ($script:fichiersAtraiter.Count -eq 0) { return }
+    $apercuSource.Image = Obtenir-Miniature $script:fichiersAtraiter[0].FullName 95
+}
 Ajouter-Label "Dossier ou fichier(s) 3D (.stl, .obj, .fbx, .glb, .gltf) ou image (.jpg, .png) :" 15 $yActuel
 $yActuel += 20
 $txtDossier = New-Object System.Windows.Forms.TextBox
@@ -3094,6 +3131,7 @@ function Mettre-A-Jour-Estimation {
 function Afficher-GalerieDepart {
     $galerieDepart.Controls.Clear()
     $script:casesACocher.Clear()
+    Mettre-A-Jour-ApercuSource
 
     $fichiersStl = $script:fichiersAtraiter
     if ($fichiersStl.Count -eq 0) {
