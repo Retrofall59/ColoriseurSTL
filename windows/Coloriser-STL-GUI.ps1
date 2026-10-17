@@ -1378,14 +1378,15 @@ $form.Text = "Colorisation de modeles 3D en lot (Meshy)"
 # deborde quand meme hors ecran au lieu de retrecir avec elle - d'ou le "toujours pareil" de Tomyn
 # sur le essai precedent. En retrecissant seulement a la toute fin, une fois l'ancrage etabli sur
 # la taille complete, le retrecissement fait vraiment reduire la hauteur de $onglets comme prevu).
-# Largeur passee de 1000 a 1940 le 17/10/2026 (Tomyn, capture annotee d'une fleche, confirme
+# Largeur passee de 1000 a 2000 le 17/10/2026 (Tomyn, captures annotees d'une fleche, confirme
 # ensuite "deplacer tout le bloc fichier 3D resultats et avancement la ou je t'ai mis la fleche") :
 # $onglets (le bloc entier des 3 onglets - Fichiers 3D, Resultats colorises, Avancement - inchange
 # a l'interieur) est deplace plus bas dans ce fichier pour se placer a cote de "Connexion aux
-# fournisseurs" (voir $onglets.Location : x=960 pour laisser les bandeaux d'accent et cases a
-# cocher de 930px tranquilles, cf. le commentaire juste au-dessus de $onglets) - 1940px de large
-# pour lui faire de la place a cet endroit (x=960 + 955 de large + marge) sans rien chevaucher.
-$form.Size = New-Object System.Drawing.Size(1940, (1080 + $THEME.HauteurBanniere))
+# fournisseurs" (voir $onglets.Location : x=1000, calcule a partir du VRAI record de largeur de
+# tous les controles du formulaire - 985px, "Ajouter a la file"/"Hist. fichiers" - cf. le
+# commentaire juste au-dessus de $onglets) - 2000px de large pour lui faire de la place a cet
+# endroit (x=1000 + 955 de large + marge) sans rien chevaucher.
+$form.Size = New-Object System.Drawing.Size(2000, (1080 + $THEME.HauteurBanniere))
 # Fenetre redimensionnable (agrandir/reduire, bouton Agrandir dans la barre de titre) - la zone des
 # onglets (galeries, journal) est ancree pour suivre le redimensionnement (voir $onglets.Anchor
 # plus bas) : le reste au-dessus (champs, boutons) garde sa position fixe, d'ou une taille minimale
@@ -2644,19 +2645,20 @@ function Masquer-OverlayProgressionApresDelai([int]$delaiSecondes = 5) {
 # Rien d'autre ne change a l'interieur (3 onglets, galeries, toolbar) - Anchor toujours actif pour
 # suivre le redimensionnement de la fenetre.
 #
-# Deux corrections du 17/10/2026, meme jour, suite au retour de Tomyn sur le premier essai (image
-# a l'appui) :
-# - X : 905 chevauchait "ca chevauche le texte et les cases" - les bandeaux d'accent (barreAccent,
-#   930px de large, Ajouter-EnteteSection) et les cases a cocher "Comparer Meshy et Tripo"/"Pour
-#   Meshy..." (930px aussi, Creer-CaseACocher) commencent a x=15 et vont donc jusqu'a x=945 :
-#   905 tombait en plein dedans. Passe a 960 (930+15+marge de securite) pour les laisser tranquilles.
+# Deux corrections du 17/10/2026, meme jour, suite aux retours de Tomyn sur les essais precedents
+# (images a l'appui) :
+# - X : 905 PUIS 960 chevauchaient encore "ca chevauche toujour sur des bouton et texte" - 930px
+#   ne suffisait pas : le vrai record de largeur a gauche, c'est "Ajouter a la file"/"Lancer la
+#   file d'attente"/"Vider la file" ET "Hist. fichiers", qui vont jusqu'a x=985 (verifie en
+#   recalculant TOUTES les positions+largeurs du formulaire par script plutot qu'a l'oeil, vu que
+#   deviner a la main avait deja rate deux fois). Passe a 1000 (985+15 de marge).
 # - Y : $yBlocSource ("pourkoir ne pas lavoir positionne en hauteur en dessous du bandeau violet")
 #   remonte a $yBlocConnexion (tout en haut, juste sous la banniere violette "ColoriserSTL") -
 #   aligne le haut du bloc d'onglets avec le haut de "Connexion aux fournisseurs" au lieu de le
 #   laisser decale plus bas, et donne d'un coup toute la hauteur de la colonne de gauche (pas
 #   seulement ce qui reste a partir de "Source") a la galerie.
 $onglets = New-Object System.Windows.Forms.TabControl
-$onglets.Location = New-Object System.Drawing.Point(960, $yBlocConnexion)
+$onglets.Location = New-Object System.Drawing.Point(1000, $yBlocConnexion)
 $onglets.Size = New-Object System.Drawing.Size(955, 860)
 # Ancre sur les 4 cotes : c'est elle qui donne tout son interet au redimensionnement de la
 # fenetre (voir $form.FormBorderStyle plus haut) - galeries et journal (Dock="Fill" a l'interieur
