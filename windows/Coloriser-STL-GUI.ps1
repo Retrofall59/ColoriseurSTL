@@ -2648,16 +2648,8 @@ $ongletJournal.Text = "Avancement"
 $onglets.TabPages.AddRange(@($ongletDepart, $ongletResultats, $ongletJournal))
 
 $barreOutilsDepart = New-Object System.Windows.Forms.Panel
-# 17/10/2026, Tomyn : la galerie (meme avec un seul fichier charge) se retrouvait empilee SOUS
-# cette barre, et donc poussee vers le bas de l'ecran - avec tout ce qu'il y a au-dessus
-# (connexion, source, style, lancement), la vignette finissait coupee par le bas de l'ecran sur
-# sa machine. "tu deplace juste le champ preview sur le cote rien a faire dautre" : barre passee
-# de Dock="Top" (bandeau horizontal pleine largeur, boutons cote a cote) a Dock="Left" (bandeau
-# vertical etroit, boutons empiles) - la galerie (Dock="Fill" plus bas, inchangee) vient alors
-# remplir l'espace a DROITE des boutons au lieu d'en dessous, donc la vignette apparait a cote
-# d'eux des le haut de l'onglet plutot que d'etre repoussee vers le bas.
-$barreOutilsDepart.Dock = "Left"
-$barreOutilsDepart.Width = 118
+$barreOutilsDepart.Dock = "Top"
+$barreOutilsDepart.Height = 34
 
 $btnToutCocher = New-Object System.Windows.Forms.Button
 $btnToutCocher.Text = "Tout cocher"
@@ -2667,7 +2659,7 @@ $barreOutilsDepart.Controls.Add($btnToutCocher)
 
 $btnToutDecocher = New-Object System.Windows.Forms.Button
 $btnToutDecocher.Text = "Tout decocher"
-$btnToutDecocher.Location = New-Object System.Drawing.Point(4, 34)
+$btnToutDecocher.Location = New-Object System.Drawing.Point(120, 4)
 $btnToutDecocher.Size = New-Object System.Drawing.Size(110, 26)
 $barreOutilsDepart.Controls.Add($btnToutDecocher)
 

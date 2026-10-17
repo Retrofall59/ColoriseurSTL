@@ -3,14 +3,6 @@
 Historique de développement au fil des sessions (notes datées, dans l'ordre chronologique).
 Voir [README.md](README.md) pour l'état actuel de cette version.
 
-**Vignette de l'onglet "Fichiers 3D" déplacée à côté des boutons (17/10/2026).** Avec un fichier
-chargé (ou peu), la galerie se retrouvait empilée sous la barre "Tout cocher"/"Tout decocher",
-donc repoussée vers le bas de la fenêtre par tout ce qu'il y a au-dessus (connexion, source,
-style, lancement) — la vignette finissait coupée par le bas de l'écran chez Tomyn. Barre
-d'outils passée de bandeau horizontal (boutons côte à côte) à bandeau vertical étroit (boutons
-empilés) collé à gauche, pour que la galerie vienne remplir l'espace à droite des boutons au
-lieu d'en dessous.
-
 **Quatre nouvelles idées d'un coup ("tu peux toutes les faire", 16/10/2026, deuxième série).**
 Proposées en prévenant que ça commençait à racler le fond du tiroir ; approuvées quand même :
 
