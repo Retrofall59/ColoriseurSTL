@@ -1378,7 +1378,14 @@ $form.Text = "Colorisation de modeles 3D en lot (Meshy)"
 # deborde quand meme hors ecran au lieu de retrecir avec elle - d'ou le "toujours pareil" de Tomyn
 # sur le essai precedent. En retrecissant seulement a la toute fin, une fois l'ancrage etabli sur
 # la taille complete, le retrecissement fait vraiment reduire la hauteur de $onglets comme prevu).
-$form.Size = New-Object System.Drawing.Size(1000, (1080 + $THEME.HauteurBanniere))
+# Largeur passee de 1000 a 1900 le 17/10/2026 (Tomyn, capture annotee d'une fleche, confirme
+# ensuite "deplacer tout le bloc fichier 3D resultats et avancement la ou je t'ai mis la fleche") :
+# $onglets (le bloc entier des 3 onglets - Fichiers 3D, Resultats colorises, Avancement - inchange
+# a l'interieur) est deplace plus bas dans ce fichier pour se placer a cote des sections
+# "Source"/"Style et couleurs" au lieu d'etre empile sous "Lancement" tout en bas - 1900px de large
+# pour lui faire de la place a cet endroit (x=905 + 955 de large) sans chevaucher les champs
+# existants.
+$form.Size = New-Object System.Drawing.Size(1900, (1080 + $THEME.HauteurBanniere))
 # Fenetre redimensionnable (agrandir/reduire, bouton Agrandir dans la barre de titre) - la zone des
 # onglets (galeries, journal) est ancree pour suivre le redimensionnement (voir $onglets.Anchor
 # plus bas) : le reste au-dessus (champs, boutons) garde sa position fixe, d'ou une taille minimale
@@ -2630,8 +2637,16 @@ function Masquer-OverlayProgressionApresDelai([int]$delaiSecondes = 5) {
 # restent comme marqueurs visuels de section.
 
 # --- Onglets : galerie de depart / galerie de resultats / avancement ---
+# 17/10/2026, Tomyn (capture annotee d'une fleche, puis confirme "deplacer tout le bloc fichier 3D
+# resultats et avancement la ou je t'ai mis la fleche") : bloc entier deplace a cote des sections
+# "Source"/"Style et couleurs" (bande vide a droite, visible des l'ouverture) au lieu d'etre
+# empile sous "Lancement" tout en bas de la fenetre, ou il finissait coupe par le bas de l'ecran.
+# $yBlocSource (position Y de l'en-tete "Source", definie plus haut) plutot que $yActuel : les
+# trois onglets remontent donc au niveau de "Source", pas la ou le dernier champ de "Lancement"
+# s'est arrete. Rien d'autre ne change a l'interieur (3 onglets, galeries, toolbar) - Anchor
+# toujours actif pour suivre le redimensionnement de la fenetre.
 $onglets = New-Object System.Windows.Forms.TabControl
-$onglets.Location = New-Object System.Drawing.Point(15, $yActuel)
+$onglets.Location = New-Object System.Drawing.Point(905, $yBlocSource)
 $onglets.Size = New-Object System.Drawing.Size(955, 640)
 # Ancre sur les 4 cotes : c'est elle qui donne tout son interet au redimensionnement de la
 # fenetre (voir $form.FormBorderStyle plus haut) - galeries et journal (Dock="Fill" a l'interieur
