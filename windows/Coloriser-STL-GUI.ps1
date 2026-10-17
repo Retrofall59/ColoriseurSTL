@@ -720,11 +720,22 @@ public class NativeMethodsTheme {
 }
 "@ -ErrorAction SilentlyContinue
 
-function Definir-CouleurBarreProgression($barre, [System.Drawing.Color]$couleur) {
+# 17/10/2026, Tomyn : "la barre de progression ne fonctionne plus" - en fait elle n'a jamais
+# vraiment fonctionne : PBM_SETBARCOLOR (la partie remplie) ET PBM_SETBKCOLOR (le fond/piste vide)
+# recevaient tous les deux le MEME $couleur (violet accent), alors que le commentaire d'origine
+# disait vouloir un fond CLAIR distinct ("fond sombre -> clair, sinon la barre garde un fond
+# vert/bleu derriere l'accent"). Avec les deux identiques, la barre entiere - remplie ou pas -
+# s'affiche dans la meme teinte violette unie, donc on dirait toujours "pleine" quelle que soit la
+# Value reelle (particulierement visible sur un lot d'un seul fichier : Value reste a 0 tout le
+# temps du traitement, donc la barre devrait paraitre vide, pas pleine). $couleurFond separe
+# maintenant la couleur de fond de celle de la barre - $THEME.Surface (blanc en mode clair) par
+# defaut, pour un vrai contraste rempli/vide.
+function Definir-CouleurBarreProgression($barre, [System.Drawing.Color]$couleur, [System.Drawing.Color]$couleurFond = $THEME.Surface) {
     try {
-        $bgr = [IntPtr]($couleur.B -shl 16 -bor $couleur.G -shl 8 -bor $couleur.R)
-        [void][NativeMethodsTheme]::SendMessage($barre.Handle, 0x409, [IntPtr]0, $bgr)   # PBM_SETBARCOLOR
-        [void][NativeMethodsTheme]::SendMessage($barre.Handle, 0x2001, [IntPtr]0, $bgr)  # PBM_SETBKCOLOR (fond sombre -> clair, sinon la barre garde un fond vert/bleu derriere l'accent)
+        $bgrBarre = [IntPtr]($couleur.B -shl 16 -bor $couleur.G -shl 8 -bor $couleur.R)
+        $bgrFond = [IntPtr]($couleurFond.B -shl 16 -bor $couleurFond.G -shl 8 -bor $couleurFond.R)
+        [void][NativeMethodsTheme]::SendMessage($barre.Handle, 0x409, [IntPtr]0, $bgrBarre)  # PBM_SETBARCOLOR
+        [void][NativeMethodsTheme]::SendMessage($barre.Handle, 0x2001, [IntPtr]0, $bgrFond)  # PBM_SETBKCOLOR
     } catch { }
 }
 
@@ -3348,7 +3359,19 @@ function Attendre-Tache($UrlTache, $Entetes, $Libelle) {
             "SUCCEEDED" { return $tache }
             "FAILED"    { throw "$Libelle a echoue : $($tache.task_error.message)" }
             "CANCELED"  { throw "$Libelle a ete annulee" }
-            default     { Ecrire-Journal "    $Libelle : $($tache.status) ($($tache.progress)%)..." }
+            default     {
+                Ecrire-Journal "    $Libelle : $($tache.status) ($($tache.progress)%)..."
+                # 17/10/2026, Tomyn : "la barre de progression ne fonctionne plus" - la fenetre de
+                # progression (overlay) n'etait mise a jour qu'UNE FOIS PAR FICHIER (avant de le
+                # commencer, puis a 100% a la fin), jamais pendant - pour un lot d'un seul fichier
+                # (le cas le plus courant), elle restait donc bloquee a 0% du debut a la fin, meme
+                # si Remesh/Retexture/Multi-Color Print avancaient reellement (visible dans le
+                # journal mais pas dans l'overlay). Relaie ici la vraie progression de la tache en
+                # cours ($tache.progress, deja utilisee pour le journal juste au-dessus) a chaque
+                # poll - $titre omis (laisse le nom du fichier/ETA deja affiches intacts).
+                $creditsOverlayTexte = " - $([Math]::Round($script:creditsReelsLot, 1)) credit(s)"
+                Mettre-A-Jour-OverlayProgression ([int]$tache.progress) $null $creditsOverlayTexte
+            }
         }
         # Attente decoupee en petits intervalles (au lieu d'un seul Start-Sleep de 5s) pour que
         # l'annulation reagisse vite, pas seulement entre deux appels a l'API.
@@ -3398,6 +3421,11 @@ function Attendre-TacheTripo($UrlTache, $Entetes, $Libelle) {
             throw "$Libelle a ete annulee"
         } else {
             Ecrire-Journal "    $Libelle : statut brut recu = '$statutBrut' ($($tache.progress)%)..."
+            # 17/10/2026 : meme correctif que cote Meshy (Attendre-Tache plus haut) - relaie la
+            # vraie progression de la tache Tripo en cours dans l'overlay a chaque poll, au lieu de
+            # le laisser bloque a 0% jusqu'a la fin du fichier.
+            $creditsOverlayTexte = " - $([Math]::Round($script:creditsReelsLot, 1)) credit(s)"
+            Mettre-A-Jour-OverlayProgression ([int]$tache.progress) $null $creditsOverlayTexte
         }
         for ($i = 0; $i -lt $IntervallePollSecondes; $i++) {
             if ($script:annulationDemandee) { throw $script:ANNULATION_MARQUEUR }
