@@ -1378,11 +1378,7 @@ $form.Text = "Colorisation de modeles 3D en lot (Meshy)"
 # deborde quand meme hors ecran au lieu de retrecir avec elle - d'ou le "toujours pareil" de Tomyn
 # sur le essai precedent. En retrecissant seulement a la toute fin, une fois l'ancrage etabli sur
 # la taille complete, le retrecissement fait vraiment reduire la hauteur de $onglets comme prevu).
-# Largeur passee de 1000 a 1320 le 17/10/2026 (Tomyn, capture annotee d'une fleche) : la galerie
-# de depart (onglet "Fichiers 3D") a ete deplacee hors des onglets pour venir se placer a cote des
-# sections "Source"/"Style et couleurs" - voir $panneauApercuDepart plus bas - et ces 300px de
-# large supplementaires sont ce qui lui laisse la place sans empieter sur les champs existants.
-$form.Size = New-Object System.Drawing.Size(1320, (1080 + $THEME.HauteurBanniere))
+$form.Size = New-Object System.Drawing.Size(1000, (1080 + $THEME.HauteurBanniere))
 # Fenetre redimensionnable (agrandir/reduire, bouton Agrandir dans la barre de titre) - la zone des
 # onglets (galeries, journal) est ancree pour suivre le redimensionnement (voir $onglets.Anchor
 # plus bas) : le reste au-dessus (champs, boutons) garde sa position fixe, d'ou une taille minimale
@@ -2633,8 +2629,7 @@ function Masquer-OverlayProgressionApresDelai([int]$delaiSecondes = 5) {
 # formulaire (THEME.FondApp) derriere les sections, seuls les bandeaux d'en-tete (accent + titre)
 # restent comme marqueurs visuels de section.
 
-# --- Onglets : galerie de resultats / avancement (la galerie de depart n'est plus un onglet,
-# voir $panneauApercuDepart juste en dessous) ---
+# --- Onglets : galerie de depart / galerie de resultats / avancement ---
 $onglets = New-Object System.Windows.Forms.TabControl
 $onglets.Location = New-Object System.Drawing.Point(15, $yActuel)
 $onglets.Size = New-Object System.Drawing.Size(955, 640)
@@ -2644,42 +2639,13 @@ $onglets.Size = New-Object System.Drawing.Size(955, 640)
 $onglets.Anchor = "Top, Bottom, Left, Right"
 $form.Controls.Add($onglets)
 
+$ongletDepart = New-Object System.Windows.Forms.TabPage
+$ongletDepart.Text = "Fichiers 3D"
 $ongletResultats = New-Object System.Windows.Forms.TabPage
 $ongletResultats.Text = "Resultats colorises"
 $ongletJournal = New-Object System.Windows.Forms.TabPage
 $ongletJournal.Text = "Avancement"
-$onglets.TabPages.AddRange(@($ongletResultats, $ongletJournal))
-
-# --- Galerie de depart, deplacee hors des onglets le 17/10/2026 (Tomyn, capture annotee d'une
-# fleche : "deplace tout le champ previews la ou c'est je t'ai mis la fleche") : avant, elle
-# vivait dans l'onglet "Fichiers 3D", empile tout en bas de la fenetre sous "Connexion"/"Source"/
-# "Style et couleurs"/"Lancement" - avec tout ce qu'il y a au-dessus, $onglets.Location.Y arrive
-# tres bas, et la galerie finissait coupee chez Tomyn. Placee maintenant directement sur le
-# formulaire, a cote des sections "Source"/"Style et couleurs" (dans la bande vide a droite,
-# visible des l'ouverture, pas de scroll ni de changement d'onglet necessaire).
-# Hauteur calculee a partir de la position REELLE de $onglets (pas un chiffre devine a la main) :
-# le bas du panneau s'aligne exactement sur le bas de $onglets, pour utiliser tout l'espace
-# vertical deja prevu sans deborder sur "Lancement" en dessous.
-$panneauApercuDepart = New-Object System.Windows.Forms.Panel
-$panneauApercuDepart.Location = New-Object System.Drawing.Point(905, $yBlocSource)
-$panneauApercuDepart.Size = New-Object System.Drawing.Size(
-    390, ($onglets.Location.Y + $onglets.Size.Height - $yBlocSource))
-$panneauApercuDepart.Anchor = "Top, Bottom, Left"
-$panneauApercuDepart.BorderStyle = "FixedSingle"
-$form.Controls.Add($panneauApercuDepart)
-
-# Etiquette de contexte (remplace le nom d'onglet "Fichiers 3D" qui n'existe plus) - Dock="Top"
-# ajoute AVANT $barreOutilsDepart ci-dessous pour se placer au-dessus d'elle (premier ajoute =
-# le plus a l'exterieur quand plusieurs controles d'un meme panneau partagent Dock="Top").
-$libelleApercuDepart = New-Object System.Windows.Forms.Label
-$libelleApercuDepart.Text = "FICHIERS CHARGES"
-$libelleApercuDepart.Dock = "Top"
-$libelleApercuDepart.Height = 24
-$libelleApercuDepart.TextAlign = "MiddleLeft"
-$libelleApercuDepart.Padding = New-Object System.Windows.Forms.Padding(6, 0, 0, 0)
-$libelleApercuDepart.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
-$libelleApercuDepart.ForeColor = $THEME.AccentPrincipal
-$panneauApercuDepart.Controls.Add($libelleApercuDepart)
+$onglets.TabPages.AddRange(@($ongletDepart, $ongletResultats, $ongletJournal))
 
 $barreOutilsDepart = New-Object System.Windows.Forms.Panel
 $barreOutilsDepart.Dock = "Top"
@@ -2697,12 +2663,12 @@ $btnToutDecocher.Location = New-Object System.Drawing.Point(120, 4)
 $btnToutDecocher.Size = New-Object System.Drawing.Size(110, 26)
 $barreOutilsDepart.Controls.Add($btnToutDecocher)
 
-$panneauApercuDepart.Controls.Add($barreOutilsDepart)
+$ongletDepart.Controls.Add($barreOutilsDepart)
 
 $galerieDepart = New-Object System.Windows.Forms.FlowLayoutPanel
 $galerieDepart.Dock = "Fill"
 $galerieDepart.AutoScroll = $true
-$panneauApercuDepart.Controls.Add($galerieDepart)
+$ongletDepart.Controls.Add($galerieDepart)
 
 $btnToutCocher.Add_Click({
     foreach ($case in $script:casesACocher.Values) { $case.Checked = $true }
@@ -3176,8 +3142,7 @@ function Charger-DepuisDossier($dossier) {
     $script:fichiersAtraiter = @(Get-ChildItem -Path $dossier -Recurse -File | Where-Object { $_.Extension.ToLower() -in $EXTENSIONS_SUPPORTEES })
     $txtDossier.Text = $dossier
     if (-not $txtDossierSortie.Text) { $txtDossierSortie.Text = Join-Path $dossier "colorise" }
-    # 17/10/2026 : plus de "$onglets.SelectedTab = $ongletDepart" ici - la galerie de depart n'est
-    # plus un onglet a selectionner, elle est deja visible en permanence a cote de "Source".
+    $onglets.SelectedTab = $ongletDepart
     Afficher-GalerieDepart
 }
 
@@ -3196,6 +3161,7 @@ $btnChoisirFichiers.Add_Click({
         $dossierParent = Split-Path $dialogue.FileNames[0] -Parent
         $txtDossier.Text = $dossierParent
         if (-not $txtDossierSortie.Text) { $txtDossierSortie.Text = Join-Path $dossierParent "colorise" }
+        $onglets.SelectedTab = $ongletDepart
         Afficher-GalerieDepart
     }
 })
@@ -3248,6 +3214,7 @@ $form.Add_DragDrop({
     $premierDossier = Split-Path $fichiersTrouves[0].FullName -Parent
     $txtDossier.Text = $premierDossier
     if (-not $txtDossierSortie.Text) { $txtDossierSortie.Text = Join-Path $premierDossier "colorise" }
+    $onglets.SelectedTab = $ongletDepart
     Afficher-GalerieDepart
 })
 
@@ -4484,10 +4451,9 @@ foreach ($case in @($caseComparerFournisseurs, $caseMeshyObjExperimental, $caseH
 }
 
 # Onglets et panneaux : fond blanc (Surface) plutot que le gris Control par defaut
-foreach ($page in @($ongletResultats, $ongletJournal)) {
+foreach ($page in @($ongletDepart, $ongletResultats, $ongletJournal)) {
     $page.BackColor = $THEME.Surface
 }
-$panneauApercuDepart.BackColor = $THEME.Surface
 
 # Niveau 1 du relookage (10/10/2026) : les trois widgets restes 100% natifs Windows malgre la
 # bannerie et les boutons plats - ComboBox (listes), TabControl (onglets), NumericUpDown (compteurs).
