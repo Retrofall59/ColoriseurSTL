@@ -3442,8 +3442,14 @@ function Mettre-A-Jour-Estimation {
         $totalMeshyObj = $inclus.Count * $CREDITS_ESTIMES_RETEXTURE_SEULE
         $txtEstimationCout.Text = "Cout estime : ~$totalMeshyObj credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)$texteSurcoutImages"
     } elseif ($menuFournisseur.SelectedItem -eq "Tripo") {
+        # 20/10/2026 : les images sont desormais prises en charge cote Tripo (Image to 3D, voir
+        # Lancer-ImageModelTripo) - l'ancien avertissement "echoueront" n'est plus vrai, retire.
+        # Le surcout Image to 3D (deja compte dans $texteSurcoutImages juste au-dessus) reste
+        # etiquete "Meshy" dans son propre texte, pas totalement exact ici, mais le detail precis
+        # du cout Tripo pour une image n'est pas encore confirme (voir $CREDITS_ESTIMES_PAR_FICHIER_TRIPO) -
+        # l'estimation de base reste donc la meme, juste sans le faux avertissement.
         $totalTripo = $inclus.Count * $CREDITS_ESTIMES_PAR_FICHIER_TRIPO
-        $txtEstimationCout.Text = "Cout estime : ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)$(if ($nbImages -gt 0) { ' - ATTENTION : les images ne sont pas prises en charge par Tripo, elles echoueront' })"
+        $txtEstimationCout.Text = "Cout estime : ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)"
     } else {
         $total = $inclus.Count * $CREDITS_ESTIMES_PAR_FICHIER
         $txtEstimationCout.Text = "Cout estime : ~$total credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)$texteSurcoutImages"
@@ -3778,26 +3784,48 @@ function Lancer-DecimateTripo($Entetes, $JetonFichier, [int]$TargetFaceLimit) {
     return $tache
 }
 
+# 20/10/2026, Tomyn : "pour l'image ca sera bien d'avoir Tripo aussi" - equivalent Tripo de
+# Lancer-Image3D (Meshy) : POST /v3/generation/image-to-model, confirme via
+# developers.tripo3d.ai/fr/docs/generation-image-to-model/standard. "input" accepte le file_token
+# issu du meme upload presigne que pour un modele 3D (pas d'endpoint different). "texture"/"pbr" a
+# $false quand un prompt sera envoye separement a models/texture juste apres (meme logique que cote
+# Meshy, devise sa : "payer la texturation deux fois... n'aurait aucun sens") ; a $true quand il n'y
+# a pas de prompt, pour laisser Tripo texturer directement depuis la photo plutot que de faire un
+# appel Texture separe sans rien a lui dire de particulier.
+function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
+    Ecrire-Journal "  Envoi a l'API Image to 3D (Tripo)..."
+    $corps = @{ input = $JetonFichier; texture = $AvecTexture; pbr = $AvecTexture } | ConvertTo-Json
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/generation/image-to-model" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Image to 3D Tripo"
+    $idReponse = if ($reponse.data) { $reponse.data } else { $reponse }
+    $idTache = $idReponse.task_id
+    $tache = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idTache" $Entetes "Image to 3D"
+    Ecrire-Journal "  Modele genere depuis l'image ($($tache.credits_consumed) credits)."
+    return $tache
+}
+
 function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", [int]$TargetPolycount = 30000) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) (via Tripo) ==="
 
-    # Image -> STL (08/10/2026) : pas encore pris en charge cote Tripo dans cette version, Meshy
-    # seulement pour le moment - erreur explicite plutot que de laisser Tripo echouer sur un type
-    # de fichier qu'il ne comprend pas avec un message API confus.
-    if ($FichierStl.Extension.ToLower() -in $EXTENSIONS_IMAGES) {
-        throw "les images ne sont pas encore prises en charge cote Tripo dans cette version - utilise Meshy pour une image, ou fournis directement un fichier 3D pour Tripo"
-    }
+    # 20/10/2026, Tomyn : "pour l'image ca sera bien d'avoir Tripo aussi" - image-to-model Tripo
+    # ajoute plus bas (voir Lancer-ImageModelTripo). Seul le plafond de taille reste different
+    # entre image et modele 3D (voir juste en dessous), meme principe que cote Meshy
+    # (Coloriser-UnFichier : le controle de taille en Mo ne s'applique qu'aux modeles 3D, pas aux
+    # images, qui n'ont jamais eu ce genre de limite documentee de notre cote).
+    $estUneImage = $FichierStl.Extension.ToLower() -in $EXTENSIONS_IMAGES
 
-    # 20/10/2026 : plafond remonte de 50 a 150 Mo, d'apres la vraie doc officielle Tripo
-    # (developers.tripo3d.ai/fr/docs/models-import) : "input" (le file_token issu de l'upload)
-    # accepte un fichier jusqu'a 150 Mo - l'ancien seuil de 50 Mo n'avait jamais ete confirme nulle
-    # part, c'etait juste une marge de securite arbitraire. Concretement utile pour les .3mf tres
-    # denses convertis en .stl (ex. 149,7 Mo / 3,1M triangles observe chez Tomyn le 20/10/2026) :
-    # ca passe chez Tripo (150 Mo) meme si ca depasse le plafond "data: URI" de Meshy (100 Mo).
-    $tailleMo = $FichierStl.Length / 1MB
-    if ($tailleMo -gt 150) {
-        throw "fichier de $([math]::Round($tailleMo,1)) Mo, limite Tripo (import) = 150 Mo - non envoye"
+    if (-not $estUneImage) {
+        # 20/10/2026 : plafond remonte de 50 a 150 Mo, d'apres la vraie doc officielle Tripo
+        # (developers.tripo3d.ai/fr/docs/models-import) : "input" (le file_token issu de l'upload)
+        # accepte un fichier jusqu'a 150 Mo - l'ancien seuil de 50 Mo n'avait jamais ete confirme
+        # nulle part, c'etait juste une marge de securite arbitraire. Concretement utile pour les
+        # .3mf tres denses convertis en .stl (ex. 149,7 Mo / 3,1M triangles observe chez Tomyn le
+        # 20/10/2026) : ca passe chez Tripo (150 Mo) meme si ca depasse le plafond "data: URI" de
+        # Meshy (100 Mo).
+        $tailleMo = $FichierStl.Length / 1MB
+        if ($tailleMo -gt 150) {
+            throw "fichier de $([math]::Round($tailleMo,1)) Mo, limite Tripo (import) = 150 Mo - non envoye"
+        }
     }
 
     $entetes = @{ Authorization = "Bearer $CleApi" }
@@ -3850,16 +3878,32 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     }
     Ecrire-Journal "  Fichier envoye."
 
-    # --- Etape 2bis : simplification si le maillage est tres volumineux (20/10/2026, parite avec
-    # Meshy - voir $SEUIL_TRIANGLES_REMESH_AUTO et Lancer-Remesh) : on passe alors par Retopology
-    # (mesh/decimate) a la place de l'import_model habituel, et sa tache sert directement de
-    # reference de modele pour la texturation qui suit (pas besoin d'importer en plus).
-    $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
+    # --- Etape 2bis : image, maillage volumineux, ou import normal ---
+    # 20/10/2026 : trois chemins possibles avant la texturation.
+    # - Image (Tomyn : "pour l'image ca sera bien d'avoir Tripo aussi") : Image to 3D Tripo, qui
+    #   saute import_model (son task_id est deja une reference valide). Sans prompt, elle texture
+    #   elle-meme directement depuis la photo et $sauterTexturation saute l'etape Texture separee -
+    #   avec prompt, geometrie seule (texture=$false) puis Texture classique juste apres avec CE
+    #   prompt (meme logique que cote Meshy, voir Lancer-Image3D).
+    # - Maillage volumineux (parite Meshy, voir $SEUIL_TRIANGLES_REMESH_AUTO et Lancer-Remesh) :
+    #   Retopology (mesh/decimate) a la place de l'import_model habituel, meme principe (saute
+    #   import_model, son task_id sert directement a la texturation).
+    # - Sinon : import_model habituel, inchange.
+    # Nombre de triangles non pertinent pour une image (rien a mesurer avant generation) - laisse a
+    # $null dans ce cas, condition suivante jamais evaluee grace au court-circuit de "elseif".
+    $nbTriangles = if ($estUneImage) { $null } else { Obtenir-NombreTriangles $FichierStl.FullName }
     $idModeleSource = $null
     $tacheADecimee = $null
     $creditsImport = 0
+    $sauterTexturation = $false
 
-    if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
+    if ($estUneImage) {
+        $avecPrompt = -not [string]::IsNullOrWhiteSpace($Prompt)
+        $tacheImageModel = Lancer-ImageModelTripo $entetes $jetonFichier (-not $avecPrompt)
+        $idModeleSource = $tacheImageModel.task_id
+        $creditsImport = [double]($tacheImageModel.credits_consumed)
+        $sauterTexturation = -not $avecPrompt
+    } elseif ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
         $tacheADecimee = Lancer-DecimateTripo $entetes $jetonFichier $TargetPolycount
         $idModeleSource = $tacheADecimee.task_id
         $creditsImport = [double]($tacheADecimee.credits_consumed)
@@ -3915,16 +3959,27 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # ete teste et trouve "silencieusement ignore" sur CET appel precisement - donc son ajout ici
     # est surtout une securite pour le jour ou l'API bascule vraiment, pas une garantie d'effet
     # immediat.
-    Ecrire-Journal "  Envoi a l'API Texture (Tripo)..."
-    # $idModeleSource : soit le resultat de l'import habituel, soit celui de la simplification
-    # Retopology ci-dessus pour un maillage volumineux (les deux sont un task_id Tripo valide).
-    $corps = @{ original_model_task_id = $idModeleSource; input = $idModeleSource; texture_prompt = @{ text = $Prompt }; model = "v3.5-20260815" } | ConvertTo-Json
-    $reponseTexture = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Texture Tripo"
-    $idTextureReponse = if ($reponseTexture.data) { $reponseTexture.data } else { $reponseTexture }
-    $idTexture = $idTextureReponse.task_id
+    # $sauterTexturation : cas d'une image sans prompt (voir Etape 2bis plus haut) - Image to 3D
+    # Tripo a deja texture directement depuis la photo (texture=$true a cet appel-la), inutile de
+    # repayer une texturation separate sans rien de plus a lui dire.
+    $creditsTexture = 0
+    if ($sauterTexturation) {
+        Ecrire-Journal "  Texturation deja faite par Image to 3D (pas de prompt fourni) - etape Texture sautee."
+        $idTexture = $idModeleSource
+    } else {
+        Ecrire-Journal "  Envoi a l'API Texture (Tripo)..."
+        # $idModeleSource : resultat de l'import habituel, de la simplification Retopology (maillage
+        # volumineux), ou de l'Image to 3D (geometrie seule, texture=$false) - les trois sont un
+        # task_id Tripo valide.
+        $corps = @{ original_model_task_id = $idModeleSource; input = $idModeleSource; texture_prompt = @{ text = $Prompt }; model = "v3.5-20260815" } | ConvertTo-Json
+        $reponseTexture = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Texture Tripo"
+        $idTextureReponse = if ($reponseTexture.data) { $reponseTexture.data } else { $reponseTexture }
+        $idTexture = $idTextureReponse.task_id
 
-    $tacheTexture = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idTexture" $entetes "Texturation"
-    Ecrire-Journal "  Texturation terminee."
+        $tacheTexture = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idTexture" $entetes "Texturation"
+        Ecrire-Journal "  Texturation terminee."
+        $creditsTexture = [double]($tacheTexture.credits_consumed)
+    }
 
     # --- Etape 5 : conversion en OBJ colore par sommet (pas en 3MF) ---
     # Changement du 2026-10-07 : "export_vertex_colors" est documente par Tripo comme valide
@@ -3954,8 +4009,8 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # conversion) - extrait ici plutot que de toujours renvoyer 0 comme avant.
     $creditsConvert = [double]($tacheConvert.credits_consumed)
     # Texture confirmee a 10 credits par Tomyn le 07/10/2026 (valeur reelle lue ici, pas codee en
-    # dur - ce commentaire sert juste de reference).
-    $creditsTexture = [double]($tacheTexture.credits_consumed)
+    # dur). 20/10/2026 : $creditsTexture est maintenant calcule plus haut, directement dans la
+    # branche Texture (0 si $sauterTexturation, sinon la vraie valeur) - plus de reaffectation ici.
 
     # Contrairement au 3MF (un seul fichier), l'export OBJ de Tripo est livre sous forme de ZIP
     # (maillage + materiau .mtl + images de texture) - documente par le SDK/doc tiers, pas un
@@ -4601,14 +4656,16 @@ function Lancer-Traitement($fichiersStl) {
     # text_style_prompt, image_style_url or multiview_image_urls must be provided"). Coloriser-
     # UnFichier (Meshy, cas image) sait maintenant repasser l'image source elle-meme comme reference
     # de style quand le prompt est vide - mais seulement dans CE cas precis (Meshy + image source).
-    # Dans tous les autres cas (fichier 3D sans photo source, Tripo qui ne prend pas les images, mode
-    # comparaison qui utilise les deux), il n'y a pas d'image a reutiliser comme repli : le prompt
-    # reste obligatoire pour ne pas gaspiller un appel API voue a l'echec.
+    # 20/10/2026 : Tripo aussi, maintenant que Image to 3D Tripo existe (voir
+    # Lancer-ImageModelTripo) - sans prompt, elle texture directement depuis la photo (texture=$true
+    # a l'appel Image to 3D, pas d'etape Texture separee a alimenter). Exemption donc etendue a
+    # Tripo seul et au mode comparaison, tant que ce sont bien des images dans les deux cas - un
+    # fichier 3D sans photo source reste bloque, ni Meshy ni Tripo n'ont de repli possible pour ca.
     if (-not $txtPrompt.Text) {
         $toutesImages = -not ($fichiersStl | Where-Object { $_.Extension.ToLower() -notin $EXTENSIONS_IMAGES })
-        $exemptionPossible = ($fournisseur -eq "Meshy") -and (-not $caseComparerFournisseurs.Checked) -and $toutesImages
+        $exemptionPossible = $toutesImages
         if (-not $exemptionPossible) {
-            Afficher-Boite "Le style/couleurs voulues est vide.`r`n`r`n(Sans prompt, Meshy a besoin de repartir du style de l'image source - possible seulement avec Meshy seul, sur des fichiers image, pas de .stl/.obj ni Tripo.)" "Erreur" "OK" "Error" | Out-Null
+            Afficher-Boite "Le style/couleurs voulues est vide.`r`n`r`n(Sans prompt, Meshy et Tripo ont besoin de repartir du style de l'image source - possible seulement sur des fichiers image, pas de .stl/.obj.)" "Erreur" "OK" "Error" | Out-Null
             return
         }
     }
