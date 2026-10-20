@@ -2197,6 +2197,32 @@ $astuceSmartTopology.SetToolTip($caseSmartTopology.BoiteInterne, $texteInfobulle
 $astuceSmartTopology.SetToolTip($caseSmartTopology.LabelInterne, $texteInfobulleSmartTopology)
 $yActuel += 24
 
+# 20/10/2026, Tomyn (meme verification du changelog Meshy) : "geometry_resolution" (standard/2k/4k),
+# ajoute le 18/09/2026 en remplacement de l'ancien "ultra_mode" (qu'on n'utilisait pas). Plus de
+# detail geometrique fin sur le maillage genere par Image to 3D, pour 5 credits de plus en 2k ou 4k
+# (le 4k necessite meshy-7.1/latest, deja notre defaut puisqu'on ne fixe pas ai_model ailleurs que
+# pour Smart Topology). Liste deroulante plutot que case a cocher : 3 choix, pas 2.
+Ajouter-Label "Qualite du maillage (image en entree) :" 15 $yActuel
+$menuGeometrieResolution = New-Object System.Windows.Forms.ComboBox
+$menuGeometrieResolution.Location = New-Object System.Drawing.Point(280, ($yActuel - 2))
+$menuGeometrieResolution.Size = New-Object System.Drawing.Size(260, 24)
+$menuGeometrieResolution.DropDownStyle = "DropDownList"
+[void]$menuGeometrieResolution.Items.Add("Standard (par defaut)")
+[void]$menuGeometrieResolution.Items.Add("2K (detail fin, +5 credits)")
+[void]$menuGeometrieResolution.Items.Add("4K (detail tres fin, +5 credits)")
+$menuGeometrieResolution.SelectedIndex = 0
+$form.Controls.Add($menuGeometrieResolution)
+$menuGeometrieResolution.Add_SelectedIndexChanged({ Mettre-A-Jour-Estimation })
+
+$astuceGeometrieResolution = New-Object System.Windows.Forms.ToolTip
+$astuceGeometrieResolution.AutoPopDelay = 20000
+$astuceGeometrieResolution.InitialDelay = 400
+$astuceGeometrieResolution.SetToolTip($menuGeometrieResolution,
+    "Actif uniquement quand le fichier d'entree est une image (Image to 3D) - ignore pour un .stl/.obj deja existant.`n`n" +
+    "Standard : comportement habituel, pas de cout supplementaire.`n" +
+    "2K / 4K : plus de detail geometrique fin sur le maillage genere, +5 credits. Le 4K necessite le modele meshy-7.1 (utilise par defaut tant qu'aucun modele n'est fixe explicitement ailleurs).")
+$yActuel += 28
+
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
@@ -2445,6 +2471,7 @@ $btnAjouterFileAttente.Add_Click({
         ComparerFournisseurs = $caseComparerFournisseurs.Checked
         MeshyObjExperimental = $caseMeshyObjExperimental.Checked
         SmartTopology = $caseSmartTopology.Checked
+        GeometrieResolution = $menuGeometrieResolution.SelectedIndex
     }
     [void]$script:fileAttenteLots.Add($lot)
     $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
@@ -2478,7 +2505,11 @@ $btnLancerFileAttente.Add_Click({
             $assombrirTexture.Value = $lot.Assombrir
             $caseComparerFournisseurs.Checked = $lot.ComparerFournisseurs
             $caseMeshyObjExperimental.Checked = $lot.MeshyObjExperimental
-            $caseSmartTopology.Checked = if ($lot.PSObject.Properties.Name -contains "SmartTopology") { $lot.SmartTopology } else { $false }
+            # $lot est une Hashtable (pas un PSCustomObject) : une cle absente (vieux lot sauvegarde
+            # avant l'ajout de ces 2 options) renvoie simplement $null via l'acces par point, pas
+            # besoin (et pas fiable) de passer par .PSObject.Properties dessus.
+            $caseSmartTopology.Checked = [bool]$lot.SmartTopology
+            $menuGeometrieResolution.SelectedIndex = if ($lot.GeometrieResolution -ne $null) { $lot.GeometrieResolution } else { 0 }
             [System.Windows.Forms.Application]::DoEvents()
             Lancer-Traitement $lot.Fichiers
             $script:fileAttenteLots.RemoveAt(0)
@@ -3128,7 +3159,14 @@ function Mettre-A-Jour-Estimation {
     # les fichiers images du lot - compte a part, pour afficher clairement d'ou vient le surcout
     # plutot que de le fondre dans le total sans explication.
     $nbImages = @($inclus | Where-Object { $_.Extension.ToLower() -in $EXTENSIONS_IMAGES }).Count
-    $texteSurcoutImages = if ($nbImages -gt 0) { " + ~$($nbImages * $CREDITS_ESTIMES_IMAGE_VERS_3D) credits Meshy pour generer le maillage des $nbImages image(s) avant colorisation" } else { "" }
+    # 20/10/2026 : +5 credits par image si 2K/4K choisi (geometry_resolution, voir
+    # $menuGeometrieResolution) - meme principe que le surcout Image to 3D juste au-dessus, a part
+    # pour que l'origine du cout reste claire dans le texte affiche.
+    $surcoutResolution = if ($nbImages -gt 0 -and $menuGeometrieResolution.SelectedIndex -gt 0) { $nbImages * 5 } else { 0 }
+    $texteSurcoutImages = if ($nbImages -gt 0) {
+        " + ~$($nbImages * $CREDITS_ESTIMES_IMAGE_VERS_3D) credits Meshy pour generer le maillage des $nbImages image(s) avant colorisation" +
+        $(if ($surcoutResolution -gt 0) { " (+ ~$surcoutResolution credits pour la resolution $($menuGeometrieResolution.Text))" } else { "" })
+    } else { "" }
 
     if ($inclus.Count -eq 0) {
         $txtEstimationCout.Text = ""
@@ -3647,7 +3685,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     return $creditsTotal
 }
 
-function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false) {
+function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "") {
     # Image -> maillage (ajoute le 08/10/2026) : "Image to 3D" de Meshy, maillage seul
     # (should_texture=false) - la texture est refaite juste apres par la Retexture habituelle avec
     # LE PROMPT choisi par l'utilisateur, pas celle (generique) que ferait Image to 3D elle-meme.
@@ -3684,7 +3722,13 @@ function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000, 
         $corps.ai_model = "meshy-t2.5"
     }
 
-    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $($corps.target_polycount) triangle(s) vises$(if ($SmartTopology) { ', Smart Topology' }))..."
+    # 20/10/2026, Tomyn : "geometry_resolution" (standard/2k/4k), ajoute par Meshy le 18/09/2026 -
+    # voir $menuGeometrieResolution. Remplace l'ancien "ultra_mode" qu'on n'a jamais utilise.
+    if ($GeometryResolution -in @("2k", "4k")) {
+        $corps.geometry_resolution = $GeometryResolution
+    }
+
+    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $($corps.target_polycount) triangle(s) vises$(if ($SmartTopology) { ', Smart Topology' })$(if ($corps.geometry_resolution) { ", resolution $($corps.geometry_resolution)" }))..."
     $corps = $corps | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/image-to-3d" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Image to 3D"
     $tache = Attendre-Tache "$BaseUrl/image-to-3d/$($reponse.result)" $Entetes "Image to 3D"
@@ -3708,7 +3752,17 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
     return $tache
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false) {
+# 20/10/2026 : traduit l'index du menu "Qualite du maillage" (voir $menuGeometrieResolution) en
+# valeur attendue par l'API ("" = standard, pas de parametre envoye).
+function Obtenir-GeometryResolutionChoisie {
+    switch ($menuGeometrieResolution.SelectedIndex) {
+        1 { return "2k" }
+        2 { return "4k" }
+        default { return "" }
+    }
+}
+
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "") {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -3736,7 +3790,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     }
 
     if ($estUneImage) {
-        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount $SmartTopology
+        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount $SmartTopology $GeometryResolution
         $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         if ([string]::IsNullOrWhiteSpace($Prompt)) {
@@ -4144,7 +4198,15 @@ function Afficher-FenetreGraphiqueCredits {
 function Verifier-CleEtSolde($cleApi) {
     try {
         $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get } "Verification cle Meshy" 2 3
-        return @{ Statut = "valide"; Solde = [int]$reponse.balance }
+        # 20/10/2026, Tomyn (suite au changelog Meshy du 10/10/2026) : la reponse contient maintenant
+        # aussi monthly_credits, permanent_credits et monthly_resets_at - utile pour distinguer les
+        # credits qui vont expirer au prochain renouvellement de ceux qui restent definitivement.
+        # Lues en "best effort" (PSObject.Properties.Name) : certains comptes/plans pourraient ne pas
+        # les renvoyer, pas de raison de faire planter la verification de solde pour autant.
+        $mensuels = if ($reponse.PSObject.Properties.Name -contains "monthly_credits") { [int]$reponse.monthly_credits } else { $null }
+        $permanents = if ($reponse.PSObject.Properties.Name -contains "permanent_credits") { [int]$reponse.permanent_credits } else { $null }
+        $renouvellement = if ($reponse.PSObject.Properties.Name -contains "monthly_resets_at") { $reponse.monthly_resets_at } else { $null }
+        return @{ Statut = "valide"; Solde = [int]$reponse.balance; CreditsMensuels = $mensuels; CreditsPermanents = $permanents; RenouvellementLe = $renouvellement }
     } catch {
         $codeHttp = $null
         try { $codeHttp = [int]$_.Exception.Response.StatusCode.value__ } catch { }
@@ -4270,7 +4332,17 @@ function Lancer-Traitement($fichiersStl) {
         $reponseBoite = Afficher-Boite "Impossible de verifier la cle API $fournisseur ou le solde pour l'instant (probleme reseau ?). Continuer quand meme, sans cette verification ?" "Verification impossible" "YesNo" "Warning"
         if ($reponseBoite -ne "Yes") { return }
     } elseif ($verifCle.Solde -ne $null -and $verifCle.Solde -lt $coutEstime) {
-        $reponseBoite = Afficher-Boite "Solde actuel : $($verifCle.Solde) credits. Cout estime pour ce lot : ~$coutEstime credits (pourrait depasser ton solde).`n`nContinuer quand meme ?" "Solde potentiellement insuffisant" "YesNo" "Warning"
+        # 20/10/2026 : detail mensuel/permanent ajoute au message quand Meshy le fournit (voir
+        # Verifier-CleEtSolde) - utile ici precisement, puisque c'est le moment ou Tomyn doit decider
+        # s'il continue malgre un solde court : savoir qu'une partie va de toute facon expirer au
+        # renouvellement (donc "autant s'en servir maintenant") change la decision.
+        $detailSolde = ""
+        if ($verifCle.CreditsMensuels -ne $null -and $verifCle.CreditsPermanents -ne $null) {
+            $detailSolde = " (dont $($verifCle.CreditsMensuels) mensuels, $($verifCle.CreditsPermanents) permanents"
+            if ($verifCle.RenouvellementLe) { $detailSolde += ", renouvellement le $($verifCle.RenouvellementLe)" }
+            $detailSolde += ")"
+        }
+        $reponseBoite = Afficher-Boite "Solde actuel : $($verifCle.Solde) credits$detailSolde. Cout estime pour ce lot : ~$coutEstime credits (pourrait depasser ton solde).`n`nContinuer quand meme ?" "Solde potentiellement insuffisant" "YesNo" "Warning"
         if ($reponseBoite -ne "Yes") { return }
     }
 
@@ -4414,7 +4486,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -4434,7 +4506,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie)
                     } else {
                         $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
                     }
