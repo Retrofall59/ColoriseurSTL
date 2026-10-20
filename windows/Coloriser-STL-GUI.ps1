@@ -2508,12 +2508,14 @@ $yActuel += 28
 # 20/10/2026, Tomyn : seule des pistes evoquees apres la troisieme relecture du changelog Meshy
 # jugee utile ("le seul qui vaut discussion c'est Printability") - "Repair Printability" de Meshy,
 # epaissit les parois trop fines pour l'imprimante avant la Retexture (voir
-# Lancer-ReparationImprimabilite). Case a cocher, pas par defaut : +10 credits reels par fichier
-# concerne (confirme par la doc Meshy), et ignore de toute facon pour les petits fichiers qui
-# partent directement en Retexture sans tache Meshy prealable a chainer (voir le commentaire dans
-# Coloriser-UnFichier). FDM fixe en dur (pas de menu SLA/full_color) : c'est le seul type
-# d'imprimante que Tomyn utilise (Bambu Lab, deja le choix fixe pour Multi-Color Print).
-$caseReparationParois = Creer-CaseACocher "Pour Meshy : reparer l'epaisseur des parois avant impression FDM si besoin (+10 credits, ignore pour les petits fichiers - voir l'infobulle)" 930 20 $THEME.FondApp
+# Lancer-ReparationImprimabilite). Affinee ensuite ("OK pour moi") avec un passage gratuit par
+# "Analyze Printability" d'abord (voir Reparer-ParoisSiNecessaire) : la reparation payante (+10
+# credits) n'est declenchee QUE si l'analyse detecte reellement des parois trop fines. Case a
+# cocher, pas par defaut : ignoree de toute facon pour les petits fichiers qui partent directement
+# en Retexture sans tache Meshy prealable a chainer (voir le commentaire dans Coloriser-UnFichier).
+# FDM fixe en dur (pas de menu SLA/full_color) : c'est le seul type d'imprimante que Tomyn utilise
+# (Bambu Lab, deja le choix fixe pour Multi-Color Print).
+$caseReparationParois = Creer-CaseACocher "Pour Meshy : verifier/reparer l'epaisseur des parois avant impression FDM (gratuit si saines, +10 credits si reparation reellement necessaire - voir l'infobulle)" 930 20 $THEME.FondApp
 $caseReparationParois.Location = New-Object System.Drawing.Point(15, $yActuel)
 $caseReparationParois.Checked = $false
 $form.Controls.Add($caseReparationParois)
@@ -2523,8 +2525,8 @@ $astuceReparationParois = New-Object System.Windows.Forms.ToolTip
 $astuceReparationParois.AutoPopDelay = 20000
 $astuceReparationParois.InitialDelay = 400
 $texteInfobulleReparationParois = (
-    "API `"Repair Printability`" de Meshy (imprimante FDM, epaisseur minimale 1.0 mm) : epaissit automatiquement les parois trop fines detectees sur le maillage, AVANT la Retexture (la texture existante serait sinon supprimee par cette etape).`n`n" +
-    "+10 credits par fichier ou elle s'applique reellement.`n`n" +
+    "Verifie D'ABORD l'epaisseur des parois via l'API `"Analyze Printability`" de Meshy (imprimante FDM, epaisseur minimale 1.0 mm) - GRATUIT, ne modifie rien. Si des parois trop fines sont reellement detectees, lance ensuite `"Repair Printability`" (+10 credits) pour les epaissir, AVANT la Retexture (la texture existante serait sinon supprimee par cette etape). Si les parois sont deja saines : 0 credit supplementaire, rien n'est touche.`n`n" +
+    "Donne aussi, gratuitement, un diagnostic du maillage (etanche ou pas, trous, aretes non-manifold) dans le journal.`n`n" +
     "Ignoree pour les fichiers assez petits pour partir directement en Retexture sans etape Meshy prealable (Image to 3D ou Remesh) - forcer un Remesh juste pour ca gaspillerait des credits sur des fichiers qui n'en ont pas besoin par ailleurs. Un message l'indique dans le journal le cas echeant."
 )
 $astuceReparationParois.SetToolTip($caseReparationParois, $texteInfobulleReparationParois)
@@ -3481,10 +3483,10 @@ function Mettre-A-Jour-Estimation {
         $(if ($surcoutResolution -gt 0) { " (+ ~$surcoutResolution credits pour la resolution $($menuGeometrieResolution.Text))" } else { "" })
     } else { "" }
     # 20/10/2026 : reparation des parois (voir $caseReparationParois) - pas de compte precis
-    # possible ici (ignoree au cas par cas pour les petits fichiers sans tache Meshy prealable,
-    # voir Coloriser-UnFichier), donc note generique plutot qu'un chiffre total qui serait faux.
+    # possible ici (l'Analyze gratuit decide au cas par cas si la Reparation payante s'applique,
+    # voir Reparer-ParoisSiNecessaire), donc note generique plutot qu'un chiffre total qui serait faux.
     $texteSurcoutReparation = if ($caseReparationParois.Checked) {
-        " + ~10 credits par fichier Meshy ou la reparation des parois s'applique reellement (ignoree pour les petits fichiers)"
+        " + 0 a ~10 credits par fichier Meshy selon le resultat de l'analyse gratuite des parois (reparation payante seulement si reellement necessaire)"
     } else { "" }
 
     if ($inclus.Count -eq 0) {
@@ -4200,6 +4202,49 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
     return $tache
 }
 
+# 20/10/2026, Tomyn ("OK pour moi" sur l'idee suggeree juste apres l'ajout de la reparation) :
+# "Analyze Printability" de Meshy - meme diagnostic que Repair (parois trop fines, etancheite,
+# trous, faces degenerees) mais GRATUIT (0 credit, confirme par la doc : "This endpoint is free")
+# et NE MODIFIE RIEN au maillage. Sert maintenant de filtre avant de payer la Reparation (voir
+# Reparer-ParoisSiNecessaire plus bas) : pas la peine de depenser 10 credits sur une piece qui
+# n'a aucun probleme de parois.
+function Lancer-AnalyseImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
+    Ecrire-Journal "  Analyse de l'imprimabilite (gratuit, imprimante $PrinterType)..."
+    $corps = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType } | ConvertTo-Json
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/print/analyze" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Analyse imprimabilite"
+    $tache = Attendre-Tache "$BaseUrl/print/analyze/$($reponse.result)" $Entetes "Analyse imprimabilite"
+    $diag = $tache.printability
+    if ($diag -ne $null) {
+        # Infos de sante du maillage toujours loggees (gratuit), meme quand les parois sont saines -
+        # utile a Tomyn independamment de la reparation (etancheite, trous, faces degenerees).
+        if ($diag.metrics -ne $null) {
+            $m = $diag.metrics
+            $etat = if ($m.is_watertight) { "etanche" } else { "NON etanche" }
+            Ecrire-Journal "  Diagnostic maillage : $etat, $($m.holes) trou(s), $($m.non_manifold_edges) arete(s) non-manifold, $($m.degenerate_faces) face(s) degeneree(s)."
+        }
+        if ($diag.thin_walls -ne $null -and $diag.thin_walls.has_thin_walls) {
+            $ratio = if ($diag.thin_walls.thin_area_ratio -ne $null) { [math]::Round($diag.thin_walls.thin_area_ratio * 100, 1) } else { "?" }
+            Ecrire-Journal "  Parois trop fines detectees ($ratio% de la surface) - reparation (+10 credits) lancee."
+        } else {
+            Ecrire-Journal "  Parois deja assez epaisses pour $PrinterType - reparation non necessaire, 0 credit supplementaire."
+        }
+    }
+    return $tache
+}
+
+# Orchestre Analyze (gratuit) puis Repair (10 credits, seulement si necessaire) - c'est cette
+# fonction qu'appelle Coloriser-UnFichier, plus Lancer-ReparationImprimabilite directement.
+# Retourne $null si aucune reparation n'a ete necessaire (l'appelant garde alors la tache source
+# d'origine comme point de depart pour la Retexture), ou la tache de reparation sinon.
+function Reparer-ParoisSiNecessaire($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
+    $tacheAnalyse = Lancer-AnalyseImprimabilite $Entetes $IdTacheSource $PrinterType
+    $besoinReparation = $tacheAnalyse.printability -ne $null -and $tacheAnalyse.printability.thin_walls -ne $null -and $tacheAnalyse.printability.thin_walls.has_thin_walls
+    if (-not $besoinReparation) {
+        return $null
+    }
+    return Lancer-ReparationImprimabilite $Entetes $IdTacheSource $PrinterType
+}
+
 # 20/10/2026, Tomyn (apres discussion sur les pistes du changelog Meshy, celle-ci jugee utile
 # contrairement aux trois autres) : "Repair Printability" de Meshy - epaissit automatiquement les
 # parois plus fines que le minimum imprimable pour le type d'imprimante choisi (FDM = 1.0 mm,
@@ -4207,7 +4252,9 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
 # le besoin de la lancer sur le maillage NU, puis de retexturer le resultat juste apres, jamais
 # apres coup). Chaine par input_task_id comme Lancer-Image3D/Lancer-Remesh : $IdTacheSource doit
 # etre une tache Meshy existante (Image to 3D ou Remesh) possedant un asset .glb - pas un nouvel
-# upload, Meshy reutilise directement son propre fichier deja heberge.
+# upload, Meshy reutilise directement son propre fichier deja heberge. N'est plus appelee
+# directement par Coloriser-UnFichier depuis l'ajout de l'Analyze gratuit ci-dessus (voir
+# Reparer-ParoisSiNecessaire) - conservee telle quelle, c'est elle qui fait le travail reel.
 function Lancer-ReparationImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
     Ecrire-Journal "  Verification/reparation de l'epaisseur des parois (imprimante $PrinterType) avant Retexture..."
     $corps = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType } | ConvertTo-Json
@@ -4287,15 +4334,18 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     if ($estUneImage) {
         $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount $SmartTopology $GeometryResolution
         $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
-        # 20/10/2026 : reparation des parois (voir Lancer-ReparationImprimabilite) lancee ICI, sur
-        # le maillage NU juste genere, avant la Retexture - jamais apres (la reparation supprime
-        # la texture existante). $idSourceRetexture pointe ensuite vers le resultat le plus recent
-        # (repare si demande, sinon le maillage genere tel quel).
+        # 20/10/2026 : reparation des parois (voir Reparer-ParoisSiNecessaire, Analyze gratuit
+        # puis Repair seulement si besoin) lancee ICI, sur le maillage NU juste genere, avant la
+        # Retexture - jamais apres (la reparation supprime la texture existante). $idSourceRetexture
+        # pointe ensuite vers le resultat le plus recent (repare si besoin reel, sinon le maillage
+        # genere tel quel - $null signifie "pas de reparation necessaire, rien a changer").
         $idSourceRetexture = $tacheImage3D.id
         if ($ReparerParois) {
-            $tacheReparation = Lancer-ReparationImprimabilite $Entetes $tacheImage3D.id "fdm"
-            $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
-            $idSourceRetexture = $tacheReparation.id
+            $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheImage3D.id "fdm"
+            if ($tacheReparation -ne $null) {
+                $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
+                $idSourceRetexture = $tacheReparation.id
+            }
         }
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         if ([string]::IsNullOrWhiteSpace($Prompt)) {
@@ -4325,9 +4375,11 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             # maillage simplifie (Remesh), avant Retexture.
             $idSourceRetexture = $tacheRemesh.id
             if ($ReparerParois) {
-                $tacheReparation = Lancer-ReparationImprimabilite $Entetes $tacheRemesh.id "fdm"
-                $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
-                $idSourceRetexture = $tacheReparation.id
+                $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheRemesh.id "fdm"
+                if ($tacheReparation -ne $null) {
+                    $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
+                    $idSourceRetexture = $tacheReparation.id
+                }
             }
             Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage simplifie)..."
             $corpsRetexture = @{ input_task_id = $idSourceRetexture; text_style_prompt = $Prompt; enable_original_uv = $false }
