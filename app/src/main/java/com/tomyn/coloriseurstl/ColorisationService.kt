@@ -242,7 +242,7 @@ class ColorisationService : Service() {
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
         maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
         indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean,
-        assombrirTexturePourcent: Double = 0.0
+        assombrirTexturePourcent: Double = 0.0, reparerParois: Boolean = false, tailleImpressionMm: Int? = null
     ): Int {
         val suffixe = suffixeFournisseur + if (avecHorodatage) {
             "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
@@ -328,6 +328,32 @@ class ColorisationService : Service() {
             idTacheSource = resultatImage.idTache
             creditsImage3D = resultatImage.creditsConsommes
             EtatTraitement.ecrireJournal("  Maillage genere depuis l'image (${creditsImage3D} credits).")
+
+            // 20/10/2026, porte depuis la version Windows (Tomyn : "VASY" puis "OK pour moi") :
+            // Analyze gratuit puis Repair (+10 credits) seulement si des parois trop fines sont
+            // reellement detectees, AVANT la Retexture (la reparation supprime la texture
+            // existante). Pas encore de case a cocher dans l'UI Android (reparerParois est false
+            // par defaut ici) - prochaine vague pour l'exposer, comme les autres reglages Meshy
+            // ajoutes dans la vague precedente (Smart Topology, resolutions).
+            if (reparerParois) {
+                val tacheReparation = MeshyApiClient.reparerParoisSiNecessaire(
+                    idTacheSource, cleApi, "fdm", tailleImpressionMm,
+                    object : MeshyApiClient.EcouteurAvancement {
+                        override fun surProgres(etape: String, statut: String, progres: Int) {
+                            if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                            EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                            mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                        }
+                    }
+                )
+                if (tacheReparation != null) {
+                    creditsImage3D += tacheReparation.creditsConsommes
+                    idTacheSource = tacheReparation.idTache
+                    EtatTraitement.ecrireJournal("  Parois reparees (${tacheReparation.creditsConsommes} credits).")
+                } else {
+                    EtatTraitement.ecrireJournal("  Parois deja assez epaisses - reparation non necessaire, 0 credit supplementaire.")
+                }
+            }
         }
 
         if (meshyObjExperimental) {

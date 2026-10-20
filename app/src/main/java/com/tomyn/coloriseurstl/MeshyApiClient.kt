@@ -126,6 +126,81 @@ object MeshyApiClient {
         }
     }
 
+    // 20/10/2026, porte depuis la version Windows (Tomyn : "VASY" puis "OK pour moi" sur
+    // l'Analyze gratuite) : diagnostic d'imprimabilite de Meshy (parois trop fines, etancheite,
+    // trous, faces degenerees). "print/analyze" est gratuit (0 credit, documente "This endpoint
+    // is free") et NE MODIFIE RIEN au maillage - sert de filtre avant de payer "print/repair"
+    // (+10 credits, voir reparerImprimabilite) : pas la peine de reparer une piece saine.
+    data class DiagnosticImprimabilite(val tache: JSONObject, val parosTropFines: Boolean)
+
+    fun analyserImprimabilite(
+        idTacheSource: String,
+        cleApi: String,
+        typeImprimante: String = "fdm",
+        tailleImpressionMm: Int? = null,
+        ecouteur: EcouteurAvancement? = null
+    ): DiagnosticImprimabilite {
+        val corps = JSONObject().put("input_task_id", idTacheSource).put("printer_type", typeImprimante)
+        // "intended_print_longest_side_mm" (1-1000 mm documente) - seulement si renseigne,
+        // sinon Meshy applique son propre defaut (150 mm pour une tache chainee).
+        if (tailleImpressionMm != null && tailleImpressionMm > 0) {
+            corps.put("intended_print_longest_side_mm", tailleImpressionMm)
+        }
+        val reponse = requete("POST", "/print/analyze", cleApi, corps)
+        val idAnalyse = reponse.getString("result")
+        val tache = attendreTache("/print/analyze/$idAnalyse", cleApi, "Analyse imprimabilite", ecouteur)
+        val diag = tache.optJSONObject("printability")
+        val tropFines = diag?.optJSONObject("thin_walls")?.optBoolean("has_thin_walls", false) ?: false
+        return DiagnosticImprimabilite(tache, tropFines)
+    }
+
+    data class ResultatReparationImprimabilite(val idTache: String, val creditsConsommes: Int)
+
+    /**
+     * "Repair Printability" de Meshy (porte depuis la version Windows, +10 credits) : epaissit
+     * automatiquement les parois plus fines que le minimum imprimable (FDM = 1.0 mm, documente),
+     * AVANT la Retexture - la texture existante est supprimee par cette reparation, d'ou le besoin
+     * de la lancer sur le maillage NU puis retexturer le resultat juste apres, jamais apres coup.
+     * Chaine par input_task_id (meme principe que genererMaillageDepuisImage) : idTacheSource doit
+     * etre une tache Meshy existante possedant un asset .glb, pas un nouvel upload.
+     */
+    fun reparerImprimabilite(
+        idTacheSource: String,
+        cleApi: String,
+        typeImprimante: String = "fdm",
+        tailleImpressionMm: Int? = null,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatReparationImprimabilite {
+        val corps = JSONObject().put("input_task_id", idTacheSource).put("printer_type", typeImprimante)
+        if (tailleImpressionMm != null && tailleImpressionMm > 0) {
+            corps.put("intended_print_longest_side_mm", tailleImpressionMm)
+        }
+        val reponse = requete("POST", "/print/repair", cleApi, corps)
+        val idReparation = reponse.getString("result")
+        val tache = attendreTache("/print/repair/$idReparation", cleApi, "Reparation imprimabilite", ecouteur)
+        return ResultatReparationImprimabilite(tache.getString("id"), tache.optInt("consumed_credits", 0))
+    }
+
+    /**
+     * Orchestre Analyze (gratuit) puis Repair (10 credits, seulement si necessaire) - c'est cette
+     * fonction qu'appelle le pipeline de colorisation, plus reparerImprimabilite directement.
+     * Retourne null si aucune reparation n'a ete necessaire (l'appelant garde alors la tache
+     * source d'origine comme point de depart pour la Retexture).
+     */
+    fun reparerParoisSiNecessaire(
+        idTacheSource: String,
+        cleApi: String,
+        typeImprimante: String = "fdm",
+        tailleImpressionMm: Int? = null,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatReparationImprimabilite? {
+        val diagnostic = analyserImprimabilite(idTacheSource, cleApi, typeImprimante, tailleImpressionMm, ecouteur)
+        if (!diagnostic.parosTropFines) return null
+        // Meme taille d'impression passee a la Reparation qu'a l'Analyse qui l'a decidee - sinon
+        // le seuil utilise par Repair ne correspondrait pas a celui qui a determine qu'elle etait necessaire.
+        return reparerImprimabilite(idTacheSource, cleApi, typeImprimante, tailleImpressionMm, ecouteur)
+    }
+
     data class ResultatImage3D(val idTache: String, val creditsConsommes: Int)
 
     /**
