@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.21 (build 21)
+
+**Demande de Tomyn : les catégories/styles de prompt de la version Windows manquaient côté
+Android, et impossible de lancer sans prompt.** Deux correctifs :
+
+- **Catégories de prompt complétées** : 6 catégories manquaient (Animal de compagnie,
+  Buste/statuette commémorative, Terrain/plateau de jeu, Véhicule, Food/nourriture factice,
+  Bijou/vêtement fonctionnel) - seules Personnage/Décor/Personnage et décor/Pièce-Autre
+  existaient. Les 10 catégories de la version Windows sont maintenant toutes présentes, avec
+  leurs styles. (La catégorie dynamique "Mes favoris" de Windows, elle, n'est pas portée - plus
+  gros morceau, à demander séparément si besoin.)
+- **Lancement sans prompt** : possible maintenant, mais seulement si TOUS les fichiers du lot
+  sont des images (un .stl/.obj n'a aucun style de "source" vers lequel se replier). Sans
+  prompt, Meshy repart du style de la photo elle-même (`image_style_url` à la place de
+  `text_style_prompt`) et Tripo texture directement pendant l'Image to 3D (pas d'étape Texture
+  séparée). Même comportement et mêmes limites que la version Windows.
+
 ## v0.20 (build 20)
 
 **Vrai bug trouvé en test sur téléphone (0.19)** : "Smart Topology" et la résolution 2k/4k

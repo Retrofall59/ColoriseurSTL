@@ -487,7 +487,9 @@ class ColorisationService : Service() {
                         mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                     }
                 },
-                textureResolution = textureResolution
+                textureResolution = textureResolution,
+                octetsImageSource = if (estUneImage) octets else null,
+                extensionImageSource = extensionFichier
             )
             EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
             val nomDossier = nomBase + suffixe
@@ -534,7 +536,9 @@ class ColorisationService : Service() {
                     mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                 }
             },
-            textureResolution = textureResolution
+            textureResolution = textureResolution,
+            octetsImageSource = if (estUneImage) octets else null,
+            extensionImageSource = extensionFichier
         )
         EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
         val octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)

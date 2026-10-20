@@ -104,6 +104,20 @@ object MeshyApiClient {
         }
     }
 
+    /**
+     * Construit une data URI "image/..." a partir des octets bruts d'une image (meme logique de
+     * detection MIME que genererMaillageDepuisImage ci-dessous) - utilise pour "image_style_url"
+     * quand le prompt texte est vide (voir coloriser/coloriserObjExperimental).
+     */
+    private fun dataUriImageStyle(octetsImage: ByteArray, extensionFichier: String): String {
+        val mime = when (extensionFichier.lowercase()) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            else -> "image/png"
+        }
+        return "data:$mime;base64," + Base64.encodeToString(octetsImage, Base64.NO_WRAP)
+    }
+
     private fun attendreTache(chemin: String, cleApi: String, libelle: String, ecouteur: EcouteurAvancement?): JSONObject {
         val debut = System.currentTimeMillis()
         while (true) {
@@ -319,6 +333,13 @@ object MeshyApiClient {
      *   ou null pour coloriser directement octetsStl.
      * @return l'URL de telechargement du fichier .3mf final, et l'URL d'apercu fourni par Meshy
      */
+    // 21/10/2026, porte depuis la version Windows (Tomyn : "des fois je veux lancer sans
+    // prompt") : Meshy EXIGE un de text_style_prompt/image_style_url/multiview_image_urls sur la
+    // Retexture, elle echoue sinon APRES avoir deja depense les credits de l'etape Image to 3D
+    // ("Either text_style_prompt, image_style_url or multiview_image_urls must be provided"). Si
+    // le prompt est vide ET que la source est une image (octetsImageSource/extensionImageSource
+    // fournis), on repasse l'image source elle-meme en "image_style_url" plutot que d'echouer -
+    // Meshy reapplique alors le style/les couleurs de la photo d'origine.
     fun coloriser(
         octetsStl: ByteArray?,
         idTacheSource: String?,
@@ -326,11 +347,16 @@ object MeshyApiClient {
         maxCouleurs: Int,
         cleApi: String,
         ecouteur: EcouteurAvancement? = null,
-        textureResolution: String = ""
+        textureResolution: String = "",
+        octetsImageSource: ByteArray? = null,
+        extensionImageSource: String = ""
     ): ResultatColorisation {
-        val corpsRetexture = JSONObject()
-            .put("text_style_prompt", prompt)
-            .put("enable_original_uv", false)
+        val corpsRetexture = JSONObject().put("enable_original_uv", false)
+        if (prompt.isNotBlank()) {
+            corpsRetexture.put("text_style_prompt", prompt)
+        } else {
+            corpsRetexture.put("image_style_url", dataUriImageStyle(octetsImageSource!!, extensionImageSource))
+        }
         if (idTacheSource != null) {
             corpsRetexture.put("input_task_id", idTacheSource)
         } else {
@@ -392,11 +418,16 @@ object MeshyApiClient {
         prompt: String,
         cleApi: String,
         ecouteur: EcouteurAvancement? = null,
-        textureResolution: String = ""
+        textureResolution: String = "",
+        octetsImageSource: ByteArray? = null,
+        extensionImageSource: String = ""
     ): ResultatColorisationObj {
-        val corpsRetexture = JSONObject()
-            .put("text_style_prompt", prompt)
-            .put("enable_original_uv", false)
+        val corpsRetexture = JSONObject().put("enable_original_uv", false)
+        if (prompt.isNotBlank()) {
+            corpsRetexture.put("text_style_prompt", prompt)
+        } else {
+            corpsRetexture.put("image_style_url", dataUriImageStyle(octetsImageSource!!, extensionImageSource))
+        }
         if (idTacheSource != null) {
             corpsRetexture.put("input_task_id", idTacheSource)
         } else {

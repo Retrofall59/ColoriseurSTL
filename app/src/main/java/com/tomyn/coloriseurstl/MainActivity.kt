@@ -805,9 +805,21 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val prompt = editPrompt.text.toString().trim()
+        // 21/10/2026, porte depuis la version Windows (Tomyn : "des fois je veux lancer sans
+        // prompt") : autorise seulement si TOUS les fichiers selectionnes sont des images - Meshy
+        // et Tripo peuvent alors repartir du style de la photo source elle-meme (voir
+        // ColorisationService/MeshyApiClient/TripoApiClient), ce qui n'a pas de sens pour un
+        // fichier .stl/.obj deja sans couleur (aucun style de "source" possible dans ce cas).
         if (prompt.isEmpty()) {
-            Toast.makeText(this, "Le style/couleurs voulues est vide.", Toast.LENGTH_SHORT).show()
-            return
+            val toutesImages = fichiersAtraiter.all { (_, nom) -> nom.substringAfterLast(".", "").lowercase() in EXTENSIONS_IMAGES }
+            if (!toutesImages) {
+                Toast.makeText(
+                    this,
+                    "Le style/couleurs voulues est vide.\n\n(Sans prompt, Meshy et Tripo ont besoin de repartir du style de l'image source - possible seulement sur des fichiers image, pas de .stl/.obj.)",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
         }
 
         // Verification cle+solde : seulement pour Meshy (quand il va etre utilise, donc aussi en
