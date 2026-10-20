@@ -2534,6 +2534,33 @@ $astuceReparationParois.SetToolTip($caseReparationParois.BoiteInterne, $texteInf
 $astuceReparationParois.SetToolTip($caseReparationParois.LabelInterne, $texteInfobulleReparationParois)
 $yActuel += 24
 
+# 20/10/2026, Tomyn ("Oui" sur l'idee suggeree juste apres) : le seuil d'epaisseur (Analyze/Repair
+# ci-dessus) depend de la taille REELLE d'impression - chaine par input_task_id, Meshy suppose par
+# defaut 150 mm de haut si on ne precise rien ("GLB and input_task_id: 150 mm tall", documente).
+# Une piece imprimee a une taille tres differente de 150 mm pourrait donc etre jugee saine (ou
+# l'inverse) a tort. Champ facultatif : 0 = on ne precise rien, comportement actuel (suppose
+# 150 mm). "intended_print_longest_side_mm" choisi plutot que "..._height_mm" : fonctionne avec
+# tous les formats (pas seulement GLB) et correspond a "la plus grande dimension", plus facile a
+# mesurer sur une figurine que "la hauteur" qui depend de l'orientation. Plage API documentee :
+# 1 a 1000 mm.
+Ajouter-Label "Taille d'impression prevue (plus grand cote, mm) :" 15 $yActuel
+$numTailleImpression = Creer-SelecteurNumerique 90 24
+$numTailleImpression.Location = New-Object System.Drawing.Point(400, ($yActuel - 2))
+$numTailleImpression.Minimum = 0
+$numTailleImpression.Maximum = 1000
+$numTailleImpression.Increment = 5
+$numTailleImpression.Value = 0
+$form.Controls.Add($numTailleImpression)
+
+$astuceTailleImpression = New-Object System.Windows.Forms.ToolTip
+$astuceTailleImpression.AutoPopDelay = 20000
+$astuceTailleImpression.InitialDelay = 400
+$astuceTailleImpression.SetToolTip($numTailleImpression,
+    "Utilise uniquement si la case `"verifier/reparer l'epaisseur des parois`" ci-dessus est cochee.`n`n" +
+    "0 (par defaut) : on ne precise rien, Meshy suppose alors 150 mm de haut pour juger si une paroi est trop fine.`n`n" +
+    "Renseigne la plus grande dimension prevue de la piece imprimee (en mm) pour que le seuil d'epaisseur (1.0 mm en FDM) soit applique a la bonne echelle - sinon le diagnostic peut se tromper si tu imprimes nettement plus petit ou plus grand que 150 mm.")
+$yActuel += 24
+
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
@@ -2785,6 +2812,7 @@ $btnAjouterFileAttente.Add_Click({
         GeometrieResolution = $menuGeometrieResolution.SelectedIndex
         TextureResolution = $menuTextureResolution.SelectedIndex
         ReparationParois = $caseReparationParois.Checked
+        TailleImpression = $numTailleImpression.Value
     }
     [void]$script:fileAttenteLots.Add($lot)
     $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
@@ -2825,6 +2853,7 @@ $btnLancerFileAttente.Add_Click({
             $menuGeometrieResolution.SelectedIndex = if ($lot.GeometrieResolution -ne $null) { $lot.GeometrieResolution } else { 0 }
             $menuTextureResolution.SelectedIndex = if ($lot.TextureResolution -ne $null) { $lot.TextureResolution } else { 0 }
             $caseReparationParois.Checked = [bool]$lot.ReparationParois
+            $numTailleImpression.Value = if ($lot.TailleImpression -ne $null) { $lot.TailleImpression } else { 0 }
             [System.Windows.Forms.Application]::DoEvents()
             Lancer-Traitement $lot.Fichiers
             $script:fileAttenteLots.RemoveAt(0)
@@ -4208,9 +4237,16 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
 # et NE MODIFIE RIEN au maillage. Sert maintenant de filtre avant de payer la Reparation (voir
 # Reparer-ParoisSiNecessaire plus bas) : pas la peine de depenser 10 credits sur une piece qui
 # n'a aucun probleme de parois.
-function Lancer-AnalyseImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
+function Lancer-AnalyseImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm", $TailleImpressionMm = $null) {
     Ecrire-Journal "  Analyse de l'imprimabilite (gratuit, imprimante $PrinterType)..."
-    $corps = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType } | ConvertTo-Json
+    $corpsAnalyse = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType }
+    # 20/10/2026 : "intended_print_longest_side_mm" (voir $numTailleImpression) - seulement si
+    # renseigne par Tomyn (1-1000 mm documente), sinon on ne l'envoie pas du tout et Meshy applique
+    # son propre defaut (150 mm pour une tache chainee par input_task_id).
+    if ($TailleImpressionMm -ne $null -and $TailleImpressionMm -gt 0) {
+        $corpsAnalyse.intended_print_longest_side_mm = $TailleImpressionMm
+    }
+    $corps = $corpsAnalyse | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/print/analyze" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Analyse imprimabilite"
     $tache = Attendre-Tache "$BaseUrl/print/analyze/$($reponse.result)" $Entetes "Analyse imprimabilite"
     $diag = $tache.printability
@@ -4236,13 +4272,15 @@ function Lancer-AnalyseImprimabilite($Entetes, [string]$IdTacheSource, [string]$
 # fonction qu'appelle Coloriser-UnFichier, plus Lancer-ReparationImprimabilite directement.
 # Retourne $null si aucune reparation n'a ete necessaire (l'appelant garde alors la tache source
 # d'origine comme point de depart pour la Retexture), ou la tache de reparation sinon.
-function Reparer-ParoisSiNecessaire($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
-    $tacheAnalyse = Lancer-AnalyseImprimabilite $Entetes $IdTacheSource $PrinterType
+function Reparer-ParoisSiNecessaire($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm", $TailleImpressionMm = $null) {
+    $tacheAnalyse = Lancer-AnalyseImprimabilite $Entetes $IdTacheSource $PrinterType $TailleImpressionMm
     $besoinReparation = $tacheAnalyse.printability -ne $null -and $tacheAnalyse.printability.thin_walls -ne $null -and $tacheAnalyse.printability.thin_walls.has_thin_walls
     if (-not $besoinReparation) {
         return $null
     }
-    return Lancer-ReparationImprimabilite $Entetes $IdTacheSource $PrinterType
+    # Meme taille d'impression passee a la Reparation qu'a l'Analyse qui l'a decidee - sinon le
+    # seuil utilise par Repair ne correspondrait pas a celui qui a determine qu'elle etait necessaire.
+    return Lancer-ReparationImprimabilite $Entetes $IdTacheSource $PrinterType $TailleImpressionMm
 }
 
 # 20/10/2026, Tomyn (apres discussion sur les pistes du changelog Meshy, celle-ci jugee utile
@@ -4255,9 +4293,13 @@ function Reparer-ParoisSiNecessaire($Entetes, [string]$IdTacheSource, [string]$P
 # upload, Meshy reutilise directement son propre fichier deja heberge. N'est plus appelee
 # directement par Coloriser-UnFichier depuis l'ajout de l'Analyze gratuit ci-dessus (voir
 # Reparer-ParoisSiNecessaire) - conservee telle quelle, c'est elle qui fait le travail reel.
-function Lancer-ReparationImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
+function Lancer-ReparationImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm", $TailleImpressionMm = $null) {
     Ecrire-Journal "  Verification/reparation de l'epaisseur des parois (imprimante $PrinterType) avant Retexture..."
-    $corps = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType } | ConvertTo-Json
+    $corpsReparation = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType }
+    if ($TailleImpressionMm -ne $null -and $TailleImpressionMm -gt 0) {
+        $corpsReparation.intended_print_longest_side_mm = $TailleImpressionMm
+    }
+    $corps = $corpsReparation | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/print/repair" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Reparation imprimabilite"
     $tache = Attendre-Tache "$BaseUrl/print/repair/$($reponse.result)" $Entetes "Reparation imprimabilite"
     # "print_repair_report" : present seulement si Meshy a reussi a mesurer les parois ("route"
@@ -4304,7 +4346,16 @@ function Obtenir-TextureResolutionChoisie {
     }
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "", [string]$TextureResolution = "", [bool]$ReparerParois = $false) {
+# 20/10/2026 : "0" (valeur par defaut du champ $numTailleImpression) -> $null, pour que
+# Lancer-AnalyseImprimabilite/Lancer-ReparationImprimabilite sachent qu'il ne faut rien envoyer
+# (et laisser Meshy appliquer son propre defaut de 150 mm) plutot que d'envoyer explicitement 0,
+# une valeur hors de la plage documentee (1 a 1000 mm) qui serait refusee par l'API.
+function Obtenir-TailleImpressionChoisie {
+    if ($numTailleImpression.Value -gt 0) { return [int]$numTailleImpression.Value }
+    return $null
+}
+
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "", [string]$TextureResolution = "", [bool]$ReparerParois = $false, $TailleImpressionMm = $null) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -4341,7 +4392,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
         # genere tel quel - $null signifie "pas de reparation necessaire, rien a changer").
         $idSourceRetexture = $tacheImage3D.id
         if ($ReparerParois) {
-            $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheImage3D.id "fdm"
+            $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheImage3D.id "fdm" $TailleImpressionMm
             if ($tacheReparation -ne $null) {
                 $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
                 $idSourceRetexture = $tacheReparation.id
@@ -4375,7 +4426,7 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             # maillage simplifie (Remesh), avant Retexture.
             $idSourceRetexture = $tacheRemesh.id
             if ($ReparerParois) {
-                $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheRemesh.id "fdm"
+                $tacheReparation = Reparer-ParoisSiNecessaire $Entetes $tacheRemesh.id "fdm" $TailleImpressionMm
                 if ($tacheReparation -ne $null) {
                     $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
                     $idSourceRetexture = $tacheReparation.id
@@ -5092,7 +5143,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked (Obtenir-TailleImpressionChoisie)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -5112,7 +5163,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked (Obtenir-TailleImpressionChoisie)
                     } else {
                         $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value)
                     }
