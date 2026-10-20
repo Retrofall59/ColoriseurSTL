@@ -2505,6 +2505,33 @@ $astuceTextureResolution.SetToolTip($menuTextureResolution,
     "4K / 8K : texture plus nette/detaillee. Meshy ne documente pas de surcout chiffre pour ce choix - a confirmer a l'usage.")
 $yActuel += 28
 
+# 20/10/2026, Tomyn : seule des pistes evoquees apres la troisieme relecture du changelog Meshy
+# jugee utile ("le seul qui vaut discussion c'est Printability") - "Repair Printability" de Meshy,
+# epaissit les parois trop fines pour l'imprimante avant la Retexture (voir
+# Lancer-ReparationImprimabilite). Case a cocher, pas par defaut : +10 credits reels par fichier
+# concerne (confirme par la doc Meshy), et ignore de toute facon pour les petits fichiers qui
+# partent directement en Retexture sans tache Meshy prealable a chainer (voir le commentaire dans
+# Coloriser-UnFichier). FDM fixe en dur (pas de menu SLA/full_color) : c'est le seul type
+# d'imprimante que Tomyn utilise (Bambu Lab, deja le choix fixe pour Multi-Color Print).
+$caseReparationParois = Creer-CaseACocher "Pour Meshy : reparer l'epaisseur des parois avant impression FDM si besoin (+10 credits, ignore pour les petits fichiers - voir l'infobulle)" 930 20 $THEME.FondApp
+$caseReparationParois.Location = New-Object System.Drawing.Point(15, $yActuel)
+$caseReparationParois.Checked = $false
+$form.Controls.Add($caseReparationParois)
+$caseReparationParois.Add_CheckedChanged({ Mettre-A-Jour-Estimation })
+
+$astuceReparationParois = New-Object System.Windows.Forms.ToolTip
+$astuceReparationParois.AutoPopDelay = 20000
+$astuceReparationParois.InitialDelay = 400
+$texteInfobulleReparationParois = (
+    "API `"Repair Printability`" de Meshy (imprimante FDM, epaisseur minimale 1.0 mm) : epaissit automatiquement les parois trop fines detectees sur le maillage, AVANT la Retexture (la texture existante serait sinon supprimee par cette etape).`n`n" +
+    "+10 credits par fichier ou elle s'applique reellement.`n`n" +
+    "Ignoree pour les fichiers assez petits pour partir directement en Retexture sans etape Meshy prealable (Image to 3D ou Remesh) - forcer un Remesh juste pour ca gaspillerait des credits sur des fichiers qui n'en ont pas besoin par ailleurs. Un message l'indique dans le journal le cas echeant."
+)
+$astuceReparationParois.SetToolTip($caseReparationParois, $texteInfobulleReparationParois)
+$astuceReparationParois.SetToolTip($caseReparationParois.BoiteInterne, $texteInfobulleReparationParois)
+$astuceReparationParois.SetToolTip($caseReparationParois.LabelInterne, $texteInfobulleReparationParois)
+$yActuel += 24
+
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
@@ -2755,6 +2782,7 @@ $btnAjouterFileAttente.Add_Click({
         SmartTopology = $caseSmartTopology.Checked
         GeometrieResolution = $menuGeometrieResolution.SelectedIndex
         TextureResolution = $menuTextureResolution.SelectedIndex
+        ReparationParois = $caseReparationParois.Checked
     }
     [void]$script:fileAttenteLots.Add($lot)
     $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
@@ -2794,6 +2822,7 @@ $btnLancerFileAttente.Add_Click({
             $caseSmartTopology.Checked = [bool]$lot.SmartTopology
             $menuGeometrieResolution.SelectedIndex = if ($lot.GeometrieResolution -ne $null) { $lot.GeometrieResolution } else { 0 }
             $menuTextureResolution.SelectedIndex = if ($lot.TextureResolution -ne $null) { $lot.TextureResolution } else { 0 }
+            $caseReparationParois.Checked = [bool]$lot.ReparationParois
             [System.Windows.Forms.Application]::DoEvents()
             Lancer-Traitement $lot.Fichiers
             $script:fileAttenteLots.RemoveAt(0)
@@ -3451,6 +3480,12 @@ function Mettre-A-Jour-Estimation {
         " + ~$($nbImages * $CREDITS_ESTIMES_IMAGE_VERS_3D) credits Meshy pour generer le maillage des $nbImages image(s) avant colorisation" +
         $(if ($surcoutResolution -gt 0) { " (+ ~$surcoutResolution credits pour la resolution $($menuGeometrieResolution.Text))" } else { "" })
     } else { "" }
+    # 20/10/2026 : reparation des parois (voir $caseReparationParois) - pas de compte precis
+    # possible ici (ignoree au cas par cas pour les petits fichiers sans tache Meshy prealable,
+    # voir Coloriser-UnFichier), donc note generique plutot qu'un chiffre total qui serait faux.
+    $texteSurcoutReparation = if ($caseReparationParois.Checked) {
+        " + ~10 credits par fichier Meshy ou la reparation des parois s'applique reellement (ignoree pour les petits fichiers)"
+    } else { "" }
 
     if ($inclus.Count -eq 0) {
         $txtEstimationCout.Text = ""
@@ -3461,16 +3496,16 @@ function Mettre-A-Jour-Estimation {
         $totalTripo = $inclus.Count * $CREDITS_ESTIMES_PAR_FICHIER_TRIPO
         if ($caseMeshyObjExperimental.Checked) {
             $totalMeshyObj = $inclus.Count * $CREDITS_ESTIMES_RETEXTURE_SEULE
-            $txtEstimationCout.Text = "Cout estime : ~$totalMeshyObj credits Meshy (Retexture seule, sans Multi-Color Print) + ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) chacun, deux echelles de credits differentes)$texteSurcoutImages"
+            $txtEstimationCout.Text = "Cout estime : ~$totalMeshyObj credits Meshy (Retexture seule, sans Multi-Color Print) + ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) chacun, deux echelles de credits differentes)$texteSurcoutImages$texteSurcoutReparation"
         } else {
             $totalMeshy = $inclus.Count * $CREDITS_ESTIMES_PAR_FICHIER
-            $txtEstimationCout.Text = "Cout estime : ~$totalMeshy credits Meshy + ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) chacun, deux echelles de credits differentes)$texteSurcoutImages"
+            $txtEstimationCout.Text = "Cout estime : ~$totalMeshy credits Meshy + ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) chacun, deux echelles de credits differentes)$texteSurcoutImages$texteSurcoutReparation"
         }
     } elseif ($menuFournisseur.SelectedItem -eq "Meshy" -and $caseMeshyObjExperimental.Checked) {
         # Une seule etape facturee (Retexture) au lieu de deux (Retexture + Multi-Color Print) -
         # economise le cout du Multi-Color Print (confirme a 10 credits le 07/10/2026).
         $totalMeshyObj = $inclus.Count * $CREDITS_ESTIMES_RETEXTURE_SEULE
-        $txtEstimationCout.Text = "Cout estime : ~$totalMeshyObj credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)$texteSurcoutImages"
+        $txtEstimationCout.Text = "Cout estime : ~$totalMeshyObj credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_RETEXTURE_SEULE, Retexture seule - sans Multi-Color Print)$texteSurcoutImages$texteSurcoutReparation"
     } elseif ($menuFournisseur.SelectedItem -eq "Tripo") {
         # 20/10/2026 : les images sont desormais prises en charge cote Tripo (Image to 3D, voir
         # Lancer-ImageModelTripo) - l'ancien avertissement "echoueront" n'est plus vrai, retire.
@@ -3482,7 +3517,7 @@ function Mettre-A-Jour-Estimation {
         $txtEstimationCout.Text = "Cout estime : ~$totalTripo credits Tripo ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER_TRIPO)"
     } else {
         $total = $inclus.Count * $CREDITS_ESTIMES_PAR_FICHIER
-        $txtEstimationCout.Text = "Cout estime : ~$total credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)$texteSurcoutImages"
+        $txtEstimationCout.Text = "Cout estime : ~$total credits ($($inclus.Count) fichier(s) x $CREDITS_ESTIMES_PAR_FICHIER, estimation empirique)$texteSurcoutImages$texteSurcoutReparation"
     }
 }
 
@@ -4154,10 +4189,50 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
     $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
     $base64 = [Convert]::ToBase64String($octets)
     $dataUri = "data:application/octet-stream;base64,$base64"
-    $corps = @{ model_url = $dataUri; target_polycount = $TargetPolycount; target_formats = @("stl") } | ConvertTo-Json
+    # 20/10/2026 : "glb" ajoute a cote de "stl" - necessaire si Tomyn active la reparation des
+    # parois (voir Lancer-ReparationImprimabilite plus bas), qui exige que la tache source (ici
+    # celle de Remesh, chainee via input_task_id) possede un asset .glb. Ne change rien d'autre :
+    # on continue a chainer par input_task_id, pas par le contenu de model_urls.
+    $corps = @{ model_url = $dataUri; target_polycount = $TargetPolycount; target_formats = @("stl", "glb") } | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/remesh" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Remesh"
     $tache = Attendre-Tache "$BaseUrl/remesh/$($reponse.result)" $Entetes "Remesh"
     Ecrire-Journal "  Maillage simplifie ($($tache.consumed_credits) credits) - Retexture va repartir de ce resultat."
+    return $tache
+}
+
+# 20/10/2026, Tomyn (apres discussion sur les pistes du changelog Meshy, celle-ci jugee utile
+# contrairement aux trois autres) : "Repair Printability" de Meshy - epaissit automatiquement les
+# parois plus fines que le minimum imprimable pour le type d'imprimante choisi (FDM = 1.0 mm,
+# documente), AVANT la Retexture (la texture existante est supprimee par cette reparation - d'ou
+# le besoin de la lancer sur le maillage NU, puis de retexturer le resultat juste apres, jamais
+# apres coup). Chaine par input_task_id comme Lancer-Image3D/Lancer-Remesh : $IdTacheSource doit
+# etre une tache Meshy existante (Image to 3D ou Remesh) possedant un asset .glb - pas un nouvel
+# upload, Meshy reutilise directement son propre fichier deja heberge.
+function Lancer-ReparationImprimabilite($Entetes, [string]$IdTacheSource, [string]$PrinterType = "fdm") {
+    Ecrire-Journal "  Verification/reparation de l'epaisseur des parois (imprimante $PrinterType) avant Retexture..."
+    $corps = @{ input_task_id = $IdTacheSource; printer_type = $PrinterType } | ConvertTo-Json
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/print/repair" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Reparation imprimabilite"
+    $tache = Attendre-Tache "$BaseUrl/print/repair/$($reponse.result)" $Entetes "Reparation imprimabilite"
+    # "print_repair_report" : present seulement si Meshy a reussi a mesurer les parois ("route"
+    # peut etre "thin_wall" = epaissies, "topology" = deja assez epaisses, ou
+    # "topology_unmeasured" = non mesurable). Pas documente comme toujours present - on gere donc
+    # son absence sans faire echouer le traitement pour autant (l'essentiel, le maillage reparee,
+    # est quand meme disponible).
+    $rapport = $tache.print_repair_report
+    if ($rapport -ne $null) {
+        switch ($rapport.route) {
+            "thin_wall" {
+                $avant = if ($rapport.thin_area_ratio_before -ne $null) { [math]::Round($rapport.thin_area_ratio_before * 100, 1) } else { "?" }
+                $apres = if ($rapport.thin_area_ratio_after -ne $null) { [math]::Round($rapport.thin_area_ratio_after * 100, 1) } else { "?" }
+                Ecrire-Journal "  Parois trop fines detectees et epaissies : $avant% de la surface concernee avant reparation, $apres% apres."
+            }
+            "topology" { Ecrire-Journal "  Parois deja assez epaisses pour $PrinterType - aucune reparation necessaire." }
+            "topology_unmeasured" { Ecrire-Journal "  Epaisseur des parois non mesurable sur ce maillage - reparation non appliquee, Retexture repart du maillage d'origine." }
+            default { Ecrire-Journal "  Reparation terminee ($($tache.consumed_credits) credits)." }
+        }
+    } else {
+        Ecrire-Journal "  Reparation terminee ($($tache.consumed_credits) credits)."
+    }
     return $tache
 }
 
@@ -4182,7 +4257,7 @@ function Obtenir-TextureResolutionChoisie {
     }
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "", [string]$TextureResolution = "") {
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "", [string]$TextureResolution = "", [bool]$ReparerParois = $false) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -4212,6 +4287,16 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
     if ($estUneImage) {
         $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount $SmartTopology $GeometryResolution
         $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
+        # 20/10/2026 : reparation des parois (voir Lancer-ReparationImprimabilite) lancee ICI, sur
+        # le maillage NU juste genere, avant la Retexture - jamais apres (la reparation supprime
+        # la texture existante). $idSourceRetexture pointe ensuite vers le resultat le plus recent
+        # (repare si demande, sinon le maillage genere tel quel).
+        $idSourceRetexture = $tacheImage3D.id
+        if ($ReparerParois) {
+            $tacheReparation = Lancer-ReparationImprimabilite $Entetes $tacheImage3D.id "fdm"
+            $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
+            $idSourceRetexture = $tacheReparation.id
+        }
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         if ([string]::IsNullOrWhiteSpace($Prompt)) {
             # 16/10/2026, Tomyn : veut parfois lancer sans prompt. Meshy exige pourtant un de
@@ -4227,22 +4312,40 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
                 default { "image/png" }
             }
             $dataUriStyle = "data:$mimeImg;base64," + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($FichierStl.FullName))
-            $corpsRetexture = @{ input_task_id = $tacheImage3D.id; image_style_url = $dataUriStyle; enable_original_uv = $false }
+            $corpsRetexture = @{ input_task_id = $idSourceRetexture; image_style_url = $dataUriStyle; enable_original_uv = $false }
         } else {
-            $corpsRetexture = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false }
+            $corpsRetexture = @{ input_task_id = $idSourceRetexture; text_style_prompt = $Prompt; enable_original_uv = $false }
         }
     } else {
         $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
         if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
             $tacheRemesh = Lancer-Remesh $FichierStl $Entetes $TargetPolycount $nbTriangles
             $creditsEtapePrealable = [int]$tacheRemesh.consumed_credits
+            # 20/10/2026 : meme principe que pour la branche image ci-dessus - reparation sur le
+            # maillage simplifie (Remesh), avant Retexture.
+            $idSourceRetexture = $tacheRemesh.id
+            if ($ReparerParois) {
+                $tacheReparation = Lancer-ReparationImprimabilite $Entetes $tacheRemesh.id "fdm"
+                $creditsEtapePrealable += [int]$tacheReparation.consumed_credits
+                $idSourceRetexture = $tacheReparation.id
+            }
             Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage simplifie)..."
-            $corpsRetexture = @{ input_task_id = $tacheRemesh.id; text_style_prompt = $Prompt; enable_original_uv = $false }
+            $corpsRetexture = @{ input_task_id = $idSourceRetexture; text_style_prompt = $Prompt; enable_original_uv = $false }
         } else {
             $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
             $base64 = [Convert]::ToBase64String($octets)
             $dataUri = "data:application/octet-stream;base64,$base64"
 
+            # 20/10/2026 : reparation des parois IMPOSSIBLE ici - ce fichier est envoye directement
+            # en "model_url" (data URI), sans tache Meshy prealable a chainer, et l'API Repair
+            # Printability n'accepte justement PAS de data URI pour un .stl (http/https uniquement
+            # pour ce format - seuls .glb/.gltf acceptent une data URI). Forcer un Remesh ici juste
+            # pour obtenir une tache a chainer gaspillerait des credits sur un fichier qui n'en a
+            # pas besoin par ailleurs. On previent simplement dans le journal plutot que d'ignorer
+            # la case en silence.
+            if ($ReparerParois) {
+                Ecrire-Journal "  Reparation des parois ignoree pour ce fichier (trop petit pour passer par Remesh, l'API ne l'accepte qu'a partir d'une tache Meshy existante)."
+            }
             Ecrire-Journal "  Envoi a l'API Retexture..."
             $corpsRetexture = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false }
         }
@@ -4937,7 +5040,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -4957,7 +5060,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked
                     } else {
                         $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value)
                     }
