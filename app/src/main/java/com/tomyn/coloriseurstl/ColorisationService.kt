@@ -367,9 +367,8 @@ class ColorisationService : Service() {
             // 20/10/2026, porte depuis la version Windows (Tomyn : "VASY" puis "OK pour moi") :
             // Analyze gratuit puis Repair (+10 credits) seulement si des parois trop fines sont
             // reellement detectees, AVANT la Retexture (la reparation supprime la texture
-            // existante). Pas encore de case a cocher dans l'UI Android (reparerParois est false
-            // par defaut ici) - prochaine vague pour l'exposer, comme les autres reglages Meshy
-            // ajoutes dans la vague precedente (Smart Topology, resolutions).
+            // existante). Case a cocher correspondante dans l'UI Android depuis la vague 4
+            // (caseReparationParois, voir MainActivity) - desactivee par defaut.
             if (reparerParois) {
                 val tacheReparation = MeshyApiClient.reparerParoisSiNecessaire(
                     idTacheSource, cleApi, "fdm", tailleImpressionMm,

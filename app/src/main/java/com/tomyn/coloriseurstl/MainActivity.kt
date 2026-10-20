@@ -92,7 +92,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var caseMeshyObjExperimental: CheckBox
     private lateinit var texteAssombrirTexture: TextView
     private lateinit var champAssombrirTexture: EditText
-    // 20/10/2026, vague 4 : reglages avances Meshy (deja portes cote API, pas encore exposes).
+    // 20/10/2026, vague 4 : reglages avances Meshy (portes cote API dans les vagues precedentes,
+    // exposes ici dans l'UI).
     private lateinit var caseSmartTopology: CheckBox
     private lateinit var menuGeometrieResolution: Spinner
     private lateinit var menuTextureResolution: Spinner
