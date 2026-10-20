@@ -2477,6 +2477,34 @@ $astuceGeometrieResolution.SetToolTip($menuGeometrieResolution,
     "2K / 4K : plus de detail geometrique fin sur le maillage genere, +5 credits. Le 4K necessite le modele meshy-7.1 (utilise par defaut tant qu'aucun modele n'est fixe explicitement ailleurs).")
 $yActuel += 28
 
+# 20/10/2026, Tomyn (troisieme relecture du changelog Meshy) : "texture_resolution" existe sur
+# l'API Retexture elle-meme (parametre separe de "geometry_resolution" ci-dessus, qui lui ne
+# s'applique qu'a la generation du maillage par Image to 3D). Par defaut Meshy applique deja "2k"
+# sans qu'on ait besoin de le preciser - ce menu ne change donc rien si on laisse "Standard".
+# S'applique a TOUS les fichiers (image ou .stl/.obj deja existant), contrairement a la resolution
+# du maillage plus haut. Meshy ne documente aucun surcout chiffre pour ce parametre (contrairement
+# aux +5 credits documentes pour geometry_resolution) - pas de credits affiches ici, volontairement,
+# plutot que d'inventer un chiffre non confirme.
+Ajouter-Label "Resolution des textures (Retexture) :" 15 $yActuel
+$menuTextureResolution = New-Object System.Windows.Forms.ComboBox
+$menuTextureResolution.Location = New-Object System.Drawing.Point(280, ($yActuel - 2))
+$menuTextureResolution.Size = New-Object System.Drawing.Size(260, 24)
+$menuTextureResolution.DropDownStyle = "DropDownList"
+[void]$menuTextureResolution.Items.Add("Standard / 2K (par defaut)")
+[void]$menuTextureResolution.Items.Add("4K (plus net)")
+[void]$menuTextureResolution.Items.Add("8K (le plus net)")
+$menuTextureResolution.SelectedIndex = 0
+$form.Controls.Add($menuTextureResolution)
+
+$astuceTextureResolution = New-Object System.Windows.Forms.ToolTip
+$astuceTextureResolution.AutoPopDelay = 20000
+$astuceTextureResolution.InitialDelay = 400
+$astuceTextureResolution.SetToolTip($menuTextureResolution,
+    "S'applique a l'etape Retexture elle-meme, pour tous les fichiers (image ou .stl/.obj deja existant) - contrairement a `"Qualite du maillage`" ci-dessus qui ne concerne que les images.`n`n" +
+    "Standard/2K : comportement habituel de Meshy (deja le defaut, meme sans toucher ce menu).`n" +
+    "4K / 8K : texture plus nette/detaillee. Meshy ne documente pas de surcout chiffre pour ce choix - a confirmer a l'usage.")
+$yActuel += 28
+
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
@@ -2726,6 +2754,7 @@ $btnAjouterFileAttente.Add_Click({
         MeshyObjExperimental = $caseMeshyObjExperimental.Checked
         SmartTopology = $caseSmartTopology.Checked
         GeometrieResolution = $menuGeometrieResolution.SelectedIndex
+        TextureResolution = $menuTextureResolution.SelectedIndex
     }
     [void]$script:fileAttenteLots.Add($lot)
     $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
@@ -2764,6 +2793,7 @@ $btnLancerFileAttente.Add_Click({
             # besoin (et pas fiable) de passer par .PSObject.Properties dessus.
             $caseSmartTopology.Checked = [bool]$lot.SmartTopology
             $menuGeometrieResolution.SelectedIndex = if ($lot.GeometrieResolution -ne $null) { $lot.GeometrieResolution } else { 0 }
+            $menuTextureResolution.SelectedIndex = if ($lot.TextureResolution -ne $null) { $lot.TextureResolution } else { 0 }
             [System.Windows.Forms.Application]::DoEvents()
             Lancer-Traitement $lot.Fichiers
             $script:fileAttenteLots.RemoveAt(0)
@@ -4135,7 +4165,18 @@ function Obtenir-GeometryResolutionChoisie {
     }
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "") {
+# 20/10/2026 : meme principe que Obtenir-GeometryResolutionChoisie ci-dessus, mais pour
+# "texture_resolution" (voir $menuTextureResolution) - "" = on ne precise rien, Meshy applique
+# son propre defaut ("2k") sans qu'on ait besoin de l'envoyer explicitement.
+function Obtenir-TextureResolutionChoisie {
+    switch ($menuTextureResolution.SelectedIndex) {
+        1 { return "4k" }
+        2 { return "8k" }
+        default { return "" }
+    }
+}
+
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false, [string]$GeometryResolution = "", [string]$TextureResolution = "") {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -4180,9 +4221,9 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
                 default { "image/png" }
             }
             $dataUriStyle = "data:$mimeImg;base64," + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($FichierStl.FullName))
-            $corps = @{ input_task_id = $tacheImage3D.id; image_style_url = $dataUriStyle; enable_original_uv = $false } | ConvertTo-Json
+            $corpsRetexture = @{ input_task_id = $tacheImage3D.id; image_style_url = $dataUriStyle; enable_original_uv = $false }
         } else {
-            $corps = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+            $corpsRetexture = @{ input_task_id = $tacheImage3D.id; text_style_prompt = $Prompt; enable_original_uv = $false }
         }
     } else {
         $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
@@ -4190,16 +4231,23 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             $tacheRemesh = Lancer-Remesh $FichierStl $Entetes $TargetPolycount $nbTriangles
             $creditsEtapePrealable = [int]$tacheRemesh.consumed_credits
             Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage simplifie)..."
-            $corps = @{ input_task_id = $tacheRemesh.id; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+            $corpsRetexture = @{ input_task_id = $tacheRemesh.id; text_style_prompt = $Prompt; enable_original_uv = $false }
         } else {
             $octets = [System.IO.File]::ReadAllBytes($FichierStl.FullName)
             $base64 = [Convert]::ToBase64String($octets)
             $dataUri = "data:application/octet-stream;base64,$base64"
 
             Ecrire-Journal "  Envoi a l'API Retexture..."
-            $corps = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false } | ConvertTo-Json
+            $corpsRetexture = @{ model_url = $dataUri; text_style_prompt = $Prompt; enable_original_uv = $false }
         }
     }
+    # 20/10/2026 : "texture_resolution" (voir Obtenir-TextureResolutionChoisie) - ajoute seulement
+    # si different du defaut Meshy ("2k"), pour les 4 branches ci-dessus a la fois (le parametre
+    # s'applique a l'etape Retexture elle-meme, peu importe comment on y est arrive).
+    if ($TextureResolution -in @("4k", "8k")) {
+        $corpsRetexture.texture_resolution = $TextureResolution
+    }
+    $corps = $corpsRetexture | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/retexture" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Retexture"
     $idRetexture = $reponse.result
 
@@ -4883,7 +4931,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -4903,7 +4951,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie)
                     } else {
                         $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value)
                     }
