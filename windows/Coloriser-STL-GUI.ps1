@@ -3824,7 +3824,13 @@ function Lancer-DecimateTripo($Entetes, $JetonFichier, [int]$TargetFaceLimit) {
 # appel Texture separe sans rien a lui dire de particulier.
 function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
     Ecrire-Journal "  Envoi a l'API Image to 3D (Tripo)..."
-    $corps = @{ input = $JetonFichier; texture = $AvecTexture; pbr = $AvecTexture } | ConvertTo-Json
+    # 20/10/2026, trouve en usage reel par Tomyn : malgre la doc qui donne "v3.1-20260211" comme
+    # defaut (sous-entendant le champ facultatif), l'API refuse desormais la requete sans "model"
+    # explicite - erreur reelle recue : {"code":1004,...,"message":"model is required, allowed
+    # values: P1-20260311, P2-20260801, v2.5-20250123, v3.0-20250812, v3.1-20260211"}. On envoie
+    # donc explicitement la valeur la plus recente de cette liste (v3.1-20260211, qui est deja
+    # celle documentee comme defaut) plutot que de compter sur un defaut cote serveur.
+    $corps = @{ input = $JetonFichier; model = "v3.1-20260211"; texture = $AvecTexture; pbr = $AvecTexture } | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/generation/image-to-model" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Image to 3D Tripo"
     $idReponse = if ($reponse.data) { $reponse.data } else { $reponse }
     $idTache = $idReponse.task_id
