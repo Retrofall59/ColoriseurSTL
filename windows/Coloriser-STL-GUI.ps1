@@ -402,6 +402,183 @@ function Obtenir-NombreTriangles($cheminFichier) {
     }
 }
 
+# 20/10/2026, Tomyn : "j'ai plusieurs 3MF non colorises que je voudrais coloriser" - l'API Meshy
+# n'accepte en entree que .glb/.gltf/.obj/.fbx/.stl (verifie dans la doc officielle le 20/10/2026,
+# le .3mf n'y figure que comme format de SORTIE sur certains endpoints, jamais comme entree). Donc
+# plutot que de compter sur un changement cote Meshy, extraction du maillage directement depuis le
+# .3mf (qui est un ZIP contenant un XML au format "3D Manufacturing Format") et reexport en .stl
+# binaire - fichier ensuite traite exactement comme n'importe quel autre .stl par le reste de
+# l'appli (Lancer-Traitement convertit AVANT d'appeler Coloriser-UnFichier, voir plus bas).
+#
+# Portee volontairement limitee a un .3mf "simple" (le cas de Tomyn : un modele non colorise,
+# jamais passe par cet outil) : un seul niveau de <components> est resolu recursivement (le format
+# permet d'imbriquer indefiniment, mais les .3mf qu'on rencontre ici ne le font pas), et SEUL le
+# maillage geometrique est repris - aucune couleur/texture n'est lue depuis le .3mf meme s'il y en
+# avait (hors sujet : le but de l'appli est justement de (re)generer des couleurs avec l'IA, pas de
+# preserver celles d'un .3mf deja colorise differemment).
+function Convertir-3MFVersSTL($Fichier3mf) {
+    $archive = $null
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($Fichier3mf.FullName)
+        $entreeModele = $archive.Entries | Where-Object { $_.FullName -match '3dmodel\.model$' } | Select-Object -First 1
+        if (-not $entreeModele) {
+            throw "aucun '3dmodel.model' trouve dans ce .3mf (fichier corrompu ou pas un vrai .3mf ?)"
+        }
+
+        $xml = New-Object System.Xml.XmlDocument
+        $flux = $entreeModele.Open()
+        try { $xml.Load($flux) } finally { $flux.Close() }
+
+        # XPath avec local-name() plutot qu'un XmlNamespaceManager : evite de devoir connaitre a
+        # l'avance l'URI exacte du namespace 3MF utilisee par le logiciel qui a genere le fichier
+        # (elle a change de version en version du standard, et certains exporteurs sont approximatifs
+        # dessus) - local-name() ignore completement le namespace, se base juste sur le nom de balise.
+        $ci = [System.Globalization.CultureInfo]::InvariantCulture
+        $objetsMaillage = @{}    # id -> @{ Sommets = [double[3]][]; Triangles = [int[3]][] }
+        $objetsComposants = @{}  # id -> liste de @{ ObjectId; Transform }
+
+        foreach ($noeudObjet in $xml.SelectNodes("//*[local-name()='object']")) {
+            $id = $noeudObjet.GetAttribute("id")
+            if (-not $id) { continue }
+            $noeudMesh = $noeudObjet.SelectSingleNode("*[local-name()='mesh']")
+            if ($noeudMesh) {
+                $sommets = New-Object System.Collections.Generic.List[double[]]
+                foreach ($v in $noeudMesh.SelectNodes(".//*[local-name()='vertex']")) {
+                    $sommets.Add(@(
+                        [double]::Parse($v.GetAttribute("x"), $ci),
+                        [double]::Parse($v.GetAttribute("y"), $ci),
+                        [double]::Parse($v.GetAttribute("z"), $ci)
+                    ))
+                }
+                $triangles = New-Object System.Collections.Generic.List[int[]]
+                foreach ($t in $noeudMesh.SelectNodes(".//*[local-name()='triangle']")) {
+                    $triangles.Add(@(
+                        [int]$t.GetAttribute("v1"),
+                        [int]$t.GetAttribute("v2"),
+                        [int]$t.GetAttribute("v3")
+                    ))
+                }
+                $objetsMaillage[$id] = @{ Sommets = $sommets; Triangles = $triangles }
+                continue
+            }
+            $noeudComposants = $noeudObjet.SelectSingleNode("*[local-name()='components']")
+            if ($noeudComposants) {
+                $liste = New-Object System.Collections.Generic.List[object]
+                foreach ($c in $noeudComposants.SelectNodes("*[local-name()='component']")) {
+                    $liste.Add(@{ ObjectId = $c.GetAttribute("objectid"); Transform = $c.GetAttribute("transform") })
+                }
+                $objetsComposants[$id] = $liste
+            }
+        }
+
+        # Transform 3MF : 12 nombres (3x3 de rotation/echelle + 3 de translation), applique a un
+        # point en vecteur-ligne (v' = v * M). Represente ici en 4x4 ligne-major (identite par
+        # defaut) pour pouvoir composer les transforms imbriquees par simple multiplication de
+        # matrices plutot que de gerer un cas particulier pour chaque niveau de profondeur.
+        function Analyser-Transform3MF([string]$texte) {
+            if ([string]::IsNullOrWhiteSpace($texte)) { return @(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1) }
+            $n = @($texte.Trim() -split '\s+' | ForEach-Object { [double]::Parse($_, $ci) })
+            if ($n.Count -ne 12) { return @(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1) }
+            return @($n[0],$n[1],$n[2],0, $n[3],$n[4],$n[5],0, $n[6],$n[7],$n[8],0, $n[9],$n[10],$n[11],1)
+        }
+        function Multiplier-Transform3MF([double[]]$A, [double[]]$B) {
+            $r = New-Object double[] 16
+            for ($ligne = 0; $ligne -lt 4; $ligne++) {
+                for ($col = 0; $col -lt 4; $col++) {
+                    $somme = 0.0
+                    for ($k = 0; $k -lt 4; $k++) { $somme += $A[$ligne * 4 + $k] * $B[$k * 4 + $col] }
+                    $r[$ligne * 4 + $col] = $somme
+                }
+            }
+            return $r
+        }
+        function Appliquer-Transform3MF([double[]]$p, [double[]]$M) {
+            return @(
+                $p[0]*$M[0] + $p[1]*$M[4] + $p[2]*$M[8]  + $M[12],
+                $p[0]*$M[1] + $p[1]*$M[5] + $p[2]*$M[9]  + $M[13],
+                $p[0]*$M[2] + $p[1]*$M[6] + $p[2]*$M[10] + $M[14]
+            )
+        }
+
+        $sommetsGlobaux = New-Object System.Collections.Generic.List[double[]]
+        $trianglesGlobaux = New-Object System.Collections.Generic.List[int[]]
+        $profondeurMax = 8  # garde-fou anti-boucle (composants qui se referencent entre eux)
+
+        function Resoudre-Objet3MF([string]$id, [double[]]$transformCumule, [int]$profondeur) {
+            if ($profondeur -gt $profondeurMax) { return }
+            if ($objetsMaillage.ContainsKey($id)) {
+                $decalage = $sommetsGlobaux.Count
+                foreach ($s in $objetsMaillage[$id].Sommets) { $sommetsGlobaux.Add((Appliquer-Transform3MF $s $transformCumule)) }
+                foreach ($t in $objetsMaillage[$id].Triangles) {
+                    $trianglesGlobaux.Add(@($t[0] + $decalage, $t[1] + $decalage, $t[2] + $decalage))
+                }
+            } elseif ($objetsComposants.ContainsKey($id)) {
+                foreach ($comp in $objetsComposants[$id]) {
+                    $transformComposant = Analyser-Transform3MF $comp.Transform
+                    $cumul = Multiplier-Transform3MF $transformComposant $transformCumule
+                    Resoudre-Objet3MF $comp.ObjectId $cumul ($profondeur + 1)
+                }
+            }
+            # id inconnu (reference cassee) : ignore silencieusement, pas bloquant pour le reste.
+        }
+
+        $identite = @(1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)
+        $noeudsItem = $xml.SelectNodes("//*[local-name()='build']/*[local-name()='item']")
+        if ($noeudsItem.Count -gt 0) {
+            foreach ($item in $noeudsItem) {
+                $t = Analyser-Transform3MF $item.GetAttribute("transform")
+                Resoudre-Objet3MF $item.GetAttribute("objectid") $t 0
+            }
+        } else {
+            # Pas de section <build> (ou vide) : rare, mais plutot que d'echouer completement, on
+            # reprend tous les objets a maillage direct tels quels (sans transform), au cas ou le
+            # fichier soit quand meme exploitable.
+            foreach ($id in $objetsMaillage.Keys) { Resoudre-Objet3MF $id $identite 0 }
+        }
+
+        if ($trianglesGlobaux.Count -eq 0) {
+            throw "aucun maillage exploitable trouve dans ce .3mf (section <build> vide et aucun objet a maillage direct)"
+        }
+
+        # --- Ecriture en .stl binaire : 80 octets d'entete + nb de triangles (uint32) + par
+        # triangle, normale (3 floats, calculee ici par produit vectoriel) + 3 sommets (3 floats
+        # chacun) + 2 octets d'attribut (toujours 0). Format standard, le meme que Bambu Studio et
+        # Meshy savent lire sans ambiguite.
+        $dossierTemp = Join-Path $env:TEMP ("ColoriserSTL_3mf_" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path $dossierTemp | Out-Null
+        $cheminStl = Join-Path $dossierTemp ($Fichier3mf.BaseName + ".stl")
+
+        $flux = [System.IO.File]::Create($cheminStl)
+        try {
+            $ecrivain = New-Object System.IO.BinaryWriter($flux)
+            $entete = New-Object byte[] 80
+            $texteEntete = [System.Text.Encoding]::ASCII.GetBytes("Converti depuis $($Fichier3mf.Name) par Coloriser-STL")
+            [Array]::Copy($texteEntete, $entete, [Math]::Min($texteEntete.Length, 80))
+            $ecrivain.Write($entete)
+            $ecrivain.Write([uint32]$trianglesGlobaux.Count)
+            foreach ($tri in $trianglesGlobaux) {
+                $p1 = $sommetsGlobaux[$tri[0]]; $p2 = $sommetsGlobaux[$tri[1]]; $p3 = $sommetsGlobaux[$tri[2]]
+                $ux = $p2[0]-$p1[0]; $uy = $p2[1]-$p1[1]; $uz = $p2[2]-$p1[2]
+                $vx = $p3[0]-$p1[0]; $vy = $p3[1]-$p1[1]; $vz = $p3[2]-$p1[2]
+                $nx = $uy*$vz - $uz*$vy; $ny = $uz*$vx - $ux*$vz; $nz = $ux*$vy - $uy*$vx
+                $norme = [Math]::Sqrt($nx*$nx + $ny*$ny + $nz*$nz)
+                if ($norme -gt 0) { $nx /= $norme; $ny /= $norme; $nz /= $norme }
+                $ecrivain.Write([float]$nx); $ecrivain.Write([float]$ny); $ecrivain.Write([float]$nz)
+                foreach ($p in @($p1, $p2, $p3)) {
+                    $ecrivain.Write([float]$p[0]); $ecrivain.Write([float]$p[1]); $ecrivain.Write([float]$p[2])
+                }
+                $ecrivain.Write([uint16]0)
+            }
+        } finally {
+            $flux.Close()
+        }
+
+        return @{ Fichier = (Get-Item $cheminStl); NbTriangles = $trianglesGlobaux.Count; NbObjets = $objetsMaillage.Count }
+    } finally {
+        if ($archive) { $archive.Dispose() }
+    }
+}
+
 function Obtenir-ImageDepuisUrl($url) {
     try {
         $octets = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
@@ -551,7 +728,13 @@ $EXTENSIONS_MODELES_3D = @(".stl", ".obj", ".fbx", ".glb", ".gltf")
 # accepte par Meshy depuis le 10/10/2026 (Image to 3D, Retexture, Image to Image) - manquait ici,
 # un .webp envoye par le collegue de Tomyn aurait ete rejete avant meme d'atteindre l'API.
 $EXTENSIONS_IMAGES = @(".jpg", ".jpeg", ".png", ".webp")
-$EXTENSIONS_SUPPORTEES = $EXTENSIONS_MODELES_3D + $EXTENSIONS_IMAGES
+# .3mf non colorise, ajoute le 20/10/2026 (Tomyn : "j'ai plusieurs 3MF non colorises que je
+# voudrais coloriser") - toujours pas accepte directement par Meshy en entree (voir le commentaire
+# sur $EXTENSIONS_MODELES_3D plus haut), donc categorie a part : Lancer-Traitement le convertit en
+# .stl via Convertir-3MFVersSTL AVANT d'appeler Coloriser-UnFichier/-UnFichierTripo, qui ne voient
+# donc jamais passer de .3mf directement.
+$EXTENSIONS_3MF_SOURCE = @(".3mf")
+$EXTENSIONS_SUPPORTEES = $EXTENSIONS_MODELES_3D + $EXTENSIONS_IMAGES + $EXTENSIONS_3MF_SOURCE
 # Cout de l'etape Image to 3D en maillage seul (should_texture=false, modele par defaut
 # meshy-7.1/meshy-6) - confirme sur la doc tarifaire officielle Meshy le 08/10/2026. S'ajoute
 # AVANT les credits de colorisation habituels (Retexture +/- Multi-Color Print) quand la source
@@ -3258,7 +3441,7 @@ $btnParcourir.Add_Click({
 
 $btnChoisirFichiers.Add_Click({
     $dialogue = New-Object System.Windows.Forms.OpenFileDialog
-    $dialogue.Filter = "Fichiers 3D et images (*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png;*.webp)|*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png;*.webp"
+    $dialogue.Filter = "Fichiers 3D et images (*.stl;*.obj;*.fbx;*.glb;*.gltf;*.3mf;*.jpg;*.jpeg;*.png;*.webp)|*.stl;*.obj;*.fbx;*.glb;*.gltf;*.3mf;*.jpg;*.jpeg;*.png;*.webp"
     $dialogue.Multiselect = $true
     $dialogue.Title = "Choisir un ou plusieurs fichiers 3D ou images"
     if ($dialogue.ShowDialog() -eq "OK") {
@@ -4478,6 +4661,18 @@ function Lancer-Traitement($fichiersStl) {
             }
             Afficher-ProgressionEnCours "Retexture en cours..."
             try {
+                # 20/10/2026, Tomyn : conversion AVANT l'aiguillage Meshy/Tripo (pas dans
+                # Coloriser-UnFichier/-UnFichierTripo directement) pour que les deux beneficient
+                # automatiquement, y compris en mode comparaison - voir Convertir-3MFVersSTL.
+                # $fichier reassigne au .stl converti (meme BaseName que l'original, garanti par
+                # Convertir-3MFVersSTL) : le reste de la boucle n'a besoin d'aucun autre changement,
+                # noms de sortie et historique compris.
+                if ($fichier.Extension.ToLower() -eq ".3mf") {
+                    Ecrire-Journal "  $($fichier.Name) : .3mf non colorise, extraction du maillage et conversion en .stl (Meshy ne l'accepte pas directement en entree)..."
+                    $resultatConversion = Convertir-3MFVersSTL $fichier
+                    Ecrire-Journal "  -> $($resultatConversion.NbTriangles) triangle(s) extrait(s) depuis $($resultatConversion.NbObjets) objet(s) du .3mf."
+                    $fichier = $resultatConversion.Fichier
+                }
                 if ($caseComparerFournisseurs.Checked) {
                     # Les deux fournisseurs sont lances l'un apres l'autre (pas de vrai parallelisme
                     # reseau ici - garder l'appli mono-thread simple plutot que d'introduire des
