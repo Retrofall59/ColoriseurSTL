@@ -4535,12 +4535,14 @@ function Verifier-CleEtSolde($cleApi) {
     }
 }
 
-# Endpoint de solde Tripo non confirme avec certitude (contrairement a Meshy) - meme logique de
-# repli "inconnu" en cas d'echec, donc une mauvaise URL ici se traduit par un avertissement
-# "impossible de verifier" plutot qu'un plantage.
+# 20/10/2026 : endpoint corrige, "/user/balance" n'avait jamais ete confirme (devine a l'origine) -
+# le vrai endpoint documente est "/account/balance" (developers.tripo3d.ai/fr/docs/account),
+# reponse "data.balance" + "data.frozen" (credits geles, taches en cours). Fonction non appelee
+# pour l'instant (solde Tripo pas encore verifie avant lancement, voir plus bas), mais corrigee
+# puisque l'ancien endpoint etait un pari jamais verifie et celui-ci est maintenant confirme.
 function Verifier-CleEtSoldeTripo($cleApi) {
     try {
-        $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/user/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get -TimeoutSec 15 } "Verification cle Tripo" 2 3
+        $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/account/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get -TimeoutSec 15 } "Verification cle Tripo" 2 3
         $donnees = if ($reponse.data) { $reponse.data } else { $reponse }
         # 20/10/2026 : [double] au lieu de [int] - confirme dans le changelog officiel Tripo (note
         # du 08/2026) : "balance" (et credits_consumed/frozen) sont des nombres avec jusqu'a 2
@@ -4639,10 +4641,13 @@ function Lancer-Traitement($fichiersStl) {
     } catch { }
 
     # --- Verification de la cle API et du solde avant de lancer, selon le fournisseur choisi ---
-    # Cote Tripo : desactivee pour l'instant. L'endpoint devine (/user/balance, jamais confirme)
-    # provoquait un blocage de l'appli des le clic sur Lancer - rien d'essentiel perdu (ce n'etait
-    # qu'un avertissement avant coup), le vrai pipeline (upload/texture/convert) n'est pas touche.
-    # A reactiver une fois le bon endpoint confirme.
+    # Cote Tripo : desactivee pour l'instant. L'ancien endpoint devine (/user/balance, jamais
+    # confirme) provoquait un blocage de l'appli des le clic sur Lancer - rien d'essentiel perdu
+    # (ce n'etait qu'un avertissement avant coup), le vrai pipeline (upload/texture/convert) n'est
+    # pas touche. 20/10/2026 : Verifier-CleEtSoldeTripo pointe maintenant vers le vrai endpoint
+    # documente (/account/balance), mais reste desactivee ici tant que le blocage original n'a pas
+    # ete reproduit/confirme regle (peut-etre juste l'URL en cause, peut-etre autre chose - pas
+    # teste en conditions reelles).
     $coutEstime = $fichiersStl.Count * $CREDITS_ESTIMES_PAR_FICHIER
     # Meshy est verifie des qu'il va etre utilise (fournisseur unique "Meshy", ou mode comparaison
     # ou les deux sont utilises) - Tripo reste non verifie avant lancement (voir Verifier-CleEtSoldeTripo).
