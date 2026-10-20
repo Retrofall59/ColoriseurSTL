@@ -114,6 +114,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var caseReparationParois: CheckBox
     private lateinit var texteTailleImpression: TextView
     private lateinit var champTailleImpression: EditText
+    // 20/10/2026, vague 6 : cible de polycount, Meshy ET Tripo (voir le commentaire du layout).
+    private lateinit var champTrianglesVises: EditText
 
     private var fichiersSource: List<FichierSource> = emptyList()
     private var uriDossierSortie: Uri? = null
@@ -180,6 +182,7 @@ class MainActivity : AppCompatActivity() {
         caseReparationParois = findViewById(R.id.caseReparationParois)
         texteTailleImpression = findViewById(R.id.texteTailleImpression)
         champTailleImpression = findViewById(R.id.champTailleImpression)
+        champTrianglesVises = findViewById(R.id.champTrianglesVises)
         btnLancer = findViewById(R.id.btnLancer)
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
@@ -440,6 +443,11 @@ class MainActivity : AppCompatActivity() {
         2 -> "8k"
         else -> ""
     }
+
+    // 20/10/2026, vague 6 : meme plage que $numTriangles cote Windows (100 a 300000) - texte
+    // invalide ou vide -> defaut 30000, jamais une erreur bloquante pour un simple reglage.
+    private fun trianglesVisesChoisis(): Int =
+        champTrianglesVises.text.toString().toIntOrNull()?.coerceIn(100, 300000) ?: 30000
 
     private fun configurerMenuFournisseur() {
         mettreAJourMenuFournisseur()
@@ -805,6 +813,7 @@ class MainActivity : AppCompatActivity() {
         val smartTopology = caseSmartTopology.isChecked
         val geometryResolution = geometrieResolutionChoisie()
         val textureResolution = textureResolutionChoisie()
+        val targetPolycount = trianglesVisesChoisis()
         val reparerParois = caseReparationParois.isChecked
         // "0" (valeur par defaut du champ) -> null, pour que le service sache qu'il ne faut rien
         // envoyer (et laisser Meshy appliquer son propre defaut de 150 mm) - meme logique que
@@ -814,7 +823,7 @@ class MainActivity : AppCompatActivity() {
         } else null
 
         if (fournisseur == "Tripo") {
-            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm)
+            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount)
             return
         }
 
@@ -835,7 +844,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("Vérification impossible")
                             .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm) }
+                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount) }
                             .setNegativeButton("Annuler", null)
                             .show()
                     }
@@ -850,11 +859,11 @@ class MainActivity : AppCompatActivity() {
                             AlertDialog.Builder(this)
                                 .setTitle("Solde potentiellement insuffisant")
                                 .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot (Meshy seul) : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm) }
+                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount) }
                                 .setNegativeButton("Annuler", null)
                                 .show()
                         } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm)
+                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount)
                         }
                     }
                 }
@@ -866,7 +875,7 @@ class MainActivity : AppCompatActivity() {
         fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String,
         comparer: Boolean, meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0,
         smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = "",
-        reparerParois: Boolean = false, tailleImpressionMm: Int? = null
+        reparerParois: Boolean = false, tailleImpressionMm: Int? = null, targetPolycount: Int = 30000
     ) {
         val intent = Intent(this, ColorisationService::class.java).apply {
             putParcelableArrayListExtra(ColorisationService.EXTRA_URIS, ArrayList(fichiersAtraiter.map { it.first }))
@@ -883,6 +892,7 @@ class MainActivity : AppCompatActivity() {
             putExtra(ColorisationService.EXTRA_TEXTURE_RESOLUTION, textureResolution)
             putExtra(ColorisationService.EXTRA_REPARER_PAROIS, reparerParois)
             tailleImpressionMm?.let { putExtra(ColorisationService.EXTRA_TAILLE_IMPRESSION_MM, it) }
+            putExtra(ColorisationService.EXTRA_TARGET_POLYCOUNT, targetPolycount)
         }
         galerieResultats.removeAllViews()
         nombreResultatsAffiches = 0

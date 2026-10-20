@@ -57,6 +57,9 @@ class ColorisationService : Service() {
         const val EXTRA_TEXTURE_RESOLUTION = "texture_resolution"
         const val EXTRA_REPARER_PAROIS = "reparer_parois"
         const val EXTRA_TAILLE_IMPRESSION_MM = "taille_impression_mm"
+        // 20/10/2026, vague 6 : cible de polycount (Image to 3D/Smart Topology/Remesh cote Meshy,
+        // Retopology cote Tripo) - fixe a 30000 partout jusqu'ici, desormais reglable.
+        const val EXTRA_TARGET_POLYCOUNT = "target_polycount"
 
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
@@ -105,6 +108,7 @@ class ColorisationService : Service() {
         val textureResolution = intent.getStringExtra(EXTRA_TEXTURE_RESOLUTION) ?: ""
         val reparerParois = intent.getBooleanExtra(EXTRA_REPARER_PAROIS, false)
         val tailleImpressionMm = intent.getIntExtra(EXTRA_TAILLE_IMPRESSION_MM, 0).let { if (it > 0) it else null }
+        val targetPolycount = intent.getIntExtra(EXTRA_TARGET_POLYCOUNT, 30000)
 
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
@@ -116,7 +120,7 @@ class ColorisationService : Service() {
             traiterLot(
                 uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer,
                 meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution,
-                textureResolution, reparerParois, tailleImpressionMm
+                textureResolution, reparerParois, tailleImpressionMm, targetPolycount
             )
         }
         threadTraitement?.start()
@@ -142,7 +146,7 @@ class ColorisationService : Service() {
         dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String, comparer: Boolean,
         meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0,
         smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = "",
-        reparerParois: Boolean = false, tailleImpressionMm: Int? = null
+        reparerParois: Boolean = false, tailleImpressionMm: Int? = null, targetPolycount: Int = 30000
     ) {
         val cleMeshy = GestionnaireParametres.lireCleApi(this)
         val cleTripo = GestionnaireParametres.lireCleApiTripo(this)
@@ -226,7 +230,7 @@ class ColorisationService : Service() {
                     // resultat de l'autre - meme logique que la version Windows.
                     var auMoinsUnReussi = false
                     try {
-                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution)
+                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution, targetPolycount)
                         reussitesMeshy++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -234,7 +238,7 @@ class ColorisationService : Service() {
                         EtatTraitement.ecrireJournal("  ECHEC Meshy sur $nom : ${e.message}")
                     }
                     try {
-                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false, 0.0)
+                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false, 0.0, targetPolycount = targetPolycount)
                         reussitesTripo++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -247,7 +251,7 @@ class ColorisationService : Service() {
                         ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
                     }
                 } else {
-                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution)
+                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution, targetPolycount)
                     reussites++
                 }
             } catch (e: Exception) {
@@ -281,7 +285,8 @@ class ColorisationService : Service() {
         maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
         indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean,
         assombrirTexturePourcent: Double = 0.0, reparerParois: Boolean = false, tailleImpressionMm: Int? = null,
-        smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = ""
+        smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = "",
+        targetPolycount: Int = 30000
     ): Int {
         val suffixe = suffixeFournisseur + if (avecHorodatage) {
             "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
@@ -322,7 +327,7 @@ class ColorisationService : Service() {
                             mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                         }
                     },
-                    nbTrianglesSource = nbTriangles
+                    nbTrianglesSource = nbTriangles, targetPolycount = targetPolycount
                 )
             }
             EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
@@ -369,7 +374,7 @@ class ColorisationService : Service() {
                         mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                     }
                 },
-                smartTopology = smartTopology, geometryResolution = geometryResolution
+                targetPolycount = targetPolycount, smartTopology = smartTopology, geometryResolution = geometryResolution
             )
             idTacheSource = resultatImage.idTache
             creditsImage3D = resultatImage.creditsConsommes
@@ -408,7 +413,7 @@ class ColorisationService : Service() {
             if (nbTriangles != null && nbTriangles > SEUIL_TRIANGLES_REMESH_AUTO) {
                 EtatTraitement.ecrireJournal("  Maillage volumineux ($nbTriangles triangles) - simplification (Remesh) avant Retexture...")
                 val resultatRemesh = MeshyApiClient.remesher(
-                    octets, cleApi, 30000,
+                    octets, cleApi, targetPolycount,
                     object : MeshyApiClient.EcouteurAvancement {
                         override fun surProgres(etape: String, statut: String, progres: Int) {
                             if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")

@@ -285,6 +285,35 @@
 
                 </LinearLayout>
 
+                <!-- 20/10/2026, vague 6 : cible de polycount, utilisee par Image to 3D/Smart
+                     Topology/Remesh (Meshy) ET Retopology (Tripo) - seul reglage de cette section
+                     qui s'applique aux deux fournisseurs, d'ou sa place en dehors du bloc
+                     "Meshy uniquement" ci-dessous. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:text="Triangles visés (image vers 3D, maillage simplifié), 100 à 300000"
+                        android:textColor="@color/texte_secondaire"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/champTrianglesVises"
+                        android:layout_width="80dp"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:text="30000"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+
                 <!-- 20/10/2026, vague 4 : reglages avances Meshy (portes cote API dans les vagues
                      precedentes, jusqu'ici sans controle dans l'UI). Sans effet sur Tripo. -->
                 <TextView
