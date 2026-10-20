@@ -3757,7 +3757,28 @@ function Attendre-TacheTripo($UrlTache, $Entetes, $Libelle) {
     }
 }
 
-function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "") {
+# 20/10/2026 : simplification Tripo avant texturation, parite avec Lancer-Remesh cote Meshy (voir
+# $SEUIL_TRIANGLES_REMESH_AUTO plus haut) - API Retopology de Tripo (POST /v3/mesh/decimate),
+# confirmee via le changelog officiel d'octobre 2026 et sa doc dediee
+# (developers.tripo3d.ai/fr/docs/mesh-decimate) : "input" accepte directement le file_token issu de
+# l'upload (pas besoin de passer par import_model d'abord, son task_id sert ensuite tel quel comme
+# reference de modele pour la texturation - meme principe que le Remesh Meshy, dont le resultat
+# remplace l'envoi du fichier brut). "face_limit" va de 500 a 20000 triangles en modele par defaut
+# (v2.0, 30 credits) - la cible demandee (champ "Triangles vises" de l'interface, jusqu'a 300000)
+# est donc bornee a cette plage plutot que d'envoyer une valeur hors limites que l'API rejetterait.
+function Lancer-DecimateTripo($Entetes, $JetonFichier, [int]$TargetFaceLimit) {
+    $cible = [Math]::Max(500, [Math]::Min(20000, $TargetFaceLimit))
+    Ecrire-Journal "  Maillage volumineux - simplification (Retopology Tripo) avant texturation, cible ~$cible triangle(s)..."
+    $corps = @{ input = $JetonFichier; face_limit = $cible } | ConvertTo-Json
+    $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/mesh/decimate" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Retopology Tripo"
+    $idDecimateReponse = if ($reponse.data) { $reponse.data } else { $reponse }
+    $idDecimate = $idDecimateReponse.task_id
+    $tache = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idDecimate" $Entetes "Retopology"
+    Ecrire-Journal "  Maillage simplifie ($($tache.credits_consumed) credits) - la texturation va repartir de ce resultat (import_model saute, pas necessaire ici)."
+    return $tache
+}
+
+function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", [int]$TargetPolycount = 30000) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) (via Tripo) ==="
 
@@ -3768,9 +3789,15 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
         throw "les images ne sont pas encore prises en charge cote Tripo dans cette version - utilise Meshy pour une image, ou fournis directement un fichier 3D pour Tripo"
     }
 
+    # 20/10/2026 : plafond remonte de 50 a 150 Mo, d'apres la vraie doc officielle Tripo
+    # (developers.tripo3d.ai/fr/docs/models-import) : "input" (le file_token issu de l'upload)
+    # accepte un fichier jusqu'a 150 Mo - l'ancien seuil de 50 Mo n'avait jamais ete confirme nulle
+    # part, c'etait juste une marge de securite arbitraire. Concretement utile pour les .3mf tres
+    # denses convertis en .stl (ex. 149,7 Mo / 3,1M triangles observe chez Tomyn le 20/10/2026) :
+    # ca passe chez Tripo (150 Mo) meme si ca depasse le plafond "data: URI" de Meshy (100 Mo).
     $tailleMo = $FichierStl.Length / 1MB
-    if ($tailleMo -gt 50) {
-        throw "fichier de $([math]::Round($tailleMo,1)) Mo, trop volumineux - non envoye"
+    if ($tailleMo -gt 150) {
+        throw "fichier de $([math]::Round($tailleMo,1)) Mo, limite Tripo (import) = 150 Mo - non envoye"
     }
 
     $entetes = @{ Authorization = "Bearer $CleApi" }
@@ -3823,28 +3850,51 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     }
     Ecrire-Journal "  Fichier envoye."
 
-    # --- Etape 3 : import du modele uploade ---
-    # Etape decouverte a posteriori, absente des premieres versions : la doc officielle
-    # (docs.tripo3d.ai/model-generation/import-model.html) precise qu'un fichier uploade doit
-    # d'abord passer par une tache "import_model" avant de pouvoir etre texture - confirme aussi
-    # en conditions reelles via l'historique du tableau de bord Tripo : chaque texturation en
-    # echec ("Internal processing error") etait precedee d'une tache import_model en succes que
-    # notre code ne reutilisait jamais, envoyant directement le jeton de fichier brut a la
-    # texturation au lieu du resultat de cet import. Tres probablement la vraie cause des echecs
-    # systematiques observes jusqu'ici (meme sur un simple cube de test).
-    Ecrire-Journal "  Import du modele (Tripo)..."
-    $corps = @{ type = "import_model"; file = @{ file_token = $jetonFichier } } | ConvertTo-Json
-    $reponseImport = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/import" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Import Tripo"
-    $idImportReponse = if ($reponseImport.data) { $reponseImport.data } else { $reponseImport }
-    $idImport = $idImportReponse.task_id
+    # --- Etape 2bis : simplification si le maillage est tres volumineux (20/10/2026, parite avec
+    # Meshy - voir $SEUIL_TRIANGLES_REMESH_AUTO et Lancer-Remesh) : on passe alors par Retopology
+    # (mesh/decimate) a la place de l'import_model habituel, et sa tache sert directement de
+    # reference de modele pour la texturation qui suit (pas besoin d'importer en plus).
+    $nbTriangles = Obtenir-NombreTriangles $FichierStl.FullName
+    $idModeleSource = $null
+    $tacheADecimee = $null
+    $creditsImport = 0
 
-    $tacheImport = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idImport" $entetes "Import"
-    Ecrire-Journal "  Import termine."
-    # Corrige le 07/10/2026 : contrairement a ce qu'on pensait ("0 observe partout dans le
-    # tableau de bord"), Tomyn a confirme que l'import N'EST PAS gratuit (5 credits observes) -
-    # ce chiffre n'etait simplement jamais ajoute au total renvoye jusqu'ici, qui sous-comptait
-    # donc le cout reel de chaque generation Tripo de 5 credits.
-    $creditsImport = [double]($tacheImport.credits_consumed)
+    if ($nbTriangles -ne $null -and $nbTriangles -gt $SEUIL_TRIANGLES_REMESH_AUTO) {
+        $tacheADecimee = Lancer-DecimateTripo $entetes $jetonFichier $TargetPolycount
+        $idModeleSource = $tacheADecimee.task_id
+        $creditsImport = [double]($tacheADecimee.credits_consumed)
+    } else {
+        # --- Etape 3 : import du modele uploade ---
+        # Etape decouverte a posteriori, absente des premieres versions : la doc officielle
+        # (docs.tripo3d.ai/model-generation/import-model.html) precise qu'un fichier uploade doit
+        # d'abord passer par une tache "import_model" avant de pouvoir etre texture - confirme aussi
+        # en conditions reelles via l'historique du tableau de bord Tripo : chaque texturation en
+        # echec ("Internal processing error") etait precedee d'une tache import_model en succes que
+        # notre code ne reutilisait jamais, envoyant directement le jeton de fichier brut a la
+        # texturation au lieu du resultat de cet import. Tres probablement la vraie cause des echecs
+        # systematiques observes jusqu'ici (meme sur un simple cube de test).
+        Ecrire-Journal "  Import du modele (Tripo)..."
+        # 20/10/2026 : "input" = $jetonFichier ajoute EN PLUS (jamais retire ce qui marche) - la doc
+        # officielle actuelle (developers.tripo3d.ai/fr/docs/models-import) ne documente plus QUE ce
+        # champ unique "input" (file_token ou URL), sans "type"/"file.file_token". Vu le risque de
+        # casser un appel qui fonctionne reellement (succes confirmes avec les champs actuels), pas de
+        # suppression a l'aveugle sur la seule foi de la doc - juste un ajout defensif : un champ JSON
+        # en plus, inconnu de l'API, est normalement ignore sans consequence, donc cet envoi reste
+        # compatible que l'API lise encore "type"/"file.file_token" ou soit passee a "input" entre
+        # temps.
+        $corps = @{ type = "import_model"; file = @{ file_token = $jetonFichier }; input = $jetonFichier } | ConvertTo-Json
+        $reponseImport = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/import" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Import Tripo"
+        $idImportReponse = if ($reponseImport.data) { $reponseImport.data } else { $reponseImport }
+        $idModeleSource = $idImportReponse.task_id
+
+        $tacheImport = Attendre-TacheTripo "$BaseUrlTripo/tasks/$idModeleSource" $entetes "Import"
+        Ecrire-Journal "  Import termine."
+        # Corrige le 07/10/2026 : contrairement a ce qu'on pensait ("0 observe partout dans le
+        # tableau de bord"), Tomyn a confirme que l'import N'EST PAS gratuit (5 credits observes) -
+        # ce chiffre n'etait simplement jamais ajoute au total renvoye jusqu'ici, qui sous-comptait
+        # donc le cout reel de chaque generation Tripo de 5 credits.
+        $creditsImport = [double]($tacheImport.credits_consumed)
+    }
 
     # --- Etape 4 : texturation (a partir du resultat de l'import, pas du jeton de fichier brut) ---
     # Champs corriges d'apres la vraie doc officielle (platform.tripo3d.ai/docs/texture, trouvee
@@ -3853,8 +3903,22 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # jamais avoir de vraie reference de modele, d'ou l'echec systematique en cours de route quel
     # que soit le fichier. Le prompt texte est imbrique dans "texture_prompt.text", pas un champ
     # "prompt" a plat.
+    # 20/10/2026 : "model" = "v3.5-20260815" ajoute - confirme reel dans la doc officielle actuelle
+    # (developers.tripo3d.ai/fr/docs/models-texture), modele de texture plus recent que le defaut
+    # "v3.0-20250812" (aucun surcout en credits documente pour ce champ a lui seul, contrairement
+    # a "texture_quality=fast/detailed/extreme" qui eux changent le cout - on ne touche pas a
+    # "texture_quality", laisse a son defaut "standard").
+    # "input" = $idModeleSource ajoute EN PLUS du champ actuel "original_model_task_id" - meme logique
+    # defensive que pour l'import ci-dessus (la doc actuelle ne documente plus que "input", mais
+    # "original_model_task_id" est confirme fonctionner reellement - on garde les deux plutot que
+    # de parier sur lequel l'API lit vraiment aujourd'hui). Attention : le 07/10/2026, "input" avait
+    # ete teste et trouve "silencieusement ignore" sur CET appel precisement - donc son ajout ici
+    # est surtout une securite pour le jour ou l'API bascule vraiment, pas une garantie d'effet
+    # immediat.
     Ecrire-Journal "  Envoi a l'API Texture (Tripo)..."
-    $corps = @{ original_model_task_id = $idImport; texture_prompt = @{ text = $Prompt } } | ConvertTo-Json
+    # $idModeleSource : soit le resultat de l'import habituel, soit celui de la simplification
+    # Retopology ci-dessus pour un maillage volumineux (les deux sont un task_id Tripo valide).
+    $corps = @{ original_model_task_id = $idModeleSource; input = $idModeleSource; texture_prompt = @{ text = $Prompt }; model = "v3.5-20260815" } | ConvertTo-Json
     $reponseTexture = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Texture Tripo"
     $idTextureReponse = if ($reponseTexture.data) { $reponseTexture.data } else { $reponseTexture }
     $idTexture = $idTextureReponse.task_id
@@ -4478,7 +4542,12 @@ function Verifier-CleEtSoldeTripo($cleApi) {
     try {
         $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/user/balance" -Headers @{ Authorization = "Bearer $cleApi" } -Method Get -TimeoutSec 15 } "Verification cle Tripo" 2 3
         $donnees = if ($reponse.data) { $reponse.data } else { $reponse }
-        $solde = if ($donnees.balance -ne $null) { [int]$donnees.balance } else { $null }
+        # 20/10/2026 : [double] au lieu de [int] - confirme dans le changelog officiel Tripo (note
+        # du 08/2026) : "balance" (et credits_consumed/frozen) sont des nombres avec jusqu'a 2
+        # decimales (credits fractionnaires possibles, ex. remises VIP) - un [int] tronquait
+        # silencieusement vers le bas (42.75 affiche "42"). Fonction non appelee pour l'instant (solde
+        # Tripo pas encore verifie avant lancement, voir plus bas), corrige quand meme en passant.
+        $solde = if ($donnees.balance -ne $null) { [double]$donnees.balance } else { $null }
         return @{ Statut = "valide"; Solde = $solde }
     } catch {
         $codeHttp = $null
@@ -4761,7 +4830,7 @@ function Lancer-Traitement($fichiersStl) {
                         $echecsMeshy++
                     }
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo"
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo" ([int]$numTriangles.Value)
                         $reussiTripo = $true
                         $reussitesTripo++
                     } catch {
@@ -4774,7 +4843,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($fournisseur -eq "Meshy") {
                         $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie)
                     } else {
-                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value)
                     }
                     $reussites++
                 }
