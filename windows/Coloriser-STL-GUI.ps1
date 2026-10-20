@@ -547,7 +547,10 @@ $EXTENSIONS_MODELES_3D = @(".stl", ".obj", ".fbx", ".glb", ".gltf")
 # sur le site Meshy puis de le re-deposer ici, on accepte directement une image dans le meme
 # dossier/lot - detectee par son extension, sans case ni onglet separe. Meshy uniquement pour le
 # moment (pas encore verifie cote Tripo).
-$EXTENSIONS_IMAGES = @(".jpg", ".jpeg", ".png")
+# .webp ajoute le 20/10/2026 (Tomyn, suite au changelog Meshy) : documente comme format d'entree
+# accepte par Meshy depuis le 10/10/2026 (Image to 3D, Retexture, Image to Image) - manquait ici,
+# un .webp envoye par le collegue de Tomyn aurait ete rejete avant meme d'atteindre l'API.
+$EXTENSIONS_IMAGES = @(".jpg", ".jpeg", ".png", ".webp")
 $EXTENSIONS_SUPPORTEES = $EXTENSIONS_MODELES_3D + $EXTENSIONS_IMAGES
 # Cout de l'etape Image to 3D en maillage seul (should_texture=false, modele par defaut
 # meshy-7.1/meshy-6) - confirme sur la doc tarifaire officielle Meshy le 08/10/2026. S'ajoute
@@ -2170,6 +2173,30 @@ $astuceTriangles.SetToolTip($numTriangles,
     "- .stl (binaire) ou .obj en entree, et au-dela de $SEUIL_TRIANGLES_REMESH_AUTO triangles : utilise comme cible pour une simplification automatique (API Remesh de Meshy) avant la colorisation, histoire de ne pas envoyer un maillage inutilement lourd. En dessous de ce seuil (ou pour un .stl ASCII, non detecte), le fichier part tel quel, ce reglage ne sert a rien dans ce cas.")
 $yActuel += 30
 
+# 20/10/2026, Tomyn (suite a sa question sur la derniere API Meshy) : "Smart Topology", confirme
+# reel dans le changelog officiel Meshy - model_type:"smart-topology" + ai_model:"meshy-t2.5",
+# disponible sur Image to 3D (celle qu'on utilise). Donne une topologie plus propre/des parties
+# bien separees, pensee pour les assets de jeu. Option, pas par defaut : rien ne dit que ca
+# convient mieux a TOUS les usages de Tomyn (figurines depuis les croquis de son collegue), donc
+# case a cocher plutot qu'un remplacement silencieux du comportement existant.
+$caseSmartTopology = Creer-CaseACocher "Pour Meshy, image en entree : activer Smart Topology (meshy-t2.5, topologie plus propre, parties separees - voir l'infobulle)" 930 20 $THEME.FondApp
+$caseSmartTopology.Location = New-Object System.Drawing.Point(15, $yActuel)
+$caseSmartTopology.Checked = $false
+$form.Controls.Add($caseSmartTopology)
+
+$astuceSmartTopology = New-Object System.Windows.Forms.ToolTip
+$astuceSmartTopology.AutoPopDelay = 20000
+$astuceSmartTopology.InitialDelay = 400
+$texteInfobulleSmartTopology = (
+    "Modele dedie de Meshy (meshy-t2.5, ajoute le 15/10/2026), pense pour les assets de jeu : maillage plus propre, parties du modele naturellement separees, export uniquement en triangles.`n`n" +
+    "Actif uniquement quand le fichier d'entree est une image (Image to 3D) - ignore pour un .stl/.obj deja existant.`n`n" +
+    "Le champ `"Triangles vises`" ci-dessus reste utilise comme cible, mais Smart Topology n'accepte que 100 a 30000 (au lieu de 300000 en mode normal) : une valeur au-dessus de 30000 est automatiquement ramenee a 30000 pour cet appel, sans toucher au chiffre affiche dans le champ."
+)
+$astuceSmartTopology.SetToolTip($caseSmartTopology, $texteInfobulleSmartTopology)
+$astuceSmartTopology.SetToolTip($caseSmartTopology.BoiteInterne, $texteInfobulleSmartTopology)
+$astuceSmartTopology.SetToolTip($caseSmartTopology.LabelInterne, $texteInfobulleSmartTopology)
+$yActuel += 24
+
 # +24 avant l'en-tete (et pas directement a $yActuel) : a ce stade $yActuel ne vaut que +30 par
 # rapport a la ligne "Nombre de couleurs", alors que le champ "Triangles vises" juste au-dessus
 # occupe jusqu'a +52 sur cette meme base (champ a +28, hauteur 24) - sans cette marge
@@ -2417,6 +2444,7 @@ $btnAjouterFileAttente.Add_Click({
         Assombrir = $assombrirTexture.Value
         ComparerFournisseurs = $caseComparerFournisseurs.Checked
         MeshyObjExperimental = $caseMeshyObjExperimental.Checked
+        SmartTopology = $caseSmartTopology.Checked
     }
     [void]$script:fileAttenteLots.Add($lot)
     $promptCourt = if ($lot.Prompt -and $lot.Prompt.Length -gt 40) { $lot.Prompt.Substring(0, 40) + "..." } else { $lot.Prompt }
@@ -2450,6 +2478,7 @@ $btnLancerFileAttente.Add_Click({
             $assombrirTexture.Value = $lot.Assombrir
             $caseComparerFournisseurs.Checked = $lot.ComparerFournisseurs
             $caseMeshyObjExperimental.Checked = $lot.MeshyObjExperimental
+            $caseSmartTopology.Checked = if ($lot.PSObject.Properties.Name -contains "SmartTopology") { $lot.SmartTopology } else { $false }
             [System.Windows.Forms.Application]::DoEvents()
             Lancer-Traitement $lot.Fichiers
             $script:fileAttenteLots.RemoveAt(0)
@@ -3191,7 +3220,7 @@ $btnParcourir.Add_Click({
 
 $btnChoisirFichiers.Add_Click({
     $dialogue = New-Object System.Windows.Forms.OpenFileDialog
-    $dialogue.Filter = "Fichiers 3D et images (*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png)|*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png"
+    $dialogue.Filter = "Fichiers 3D et images (*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png;*.webp)|*.stl;*.obj;*.fbx;*.glb;*.gltf;*.jpg;*.jpeg;*.png;*.webp"
     $dialogue.Multiselect = $true
     $dialogue.Title = "Choisir un ou plusieurs fichiers 3D ou images"
     if ($dialogue.ShowDialog() -eq "OK") {
@@ -3618,13 +3647,19 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     return $creditsTotal
 }
 
-function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000) {
+function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false) {
     # Image -> maillage (ajoute le 08/10/2026) : "Image to 3D" de Meshy, maillage seul
     # (should_texture=false) - la texture est refaite juste apres par la Retexture habituelle avec
     # LE PROMPT choisi par l'utilisateur, pas celle (generique) que ferait Image to 3D elle-meme.
     # Payer la texturation deux fois (une ici, une a la Retexture) n'aurait aucun sens.
     $extension = $FichierImage.Extension.ToLower()
-    $mime = if ($extension -in @(".jpg", ".jpeg")) { "image/jpeg" } else { "image/png" }
+    # 20/10/2026 : ajout de .webp (voir $EXTENSIONS_IMAGES) - mime correct obligatoire, sinon on
+    # enverrait un .webp etiquete "image/png" a l'API.
+    $mime = switch ($extension) {
+        { $_ -in @(".jpg", ".jpeg") } { "image/jpeg" }
+        ".webp" { "image/webp" }
+        default { "image/png" }
+    }
     $octets = [System.IO.File]::ReadAllBytes($FichierImage.FullName)
     $base64 = [Convert]::ToBase64String($octets)
     $dataUri = "data:$mime;base64,$base64"
@@ -3633,8 +3668,24 @@ function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000) 
     # de triangles tu veux" - "target_polycount" existe bien dans l'API, mais Meshy l'ignore si
     # "should_remesh" n'est pas explicitement a true (false par defaut pour Meshy 6/7, donc AUCUN
     # remaillage avant ce correctif - d'ou le maillage brut, parfois clairseme, de la generation).
-    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $TargetPolycount triangle(s) vises)..."
-    $corps = @{ image_url = $dataUri; should_texture = $false; should_remesh = $true; target_polycount = $TargetPolycount } | ConvertTo-Json
+    $corps = @{ image_url = $dataUri; should_texture = $false; should_remesh = $true; target_polycount = $TargetPolycount }
+
+    # 20/10/2026, Tomyn : "Smart Topology" - confirme reel dans le changelog officiel Meshy
+    # (model_type "smart-topology" + ai_model "meshy-t2.5", ajoute le 15/10/2026). Plage de
+    # target_polycount plus etroite (100-30000) que le mode normal (100-300000) : on ecrete la
+    # valeur demandee plutot que de risquer un 400 de l'API, et on previent dans le journal pour
+    # que ce ne soit pas une surprise silencieuse.
+    if ($SmartTopology) {
+        if ($TargetPolycount -gt 30000) {
+            Ecrire-Journal "  Smart Topology : $TargetPolycount triangle(s) demandes, limite a 30000 pour ce mode."
+            $corps.target_polycount = 30000
+        }
+        $corps.model_type = "smart-topology"
+        $corps.ai_model = "meshy-t2.5"
+    }
+
+    Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $($corps.target_polycount) triangle(s) vises$(if ($SmartTopology) { ', Smart Topology' }))..."
+    $corps = $corps | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrl/image-to-3d" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps } "Image to 3D"
     $tache = Attendre-Tache "$BaseUrl/image-to-3d/$($reponse.result)" $Entetes "Image to 3D"
     Ecrire-Journal "  Maillage genere depuis l'image ($($tache.consumed_credits) credits)."
@@ -3657,7 +3708,7 @@ function Lancer-Remesh($FichierStl, $Entetes, [int]$TargetPolycount, [int]$NbTri
     return $tache
 }
 
-function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000) {
+function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $MaxCouleurs, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", $ExperimentalObj = $false, [double]$AssombrirPourcent = 0, [int]$TargetPolycount = 30000, [bool]$SmartTopology = $false) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) ==="
 
@@ -3669,15 +3720,23 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
 
     if (-not $estUneImage) {
         $tailleMo = $FichierStl.Length / 1MB
-        if ($tailleMo -gt 50) {
+        # 20/10/2026, Tomyn : "on a pas la fonctionnalite 400 Mo" - verifie dans le changelog officiel
+        # de l'API Meshy (entree du 14/10/2026) : "model_url" accepte desormais jusqu'a 400 Mo, MAIS
+        # seulement quand c'est une vraie URL http/https. On envoie le fichier en "data:" URI (base64,
+        # voir $dataUri plus bas) - cette forme-la reste plafonnee a 100 Mo ("A data: URI stays at
+        # 100 MB"), pas 400. Passer aux 400 Mo demanderait d'heberger le fichier quelque part avant
+        # l'appel (hors scope pour l'instant, Tomyn confirme ne pas en avoir besoin : "au pire je les
+        # repasserai en remesh"). Limite remontee de 50 a 100 Mo, qui est le vrai plafond actuel pour
+        # notre methode en data URI (l'ancien seuil de 50 Mo etait deja perime).
+        if ($tailleMo -gt 100) {
             # Bloque AVANT l'envoi plutot que d'avertir apres coup : inutile de gaspiller un appel
             # API (et potentiellement des credits) voue a l'echec sur un fichier trop gros.
-            throw "fichier de $([math]::Round($tailleMo,1)) Mo, limite Meshy = 50 Mo - non envoye"
+            throw "fichier de $([math]::Round($tailleMo,1)) Mo, limite Meshy (data URI) = 100 Mo - non envoye"
         }
     }
 
     if ($estUneImage) {
-        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount
+        $tacheImage3D = Lancer-Image3D $FichierStl $Entetes $TargetPolycount $SmartTopology
         $creditsEtapePrealable = [int]$tacheImage3D.consumed_credits
         Ecrire-Journal "  Envoi a l'API Retexture (a partir du maillage genere)..."
         if ([string]::IsNullOrWhiteSpace($Prompt)) {
@@ -3687,7 +3746,12 @@ function Coloriser-UnFichier($FichierStl, $Prompt, $Entetes, $DossierSortie, $Ma
             # que image_url en data URI deja utilise dans Lancer-Image3D ci-dessus) : Meshy reapplique
             # alors les couleurs/le style de la photo d'origine plutot que d'echouer.
             $extensionImg = $FichierStl.Extension.ToLower()
-            $mimeImg = if ($extensionImg -in @(".jpg", ".jpeg")) { "image/jpeg" } else { "image/png" }
+            # 20/10/2026 : meme correction .webp que dans Lancer-Image3D (voir plus haut).
+            $mimeImg = switch ($extensionImg) {
+                { $_ -in @(".jpg", ".jpeg") } { "image/jpeg" }
+                ".webp" { "image/webp" }
+                default { "image/png" }
+            }
             $dataUriStyle = "data:$mimeImg;base64," + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($FichierStl.FullName))
             $corps = @{ input_task_id = $tacheImage3D.id; image_style_url = $dataUriStyle; enable_original_uv = $false } | ConvertTo-Json
         } else {
@@ -4350,7 +4414,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -4370,7 +4434,7 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked
                     } else {
                         $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo
                     }
