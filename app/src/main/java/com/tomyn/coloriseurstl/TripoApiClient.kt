@@ -30,6 +30,9 @@ object TripoApiClient {
     private const val BASE_URL = "https://openapi.tripo3d.ai/v3"
     private const val INTERVALLE_POLL_MS = 1000L
     private const val TIMEOUT_TACHE_MS = 20 * 60 * 1000L
+    // 20/10/2026, porte depuis la version Windows ($SEUIL_TRIANGLES_REMESH_AUTO) - meme valeur,
+    // utilisee ici pour decider Retopology (decimer) vs import_model normal dans coloriser().
+    private const val SEUIL_TRIANGLES_REMESH_AUTO = 500000
 
     class ErreurApi(message: String) : Exception(message)
 
@@ -189,7 +192,9 @@ object TripoApiClient {
         extension: String,
         prompt: String,
         cleApi: String,
-        ecouteur: EcouteurAvancement? = null
+        ecouteur: EcouteurAvancement? = null,
+        nbTrianglesSource: Int? = null,
+        targetPolycount: Int = 30000
     ): ResultatColorisation {
         // --- Etape 1 : reserver une URL d'upload ---
         val corpsPresign = JSONObject().put("format", extension.lowercase())
@@ -204,31 +209,73 @@ object TripoApiClient {
         // --- Etape 2 : uploader le fichier brut sur cette URL ---
         uploaderVersUrlPresignee(urlPresignee, octets)
 
-        // --- Etape 3 : import du modele uploade ---
-        // Etape obligatoire decouverte a posteriori (absente des premieres versions) : la doc
-        // officielle (docs.tripo3d.ai/model-generation/import-model.html) precise qu'un fichier
-        // uploade doit d'abord passer par une tache "import_model" avant de pouvoir etre texture.
-        // Confirme aussi par l'historique du tableau de bord Tripo : chaque texturation en echec
-        // etait precedee d'une tache import_model en succes jamais reutilisee par le code avant
-        // ce correctif.
-        val corpsImport = JSONObject()
-            .put("type", "import_model")
-            .put("file", JSONObject().put("file_token", jetonFichier))
-        val reponseImport = requeteJson("POST", "/models/import", cleApi, corpsImport)
-        val idImport = reponseImport.getString("task_id")
+        // --- Etape 3 : maillage volumineux (Retopology/decimate) ou import normal ---
+        // 20/10/2026, porte depuis la version Windows (parite avec le Remesh cote Meshy, voir
+        // SEUIL_TRIANGLES_REMESH_AUTO dans ColorisationService) : au-dela du seuil, simplification
+        // via "mesh/decimate" AVANT texturation, qui saute import_model (son task_id sert
+        // directement a la texturation, comme pour import_model normalement).
+        val idModeleSource: String
+        val creditsImport: Double
+        if (nbTrianglesSource != null && nbTrianglesSource > SEUIL_TRIANGLES_REMESH_AUTO) {
+            val tacheDecimee = decimer(jetonFichier, cleApi, targetPolycount, nbTrianglesSource, ecouteur)
+            idModeleSource = tacheDecimee.idTache
+            creditsImport = tacheDecimee.creditsConsommes
+        } else {
+            // Etape obligatoire decouverte a posteriori (absente des premieres versions) : la doc
+            // officielle (docs.tripo3d.ai/model-generation/import-model.html) precise qu'un
+            // fichier uploade doit d'abord passer par une tache "import_model" avant de pouvoir
+            // etre texture. Confirme aussi par l'historique du tableau de bord Tripo : chaque
+            // texturation en echec etait precedee d'une tache import_model en succes jamais
+            // reutilisee par le code avant ce correctif.
+            val corpsImport = JSONObject()
+                .put("type", "import_model")
+                .put("file", JSONObject().put("file_token", jetonFichier))
+            val reponseImport = requeteJson("POST", "/models/import", cleApi, corpsImport)
+            val idImport = reponseImport.getString("task_id")
 
-        val tacheImport = attendreTache(idImport, cleApi, "Import", ecouteur)
-        // Corrige le 07/10/2026 : contrairement a ce qui etait suppose ("l'import semble
-        // gratuit"), Tomyn a confirme que cette etape coute 5 credits sur son tableau de bord -
-        // jamais ajoutes au total renvoye jusqu'ici, qui sous-comptait donc le vrai cout.
-        val creditsImport = tacheImport.optDouble("credits_consumed", 0.0)
+            val tacheImport = attendreTache(idImport, cleApi, "Import", ecouteur)
+            // Corrige le 07/10/2026 : contrairement a ce qui etait suppose ("l'import semble
+            // gratuit"), Tomyn a confirme que cette etape coute 5 credits sur son tableau de bord
+            // - jamais ajoutes au total renvoye jusqu'ici, qui sous-comptait donc le vrai cout.
+            idModeleSource = idImport
+            creditsImport = tacheImport.optDouble("credits_consumed", 0.0)
+        }
 
-        val (urlSortie, creditsTextureConvert) = texturerEtConvertir(idImport, prompt, cleApi, ecouteur)
+        val (urlSortie, creditsTextureConvert) = texturerEtConvertir(idModeleSource, prompt, cleApi, ecouteur)
 
-        // Credits reellement consommes, sur les TROIS etapes facturees : import (confirme a 5
-        // credits, corrige le 07/10/2026), texturation (confirmee a 10 credits) et conversion.
+        // Credits reellement consommes, sur les TROIS etapes facturees : import ou decimate
+        // (confirme a 5 credits pour l'import, corrige le 07/10/2026), texturation (confirmee a
+        // 10 credits) et conversion.
         val creditsTotal = (creditsImport + creditsTextureConvert).toInt()
         return ResultatColorisation(urlSortie, creditsTotal)
+    }
+
+    data class ResultatDecimate(val idTache: String, val creditsConsommes: Double)
+
+    /**
+     * Simplification Tripo avant texturation, parite avec Remesh cote Meshy (porte depuis la
+     * version Windows, 20/10/2026) - API Retopology de Tripo (POST /mesh/decimate), confirmee via
+     * le changelog officiel d'octobre 2026 et sa doc dediee
+     * (developers.tripo3d.ai/docs/mesh-decimate) : "input" accepte directement le file_token issu
+     * de l'upload (pas besoin de passer par import_model d'abord, son task_id sert ensuite tel
+     * quel comme reference de modele pour la texturation - meme principe que le Remesh Meshy).
+     * "face_limit" va de 500 a 20000 triangles en modele par defaut (v2.0, 30 credits) - la cible
+     * demandee est donc bornee a cette plage plutot que d'envoyer une valeur hors limites que
+     * l'API rejetterait.
+     */
+    fun decimer(
+        jetonFichier: String,
+        cleApi: String,
+        targetFaceLimit: Int,
+        nbTrianglesDepart: Int,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatDecimate {
+        val cible = targetFaceLimit.coerceIn(500, 20000)
+        val corps = JSONObject().put("input", jetonFichier).put("face_limit", cible)
+        val reponse = requeteJson("POST", "/mesh/decimate", cleApi, corps)
+        val idTache = reponse.getString("task_id")
+        val tache = attendreTache(idTache, cleApi, "Retopology", ecouteur)
+        return ResultatDecimate(idTache, tache.optDouble("credits_consumed", 0.0))
     }
 
     /**

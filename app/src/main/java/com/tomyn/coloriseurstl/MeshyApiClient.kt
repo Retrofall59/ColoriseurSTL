@@ -266,6 +266,36 @@ object MeshyApiClient {
         return ResultatImage3D(idTache, tache.optInt("consumed_credits", 0))
     }
 
+    data class ResultatRemesh(val idTache: String, val creditsConsommes: Int)
+
+    /**
+     * Simplifie un .stl/.obj trop lourd via l'API Remesh de Meshy, AVANT la Retexture (porte
+     * depuis la version Windows, 15/10/2026 - voir CompteurTriangles et le seuil
+     * SEUIL_TRIANGLES_REMESH_AUTO dans ColorisationService) : evite d'envoyer un maillage
+     * inutilement lourd a la Retexture. Le task_id retourne s'utilise directement comme
+     * input_task_id de la Retexture, meme principe que genererMaillageDepuisImage ci-dessus.
+     * "glb" ajoute a cote de "stl" dans target_formats - necessaire si la reparation des parois
+     * (reparerParoisSiNecessaire) est activee juste apres, qui exige que la tache source possede
+     * un asset .glb.
+     */
+    fun remesher(
+        octetsStl: ByteArray,
+        cleApi: String,
+        targetPolycount: Int = 30000,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatRemesh {
+        val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl, Base64.NO_WRAP)
+        val formats = org.json.JSONArray().put("stl").put("glb")
+        val corps = JSONObject()
+            .put("model_url", dataUri)
+            .put("target_polycount", targetPolycount)
+            .put("target_formats", formats)
+        val reponse = requete("POST", "/remesh", cleApi, corps)
+        val idTache = reponse.getString("result")
+        val tache = attendreTache("/remesh/$idTache", cleApi, "Remesh", ecouteur)
+        return ResultatRemesh(idTache, tache.optInt("consumed_credits", 0))
+    }
+
     /**
      * Lance la texturation (etape 1) puis la reduction en couleurs imprimables (etape 2), de
      * maniere synchrone (bloquante) - a appeler depuis un thread d'arriere-plan, jamais depuis

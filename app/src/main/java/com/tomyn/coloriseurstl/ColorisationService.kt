@@ -272,6 +272,9 @@ class ColorisationService : Service() {
     // 20/10/2026 : meme correctif que dans MainActivity (voir son commentaire) - ".webp" manquait,
     // un fichier .webp etait donc traite ici comme un modele 3D au lieu d'une image.
     private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png", "webp")
+    // 20/10/2026, porte depuis la version Windows ($SEUIL_TRIANGLES_REMESH_AUTO) - meme valeur,
+    // voir CompteurTriangles.
+    private val SEUIL_TRIANGLES_REMESH_AUTO = 500000
 
     private fun coloriserAvecUnFournisseur(
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
@@ -305,6 +308,11 @@ class ColorisationService : Service() {
                     }
                 )
             } else {
+                // 20/10/2026, porte depuis la version Windows : maillage volumineux -> Retopology
+                // (mesh/decimate) a la place de l'import_model habituel, parite avec le Remesh
+                // cote Meshy (voir CompteurTriangles). Decision prise ici (comptage local), la
+                // bascule import/decimate se fait a l'interieur de TripoApiClient.coloriser.
+                val nbTriangles = CompteurTriangles.obtenirNombreTriangles(nom, octets)
                 TripoApiClient.coloriser(
                     octets, extension, prompt, cleApi,
                     object : TripoApiClient.EcouteurAvancement {
@@ -313,7 +321,8 @@ class ColorisationService : Service() {
                             EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
                             mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                         }
-                    }
+                    },
+                    nbTrianglesSource = nbTriangles
                 )
             }
             EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
@@ -389,6 +398,59 @@ class ColorisationService : Service() {
                 } else {
                     EtatTraitement.ecrireJournal("  Parois deja assez epaisses - reparation non necessaire, 0 credit supplementaire.")
                 }
+            }
+        } else {
+            // 20/10/2026, porte depuis la version Windows : maillage volumineux -> Remesh AVANT
+            // Retexture (parite avec Tripo, voir CompteurTriangles et TripoApiClient.coloriser).
+            // Meme reutilisation de idTacheSource/creditsImage3D que la branche image ci-dessus -
+            // le reste du pipeline (Retexture, Printability) n'a besoin d'aucun autre changement.
+            val nbTriangles = CompteurTriangles.obtenirNombreTriangles(nom, octets)
+            if (nbTriangles != null && nbTriangles > SEUIL_TRIANGLES_REMESH_AUTO) {
+                EtatTraitement.ecrireJournal("  Maillage volumineux ($nbTriangles triangles) - simplification (Remesh) avant Retexture...")
+                val resultatRemesh = MeshyApiClient.remesher(
+                    octets, cleApi, 30000,
+                    object : MeshyApiClient.EcouteurAvancement {
+                        override fun surProgres(etape: String, statut: String, progres: Int) {
+                            if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                            EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                            mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                        }
+                    }
+                )
+                idTacheSource = resultatRemesh.idTache
+                creditsImage3D = resultatRemesh.creditsConsommes
+                EtatTraitement.ecrireJournal("  Maillage simplifie (${creditsImage3D} credits) - Retexture va repartir de ce resultat.")
+
+                // Meme principe que pour la branche image ci-dessus - reparation sur le maillage
+                // simplifie (Remesh), avant Retexture.
+                if (reparerParois) {
+                    val tacheReparation = MeshyApiClient.reparerParoisSiNecessaire(
+                        idTacheSource, cleApi, "fdm", tailleImpressionMm,
+                        object : MeshyApiClient.EcouteurAvancement {
+                            override fun surProgres(etape: String, statut: String, progres: Int) {
+                                if (EtatTraitement.annulationDemandee) throw MeshyApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                                EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
+                                mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                            }
+                        }
+                    )
+                    if (tacheReparation != null) {
+                        creditsImage3D += tacheReparation.creditsConsommes
+                        idTacheSource = tacheReparation.idTache
+                        EtatTraitement.ecrireJournal("  Parois reparees (${tacheReparation.creditsConsommes} credits).")
+                    } else {
+                        EtatTraitement.ecrireJournal("  Parois deja assez epaisses - reparation non necessaire, 0 credit supplementaire.")
+                    }
+                }
+            } else if (reparerParois) {
+                // 20/10/2026 : reparation des parois IMPOSSIBLE ici - ce fichier est envoye
+                // directement en "model_url" (data URI), sans tache Meshy prealable a chainer, et
+                // l'API Repair Printability n'accepte PAS de data URI pour un .stl (http/https
+                // uniquement pour ce format - seuls .glb/.gltf acceptent une data URI). Forcer un
+                // Remesh ici juste pour obtenir une tache a chainer gaspillerait des credits sur
+                // un fichier qui n'en a pas besoin par ailleurs - meme choix que la version
+                // Windows, on previent simplement dans le journal plutot que d'ignorer en silence.
+                EtatTraitement.ecrireJournal("  Reparation des parois ignoree pour ce fichier (trop petit pour passer par Remesh, l'API ne l'accepte qu'a partir d'une tache Meshy existante).")
             }
         }
 
