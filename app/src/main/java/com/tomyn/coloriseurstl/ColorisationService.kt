@@ -269,7 +269,9 @@ class ColorisationService : Service() {
      * le mode simple et le mode comparaison (voir traiterLot) - jette une exception en cas d'echec,
      * y compris "ANNULATION_DEMANDEE", a l'appelant de decider quoi en faire dans chaque mode.
      */
-    private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png")
+    // 20/10/2026 : meme correctif que dans MainActivity (voir son commentaire) - ".webp" manquait,
+    // un fichier .webp etait donc traite ici comme un modele 3D au lieu d'une image.
+    private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png", "webp")
 
     private fun coloriserAvecUnFournisseur(
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,

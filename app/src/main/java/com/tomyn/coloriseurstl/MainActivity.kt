@@ -62,8 +62,22 @@ class MainActivity : AppCompatActivity() {
         // Image -> STL (08/10/2026, idee de Tomyn, deja confirmee fonctionnelle sur la version
         // Windows) : une image dans le dossier source est detectee par son extension, sans case
         // ni onglet separe - Meshy genere le maillage avant de le coloriser normalement.
-        private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png")
-        private val EXTENSIONS_SUPPORTEES = EXTENSIONS_MODELES_3D + EXTENSIONS_IMAGES
+        // 20/10/2026 : ".webp" manquait ici (present cote Windows depuis le 10/10/2026, format
+        // d'entree accepte par Meshy confirme dans son changelog officiel) - un .webp choisi via
+        // le selecteur de DOSSIER (pas le selecteur de fichiers, qui lui accepte "*/*") etait donc
+        // silencieusement exclu par EXTENSIONS_SUPPORTEES ci-dessous, et meme choisi via le
+        // selecteur de fichiers il aurait ete mal aiguille (estUneImage=false cote
+        // ColorisationService, traite comme un modele 3D au lieu d'une image).
+        private val EXTENSIONS_IMAGES = listOf("jpg", "jpeg", "png", "webp")
+        // 20/10/2026 : .3mf non colorise - converti localement en .stl avant envoi a Meshy (voir
+        // Convertisseur3MF et ColorisationService.traiterLot). Liste separee de
+        // EXTENSIONS_MODELES_3D (Meshy ne l'accepte PAS directement en entree, voir plus haut),
+        // meme principe que EXTENSIONS_3MF_SOURCE cote Windows. Manquait ici jusqu'a present : un
+        // .3mf choisi via le selecteur de DOSSIER etait silencieusement exclu par
+        // EXTENSIONS_SUPPORTEES, rendant le convertisseur inatteignable pour ce mode de selection
+        // (le selecteur de FICHIERS, lui, accepte "*/*" et n'etait pas touche par ce bug).
+        private val EXTENSIONS_3MF_SOURCE = listOf("3mf")
+        private val EXTENSIONS_SUPPORTEES = EXTENSIONS_MODELES_3D + EXTENSIONS_IMAGES + EXTENSIONS_3MF_SOURCE
         // Cout de l'etape Image to 3D en maillage seul (should_texture=false, modele par defaut)
         // - confirme sur la doc tarifaire officielle Meshy, meme valeur que la version Windows.
         private const val CREDITS_ESTIMES_IMAGE_VERS_3D = 20
