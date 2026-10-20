@@ -173,8 +173,23 @@ class ColorisationService : Service() {
 
             try {
                 EtatTraitement.ecrireJournal("\n=== $nom ===")
-                val octets = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                var octets = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw Exception("impossible de lire le fichier")
+                var nomEffectif = nom
+
+                // 20/10/2026, porte depuis la version Windows (Tomyn : "j'ai plusieurs 3MF non
+                // colorises que je voudrais coloriser") : l'API Meshy n'accepte pas le .3mf en
+                // entree (seulement .glb/.gltf/.obj/.fbx/.stl) - extraction du maillage et
+                // reexport en .stl binaire AVANT l'aiguillage Meshy/Tripo, pour que les deux
+                // fournisseurs en beneficient automatiquement, y compris en mode comparaison
+                // (meme principe que la version Windows). Meme nom de base, extension .stl.
+                if (nom.substringAfterLast(".", "").lowercase() == "3mf") {
+                    EtatTraitement.ecrireJournal("  $nom : .3mf non colorise, extraction du maillage et conversion en .stl (Meshy ne l'accepte pas directement en entree)...")
+                    val resultatConversion = Convertisseur3MF.convertirVersStl(octets, nom)
+                    EtatTraitement.ecrireJournal("  -> ${resultatConversion.nbTriangles} triangle(s) extrait(s) depuis ${resultatConversion.nbObjets} objet(s) du .3mf.")
+                    octets = resultatConversion.octetsStl
+                    nomEffectif = nom.substringBeforeLast(".") + ".stl"
+                }
 
                 // 20/10/2026, porte depuis la version Windows : les deux plafonds reels sont
                 // differents selon le fournisseur (confirmes via la doc officielle de chacun) -
@@ -193,7 +208,7 @@ class ColorisationService : Service() {
                     // resultat de l'autre - meme logique que la version Windows.
                     var auMoinsUnReussi = false
                     try {
-                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent)
+                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent)
                         reussitesMeshy++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -201,7 +216,7 @@ class ColorisationService : Service() {
                         EtatTraitement.ecrireJournal("  ECHEC Meshy sur $nom : ${e.message}")
                     }
                     try {
-                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false, 0.0)
+                        coloriserAvecUnFournisseur("Tripo", cleTripo, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_tripo", i, uris.size, "Tripo", false, 0.0)
                         reussitesTripo++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -214,7 +229,7 @@ class ColorisationService : Service() {
                         ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
                     }
                 } else {
-                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nom, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent)
+                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent)
                     reussites++
                 }
             } catch (e: Exception) {
