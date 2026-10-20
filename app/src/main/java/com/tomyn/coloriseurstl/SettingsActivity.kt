@@ -63,11 +63,46 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "Clés API enregistrées.", Toast.LENGTH_SHORT).show()
         }
 
-        findViewById<TextView>(R.id.texteVersion).text = try {
-            val infos = packageManager.getPackageInfo(packageName, 0)
-            "ColoriseurSTL — version ${infos.versionName}"
-        } catch (e: PackageManager.NameNotFoundException) {
-            "ColoriseurSTL"
+        val versionInstallee = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (e: PackageManager.NameNotFoundException) { "" }
+        findViewById<TextView>(R.id.texteVersion).text = if (versionInstallee.isNotEmpty()) {
+            "ColoriseurSTL — version $versionInstallee"
+        } else "ColoriseurSTL"
+
+        // 21/10/2026, porte depuis la version Windows (Vérifier-MiseAJourDisponible) - adapte au
+        // modele Android (compare a la derniere Release GitHub, voir VerificateurMiseAJour).
+        findViewById<Button>(R.id.btnVerifierMiseAJour).setOnClickListener {
+            if (versionInstallee.isEmpty()) {
+                Toast.makeText(this, "Numéro de version introuvable - vérification impossible.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            Toast.makeText(this, "Vérification en cours...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val resultat = VerificateurMiseAJour.verifier(versionInstallee)
+                runOnUiThread {
+                    when (resultat) {
+                        is VerificateurMiseAJour.Resultat.NouvelleVersion -> {
+                            androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setTitle("Mise à jour disponible")
+                                .setMessage("Une version plus récente de ColoriseurSTL est disponible sur GitHub.\n\nCette copie : $versionInstallee\nDernière publiée : ${resultat.versionDistante}")
+                                .setPositiveButton("Ouvrir la page de la release") { _, _ ->
+                                    if (resultat.urlRelease.isNotEmpty()) {
+                                        try {
+                                            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(resultat.urlRelease)))
+                                        } catch (e: Exception) { }
+                                    }
+                                }
+                                .setNegativeButton("Plus tard", null)
+                                .show()
+                        }
+                        is VerificateurMiseAJour.Resultat.AJour ->
+                            Toast.makeText(this, "Cette copie est à jour (version $versionInstallee).", Toast.LENGTH_LONG).show()
+                        is VerificateurMiseAJour.Resultat.Erreur ->
+                            Toast.makeText(this, resultat.message, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }.start()
         }
     }
 }

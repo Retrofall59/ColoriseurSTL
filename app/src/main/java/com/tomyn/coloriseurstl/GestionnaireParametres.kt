@@ -167,6 +167,9 @@ object GestionnaireParametres {
                 put("nom", resultat.nom)
                 put("fournisseur", resultat.fournisseur)
                 put("apercu", nomApercu)
+                // 21/10/2026 : optString a la lecture (champ absent sur une ligne ecrite par une
+                // version anterieure a ce correctif) - jamais bloquant, voir chargerResultatsPersistes.
+                put("descriptionMakerWorld", resultat.descriptionMakerWorld ?: "")
             }
             fichierResultatsPersistes(context).appendText(json.toString() + "\n")
         } catch (e: Exception) {
@@ -197,7 +200,10 @@ object GestionnaireParametres {
                 val apercu = if (nomApercu.isNotEmpty()) {
                     try { BitmapFactory.decodeFile(File(dossierApercusPersistes(context), nomApercu).absolutePath) } catch (e: Exception) { null }
                 } else null
-                EtatTraitement.ResultatColorise(Uri.parse(json.getString("uri")), json.getString("nom"), apercu, json.optString("fournisseur", ""))
+                EtatTraitement.ResultatColorise(
+                    Uri.parse(json.getString("uri")), json.getString("nom"), apercu, json.optString("fournisseur", ""),
+                    json.optString("descriptionMakerWorld", "").ifEmpty { null }
+                )
             }
         } catch (e: Exception) { emptyList() }
     }
@@ -212,6 +218,38 @@ object GestionnaireParametres {
                 EtatTraitement.FichierEchec(Uri.parse(json.getString("uri")), json.getString("nom"), json.optString("raison", "raison inconnue"))
             }
         } catch (e: Exception) { emptyList() }
+    }
+
+    // --- Prompts favoris (21/10/2026, porte depuis la version Windows - "Ok pour tout") ---
+    // Meme format que prompts-favoris.json cote Windows (objet JSON plat Nom -> Texte), dans
+    // l'espace prive de l'appli (pas consultable directement par Tomyn, mais sans equivalent de
+    // dossier "a cote du script" sur Android - meme compromis que pour l'historique de LOT, voir
+    // ajouterHistoriqueLot ci-dessus ; contrairement a l'historique PAR FICHIER, ce n'est pas un
+    // contenu que Tomyn a besoin de consulter hors de l'appli).
+    private fun fichierPromptsFavoris(context: Context) = File(context.filesDir, "prompts_favoris.json")
+
+    /** Ordre d'insertion conserve (LinkedHashMap), comme cote Windows ([ordered]@{}). */
+    fun lirePromptsFavoris(context: Context): LinkedHashMap<String, String> {
+        val resultat = LinkedHashMap<String, String>()
+        val fichier = fichierPromptsFavoris(context)
+        if (!fichier.exists()) return resultat
+        try {
+            val json = JSONObject(fichier.readText())
+            val cles = json.keys()
+            while (cles.hasNext()) {
+                val cle = cles.next()
+                resultat[cle] = json.getString(cle)
+            }
+        } catch (e: Exception) { }
+        return resultat
+    }
+
+    fun ecrirePromptsFavoris(context: Context, favoris: LinkedHashMap<String, String>) {
+        try {
+            val json = JSONObject()
+            for ((nom, texte) in favoris) json.put(nom, texte)
+            fichierPromptsFavoris(context).writeText(json.toString())
+        } catch (e: Exception) { }
     }
 
     fun viderResultatsLotPersistes(context: Context) {

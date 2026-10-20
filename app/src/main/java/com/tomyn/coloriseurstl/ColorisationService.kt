@@ -339,9 +339,12 @@ class ColorisationService : Service() {
                 ?: throw Exception("le ZIP recu de Tripo ne contient aucun fichier .obj")
             EtatTraitement.ecrireJournal("  -> Enregistre : $nomDossier/${fichierObj.name} (ouvrir ce fichier dans Bambu Studio)")
 
+            val descriptionMw = GenerateurDescriptionMakerWorld.generer(nomBase, prompt)
+            ecrireDescriptionMakerWorld(sousDossier, "description_makerworld.txt", descriptionMw.texte)
+
             // Pas d'equivalent connu a l'apercu fourni par Meshy (thumbnail_url) cote Tripo -
             // reste a null, l'appelant affiche alors le placeholder habituel.
-            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur))
+            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", null, badgeFournisseur, descriptionMw.texte))
             enregistrerHistoriqueFichier(racineSortie, nom, "Tripo", resultat.creditsConsommes, "$nomDossier/${fichierObj.name}")
             EtatTraitement.creditsReelsLot += resultat.creditsConsommes
             return resultat.creditsConsommes
@@ -518,7 +521,10 @@ class ColorisationService : Service() {
                 } catch (e: Exception) { null }
             } else null
 
-            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur))
+            val descriptionMw = GenerateurDescriptionMakerWorld.generer(nomBase, prompt)
+            ecrireDescriptionMakerWorld(sousDossier, "description_makerworld.txt", descriptionMw.texte)
+
+            ajouterResultat(EtatTraitement.ResultatColorise(fichierObj.uri, "$nomDossier/${fichierObj.name}", apercu, badgeFournisseur, descriptionMw.texte))
             val totalCredits = creditsImage3D + resultat.creditsConsommes
             enregistrerHistoriqueFichier(racineSortie, nom, "Meshy (.obj)", totalCredits, "$nomDossier/${fichierObj.name}")
             EtatTraitement.creditsReelsLot += totalCredits
@@ -557,7 +563,14 @@ class ColorisationService : Service() {
             } catch (e: Exception) { null }
         } else null
 
-        ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur))
+        // Fichier unique ici (pas de sous-dossier) - le .txt est depose juste a cote avec le meme
+        // nom de base, meme principe que le chemin Meshy .obj/Tripo ci-dessus mais SANS
+        // sous-dossier pour s'isoler : suffixe explicite dans son nom pour eviter toute collision
+        // avec d'autres resultats du meme lot (parite exacte avec la version Windows).
+        val descriptionMw = GenerateurDescriptionMakerWorld.generer(nomBase, prompt)
+        ecrireDescriptionMakerWorld(racineSortie, nomBase + suffixe + "_description_makerworld.txt", descriptionMw.texte)
+
+        ajouterResultat(EtatTraitement.ResultatColorise(fichierSortie.uri, nomSortie, apercu, badgeFournisseur, descriptionMw.texte))
         val totalCredits = creditsImage3D + resultat.creditsConsommes
         enregistrerHistoriqueFichier(racineSortie, nom, "Meshy", totalCredits, nomSortie)
         EtatTraitement.creditsReelsLot += totalCredits
@@ -617,6 +630,28 @@ class ColorisationService : Service() {
      * special - le dossier de sortie, lui, est deja l'endroit ou il va chercher ses fichiers
      * colorises.
      */
+    /**
+     * Ecrit le fichier texte "titre + description prets a coller" dans le formulaire de depot
+     * MakerWorld (21/10/2026, porte depuis la version Windows - Generer-DescriptionMakerWorld) :
+     * jamais bloquant (meme logique que enregistrerHistoriqueFichier ci-dessous), un echec
+     * d'ecriture de ce petit plus ne doit pas faire echouer tout le traitement.
+     *
+     * @param dossierParent dossier SAF dans lequel ecrire (sous-dossier du resultat s'il existe,
+     *   sinon racineSortie directement).
+     * @param nomFichierTxt nom du fichier a creer - "description_makerworld.txt" dans un
+     *   sous-dossier (un seul resultat dedans, pas de collision possible), ou
+     *   "${nomBase}${suffixe}_description_makerworld.txt" directement dans racineSortie (fichier
+     *   unique a cote d'autres resultats, meme principe que cote Windows).
+     */
+    private fun ecrireDescriptionMakerWorld(dossierParent: DocumentFile, nomFichierTxt: String, texte: String) {
+        try {
+            val fichier = dossierParent.createFile("text/plain", nomFichierTxt) ?: return
+            contentResolver.openOutputStream(fichier.uri)?.use { it.write(texte.toByteArray(Charsets.UTF_8)) }
+        } catch (e: Exception) {
+            // Jamais bloquant - voir le commentaire de la fonction.
+        }
+    }
+
     private fun enregistrerHistoriqueFichier(racineSortie: DocumentFile, nomFichier: String, fournisseurLabel: String, credits: Int, cheminSortie: String) {
         try {
             val nomCsv = "historique_fichiers.csv"

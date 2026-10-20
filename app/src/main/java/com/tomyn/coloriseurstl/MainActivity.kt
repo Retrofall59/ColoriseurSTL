@@ -25,6 +25,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
@@ -88,6 +89,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var menuCategoriePrompt: Spinner
     private lateinit var menuPrompt: Spinner
     private lateinit var editPrompt: EditText
+    private lateinit var btnSauverPromptFavori: Button
+    private lateinit var btnSupprimerPromptFavori: Button
+
+    // 21/10/2026, porte depuis la version Windows ("Mes favoris") : charge une fois dans
+    // onCreate (configurerMenuPrompt), tenu a jour en memoire et re-persiste a chaque
+    // ajout/suppression - evite de relire le fichier a chaque interaction avec le menu.
+    private var promptsFavoris: LinkedHashMap<String, String> = linkedMapOf()
+    private val NOM_CATEGORIE_FAVORIS = "Mes favoris"
     private lateinit var selecteurCouleurs: NumberPicker
     private lateinit var btnLancer: Button
     private lateinit var btnAnnuler: Button
@@ -170,6 +179,8 @@ class MainActivity : AppCompatActivity() {
         menuCategoriePrompt = findViewById(R.id.menuCategoriePrompt)
         menuPrompt = findViewById(R.id.menuPrompt)
         editPrompt = findViewById(R.id.editPrompt)
+        btnSauverPromptFavori = findViewById(R.id.btnSauverPromptFavori)
+        btnSupprimerPromptFavori = findViewById(R.id.btnSupprimerPromptFavori)
         selecteurCouleurs = findViewById(R.id.selecteurCouleurs)
         menuFournisseur = findViewById(R.id.menuFournisseur)
         caseComparerFournisseurs = findViewById(R.id.caseComparerFournisseurs)
@@ -200,6 +211,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<ImageButton>(R.id.btnHistorique).setOnClickListener { afficherHistorique() }
+        findViewById<TextView>(R.id.btnGraphiqueCredits).setOnClickListener { afficherGraphiqueCredits() }
         findViewById<Button>(R.id.btnChoisirDossier).setOnClickListener { selectionDossierSource.launch(null) }
         findViewById<Button>(R.id.btnChoisirFichiers).setOnClickListener { selectionFichiers.launch(arrayOf("*/*")) }
         findViewById<Button>(R.id.btnChoisirDossierSortie).setOnClickListener { selectionDossierSortie.launch(null) }
@@ -350,22 +362,44 @@ class MainActivity : AppCompatActivity() {
 
     /** Categorie actuellement selectionnee dans menuCategoriePrompt (libelle, pas position). */
     private fun categoriePromptActuelle(): String =
-        menuCategoriePrompt.selectedItem?.toString() ?: PromptsPredefinis.nomsCategories.first()
+        menuCategoriePrompt.selectedItem?.toString() ?: nomsCategoriesAffichees().first()
+
+    // 21/10/2026, porte depuis la version Windows ("Mes favoris") : "Mes favoris" est une
+    // categorie DYNAMIQUE (son contenu vient de promptsFavoris, pas de PromptsPredefinis qui
+    // reste statique/testable) - ces trois wrappers sont le seul point qui la distingue des
+    // categories normales, tout le reste du menu Categorie/Style ne connait que ces fonctions.
+    private fun nomsCategoriesAffichees(): List<String> = listOf(NOM_CATEGORIE_FAVORIS) + PromptsPredefinis.nomsCategories
+
+    private fun libellesPourCatAffichee(categorie: String): List<String> =
+        if (categorie == NOM_CATEGORIE_FAVORIS) promptsFavoris.keys.toList() + PromptsPredefinis.LIBELLE_AUTRE
+        else PromptsPredefinis.libellesPour(categorie)
+
+    private fun textePourCatAffichee(categorie: String, libelle: String): String? =
+        if (categorie == NOM_CATEGORIE_FAVORIS) {
+            if (libelle == PromptsPredefinis.LIBELLE_AUTRE) null else promptsFavoris[libelle]
+        } else PromptsPredefinis.textePour(categorie, libelle)
+
+    /** Valeurs preset de la categorie (pour detecter si editPrompt contient encore un preset). */
+    private fun valeursPresetsPourCatAffichee(categorie: String): Collection<String> =
+        if (categorie == NOM_CATEGORIE_FAVORIS) promptsFavoris.values
+        else PromptsPredefinis.categories[categorie]?.values?.filterNotNull() ?: emptyList()
 
     private fun configurerMenuPrompt() {
+        promptsFavoris = GestionnaireParametres.lirePromptsFavoris(this)
+
         // --- Menu "Categorie" : filtre la liste de prompts proposee par menuPrompt. ---
-        val adaptateurCategories = ArrayAdapter(this, android.R.layout.simple_spinner_item, PromptsPredefinis.nomsCategories)
+        val adaptateurCategories = ArrayAdapter(this, android.R.layout.simple_spinner_item, nomsCategoriesAffichees())
         adaptateurCategories.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         menuCategoriePrompt.adapter = adaptateurCategories
 
         // Rouvre l'appli sur la derniere categorie choisie, si elle existe encore.
         val categorieInitiale = GestionnaireParametres.lireDerniereCategoriePrompt(this@MainActivity)
-        val positionInitiale = categorieInitiale?.let { PromptsPredefinis.nomsCategories.indexOf(it) } ?: -1
+        val positionInitiale = categorieInitiale?.let { nomsCategoriesAffichees().indexOf(it) } ?: -1
         if (positionInitiale >= 0) menuCategoriePrompt.setSelection(positionInitiale)
 
         menuCategoriePrompt.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val categorie = PromptsPredefinis.nomsCategories[position]
+                val categorie = nomsCategoriesAffichees()[position]
                 GestionnaireParametres.ecrireDerniereCategoriePrompt(this@MainActivity, categorie)
                 remplirMenuPrompt(categorie)
             }
@@ -376,19 +410,20 @@ class MainActivity : AppCompatActivity() {
         menuPrompt.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val categorie = categoriePromptActuelle()
-                val libelle = PromptsPredefinis.libellesPour(categorie).getOrNull(position) ?: return
-                val texte = PromptsPredefinis.textePour(categorie, libelle)
+                val libelle = libellesPourCatAffichee(categorie).getOrNull(position) ?: return
+                val texte = textePourCatAffichee(categorie, libelle)
                 if (texte != null) {
                     editPrompt.setText(texte)
                 } else {
                     // "Autre" : si le champ contient encore un preset (pas une saisie perso en
                     // cours), on recharge le dernier prompt libre enregistre pour cette
                     // categorie plutot que de vider - evite d'avoir a le retaper a chaque fois.
-                    if (PromptsPredefinis.categories[categorie]?.values?.contains(editPrompt.text.toString()) == true) {
+                    if (valeursPresetsPourCatAffichee(categorie).contains(editPrompt.text.toString())) {
                         editPrompt.setText(GestionnaireParametres.lireDernierPromptPersonnalise(this@MainActivity, categorie))
                     }
                     editPrompt.requestFocus()
                 }
+                mettreAJourVisibiliteBoutonSupprimerFavori()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -396,12 +431,15 @@ class MainActivity : AppCompatActivity() {
         editPrompt.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) {
                 val categorie = categoriePromptActuelle()
-                val estModeAutre = PromptsPredefinis.textePour(categorie, menuPrompt.selectedItem?.toString() ?: "") == null
+                val estModeAutre = textePourCatAffichee(categorie, menuPrompt.selectedItem?.toString() ?: "") == null
                 if (estModeAutre) GestionnaireParametres.ecrireDernierPromptPersonnalise(this@MainActivity, categorie, s.toString())
             }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
+
+        btnSauverPromptFavori.setOnClickListener { demanderNomEtSauvegarderPromptFavori(editPrompt.text.toString()) }
+        btnSupprimerPromptFavori.setOnClickListener { supprimerFavoriActuel() }
 
         // Peuple le menu "Style voulu" pour la categorie actuellement affichee (initiale ou
         // restauree ci-dessus) - doit venir apres la mise en place des deux listeners.
@@ -410,16 +448,65 @@ class MainActivity : AppCompatActivity() {
 
     /** (Re)peuple menuPrompt avec les entrees de la categorie donnee et selectionne la premiere. */
     private fun remplirMenuPrompt(categorie: String) {
-        val adaptateur = ArrayAdapter(this, android.R.layout.simple_spinner_item, PromptsPredefinis.libellesPour(categorie))
+        val adaptateur = ArrayAdapter(this, android.R.layout.simple_spinner_item, libellesPourCatAffichee(categorie))
         adaptateur.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         menuPrompt.adapter = adaptateur
         menuPrompt.setSelection(0)
         // setSelection(0) ne declenche pas toujours onItemSelected si la position ne change pas
         // (ex. on reste sur le premier item en changeant juste de categorie) - on met donc aussi
         // a jour editPrompt directement ici pour etre sur que le texte suit bien la categorie.
-        val premierLibelle = PromptsPredefinis.libellesPour(categorie).firstOrNull()
-        val premierTexte = premierLibelle?.let { PromptsPredefinis.textePour(categorie, it) }
+        val premierLibelle = libellesPourCatAffichee(categorie).firstOrNull()
+        val premierTexte = premierLibelle?.let { textePourCatAffichee(categorie, it) }
         if (premierTexte != null) editPrompt.setText(premierTexte)
+        mettreAJourVisibiliteBoutonSupprimerFavori()
+    }
+
+    /**
+     * "Supprimer ce favori" n'a de sens que depuis "Mes favoris", sur une entree qui n'est pas
+     * "Autre" - desactive sinon plutot que de disparaitre, meme choix que la version Windows
+     * (le bouton reste a sa place, pas de mise en page qui saute).
+     */
+    private fun mettreAJourVisibiliteBoutonSupprimerFavori() {
+        val libelleActuel = menuPrompt.selectedItem?.toString()
+        btnSupprimerPromptFavori.isEnabled =
+            categoriePromptActuelle() == NOM_CATEGORIE_FAVORIS && libelleActuel != null && libelleActuel != PromptsPredefinis.LIBELLE_AUTRE
+    }
+
+    /** Petite boite de dialogue de saisie du nom, meme esprit que cote Windows (OK/Annuler). */
+    private fun demanderNomEtSauvegarderPromptFavori(texteASauver: String) {
+        if (texteASauver.isBlank()) {
+            Toast.makeText(this, "Le champ de prompt est vide - rien à sauver en favori.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val champNom = EditText(this)
+        champNom.hint = "Nom du favori"
+        AlertDialog.Builder(this)
+            .setTitle("Nom du prompt favori")
+            .setView(champNom)
+            .setPositiveButton("OK") { _, _ ->
+                val nomChoisi = champNom.text.toString().trim()
+                if (nomChoisi.isEmpty()) return@setPositiveButton
+                if (nomChoisi == PromptsPredefinis.LIBELLE_AUTRE) {
+                    Toast.makeText(this, "Ce nom est réservé - choisis-en un autre.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                promptsFavoris[nomChoisi] = texteASauver
+                GestionnaireParametres.ecrirePromptsFavoris(this, promptsFavoris)
+                if (categoriePromptActuelle() == NOM_CATEGORIE_FAVORIS) remplirMenuPrompt(NOM_CATEGORIE_FAVORIS)
+                Toast.makeText(this, "Prompt '$nomChoisi' enregistré dans tes favoris.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    private fun supprimerFavoriActuel() {
+        if (categoriePromptActuelle() != NOM_CATEGORIE_FAVORIS) return
+        val libelle = menuPrompt.selectedItem?.toString() ?: return
+        if (libelle == PromptsPredefinis.LIBELLE_AUTRE) return
+        promptsFavoris.remove(libelle)
+        GestionnaireParametres.ecrirePromptsFavoris(this, promptsFavoris)
+        remplirMenuPrompt(NOM_CATEGORIE_FAVORIS)
+        Toast.makeText(this, "Favori '$libelle' supprimé.", Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -559,7 +646,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun creerVignette(
         nom: String, image: Bitmap?, avecCaseACocher: Uri? = null,
-        surClic: (() -> Unit)? = null, surClicLong: (() -> Unit)? = null, badgeFournisseur: String = ""
+        surClic: (() -> Unit)? = null, surClicLong: (() -> Unit)? = null, badgeFournisseur: String = "",
+        descriptionMakerWorld: String? = null
     ): View {
         val densite = resources.displayMetrics.density
         fun px(dp: Int) = (dp * densite).toInt()
@@ -615,6 +703,25 @@ class MainActivity : AppCompatActivity() {
 
         if (surClic != null) panneau.setOnClickListener { surClic() }
         if (surClicLong != null) panneau.setOnLongClickListener { surClicLong(); true }
+
+        // 21/10/2026, porte depuis la version Windows (bouton "Copier description" sur chaque
+        // vignette, voir Generer-DescriptionMakerWorld) : le .txt est deja ecrit a cote du
+        // resultat par ColorisationService, ceci evite juste d'avoir a aller le rouvrir pour
+        // copier le texte a la main avant de le coller dans le formulaire de depot MakerWorld.
+        if (descriptionMakerWorld != null) {
+            val lienCopier = TextView(this)
+            lienCopier.text = "Copier description"
+            lienCopier.textSize = 9f
+            lienCopier.setTextColor(0xFF2D6CDF.toInt())
+            lienCopier.gravity = Gravity.CENTER
+            lienCopier.setPadding(0, px(2), 0, 0)
+            lienCopier.setOnClickListener {
+                val presse = getSystemService(android.content.ClipboardManager::class.java)
+                presse?.setPrimaryClip(android.content.ClipData.newPlainText("Description MakerWorld", descriptionMakerWorld))
+                Toast.makeText(this, "Description copiée (colle-la dans le formulaire MakerWorld).", Toast.LENGTH_SHORT).show()
+            }
+            panneau.addView(lienCopier)
+        }
         return panneau
     }
 
@@ -731,6 +838,83 @@ class MainActivity : AppCompatActivity() {
             .setMessage(texte)
             .setPositiveButton("Fermer", null)
             .setNegativeButton("Vider l'historique") { _, _ -> GestionnaireParametres.viderHistoriqueLots(this) }
+            .show()
+    }
+
+    /**
+     * 21/10/2026, porte depuis la version Windows (Afficher-FenetreGraphiqueCredits, meme
+     * source de donnees : l'historique PAR LOT, pas l'historique par fichier) : la version
+     * Windows dessine un vrai graphique vectoriel (Panel.Paint + GDI+) - ici, version volontairement
+     * plus simple a base de View standard (une rangee par lot, barre horizontale dont la largeur
+     * est proportionnelle aux credits du lot) plutot qu'un Canvas.onDraw personnalise, jamais
+     * verifiable visuellement dans cet environnement de developpement sans appareil reel.
+     */
+    private fun afficherGraphiqueCredits() {
+        val lignes = GestionnaireParametres.lireHistoriqueLots(this)
+        if (lignes.isEmpty()) {
+            Toast.makeText(this, "Aucun lot traité pour l'instant - le graphique se remplit à chaque lot.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val pointsAffiches = lignes.takeLast(40)
+        val maxCredits = (pointsAffiches.maxOfOrNull { it.credits } ?: 0).coerceAtLeast(1)
+
+        val densite = resources.displayMetrics.density
+        fun px(dp: Int) = (dp * densite).toInt()
+
+        val conteneur = LinearLayout(this)
+        conteneur.orientation = LinearLayout.VERTICAL
+        conteneur.setPadding(px(4), px(4), px(4), px(4))
+
+        val totalCredits = lignes.sumOf { it.credits }
+        val resume = TextView(this)
+        resume.text = "Derniers ${pointsAffiches.size} lot(s) affiché(s) sur ${lignes.size} au total — $totalCredits crédits consommés au total."
+        resume.textSize = 11f
+        resume.setPadding(0, 0, 0, px(8))
+        conteneur.addView(resume)
+
+        for (point in pointsAffiches) {
+            val ligne = LinearLayout(this)
+            ligne.orientation = LinearLayout.HORIZONTAL
+            ligne.setPadding(0, px(3), 0, px(3))
+
+            val etiquetteDate = TextView(this)
+            etiquetteDate.text = point.date
+            etiquetteDate.textSize = 9f
+            etiquetteDate.layoutParams = LinearLayout.LayoutParams(px(90), LinearLayout.LayoutParams.WRAP_CONTENT)
+            ligne.addView(etiquetteDate)
+
+            val pisteBarre = LinearLayout(this)
+            pisteBarre.orientation = LinearLayout.HORIZONTAL
+            pisteBarre.layoutParams = LinearLayout.LayoutParams(0, px(14), 1f)
+
+            val poidsBarre = (point.credits.toFloat() / maxCredits.toFloat()).coerceIn(0.02f, 1f)
+            val barre = View(this)
+            barre.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, poidsBarre)
+            barre.setBackgroundColor(0xFF2D6CDF.toInt())
+            pisteBarre.addView(barre)
+
+            val reste = View(this)
+            reste.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, (1f - poidsBarre).coerceIn(0f, 0.98f))
+            pisteBarre.addView(reste)
+
+            ligne.addView(pisteBarre)
+
+            val etiquetteCredits = TextView(this)
+            etiquetteCredits.text = " ${point.credits}"
+            etiquetteCredits.textSize = 9f
+            etiquetteCredits.layoutParams = LinearLayout.LayoutParams(px(40), LinearLayout.LayoutParams.WRAP_CONTENT)
+            ligne.addView(etiquetteCredits)
+
+            conteneur.addView(ligne)
+        }
+
+        val defilement = ScrollView(this)
+        defilement.addView(conteneur)
+
+        AlertDialog.Builder(this)
+            .setTitle("Consommation de crédits par lot")
+            .setView(defilement)
+            .setPositiveButton("Fermer", null)
             .show()
     }
 
@@ -947,7 +1131,8 @@ class MainActivity : AppCompatActivity() {
             for (i in nombreResultatsAffiches until resultats.size) {
                 val r = resultats[i]
                 galerieResultats.addView(creerVignette(r.nom, r.apercu, null,
-                    { ouvrirDansAppliExterne(r.uri) }, { partagerFichier(r.uri) }, r.fournisseur))
+                    { ouvrirDansAppliExterne(r.uri) }, { partagerFichier(r.uri) }, r.fournisseur,
+                    r.descriptionMakerWorld))
             }
             nombreResultatsAffiches = resultats.size
         }

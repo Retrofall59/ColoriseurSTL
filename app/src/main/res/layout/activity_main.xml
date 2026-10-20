@@ -36,6 +36,22 @@
                 android:textStyle="bold"
                 android:textColor="@color/texte_principal" />
 
+            <!-- 21/10/2026, porte depuis la version Windows (bouton "Graphique") : pas d'icone
+                 dediee dans le projet pour ca (evite de parier sur un drawable systeme non
+                 confirme), texte court a la place. -->
+            <TextView
+                android:id="@+id/btnGraphiqueCredits"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginEnd="4dp"
+                android:gravity="center"
+                android:text="Crédits"
+                android:textColor="@color/texte_principal"
+                android:textSize="12sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackground" />
+
             <ImageButton
                 android:id="@+id/btnHistorique"
                 android:layout_width="36dp"
@@ -211,6 +227,35 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:hint="Prompt envoyé à Meshy (modifiable)" />
+
+                <!-- 21/10/2026, porte depuis la version Windows (idée validée "Ok pour tout") :
+                     prompts favoris - sauver le texte actuel sous un nom, le retrouver ensuite
+                     dans la catégorie "Mes favoris" en tête du menu Catégorie ci-dessus. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnSauverPromptFavori"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:text="Sauver en favori"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        android:id="@+id/btnSupprimerPromptFavori"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="4dp"
+                        android:text="Supprimer ce favori"
+                        android:textAllCaps="false" />
+
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"

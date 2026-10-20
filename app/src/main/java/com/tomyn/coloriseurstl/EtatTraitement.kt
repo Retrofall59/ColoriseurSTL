@@ -20,7 +20,13 @@ object EtatTraitement {
     // fournisseur : "Meshy" ou "Tripo" en mode comparaison (affiche comme badge sur la vignette,
     // voir MainActivity.creerVignette) ; chaine vide hors comparaison (un seul fournisseur actif,
     // pas besoin de le repeter sur chaque vignette).
-    data class ResultatColorise(val uri: Uri, val nom: String, val apercu: Bitmap?, val fournisseur: String = "")
+    // descriptionMakerWorld : texte genere par GenerateurDescriptionMakerWorld (21/10/2026, porte
+    // depuis la version Windows) - null si jamais indisponible (ne devrait pas arriver en usage
+    // normal, prevu pour rester tolerant si l'appelant omet de le fournir).
+    data class ResultatColorise(
+        val uri: Uri, val nom: String, val apercu: Bitmap?, val fournisseur: String = "",
+        val descriptionMakerWorld: String? = null
+    )
     data class FichierEchec(val uri: Uri, val nom: String, val raison: String)
 
     @Volatile var enCours: Boolean = false

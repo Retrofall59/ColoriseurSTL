@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.22 (build 22)
+
+**4 fonctionnalités manquantes portées depuis la version Windows** (choisies par Tomyn parmi les
+écarts restants identifiés par comparaison systématique) :
+
+- **Vérification de mise à jour** (Paramètres) : compare la version installée à la dernière
+  Release publiée sur GitHub, propose d'ouvrir la page si une plus récente existe. Adapté au
+  modèle Android (compare aux Releases taguées, pas au dernier commit comme côté Windows - c'est
+  le build.gradle d'une release qui compte, pas un commit jamais compilé en APK).
+- **Prompts favoris** : nouvelle catégorie dynamique "Mes favoris" en tête du menu Catégorie,
+  boutons "Sauver en favori" / "Supprimer ce favori" sous le champ de prompt. Persisté dans
+  l'espace privé de l'app (prompts_favoris.json), même format que côté Windows.
+- **Description MakerWorld** : chaque résultat colorisé génère maintenant un titre + texte prêts
+  à coller dans le formulaire de dépôt MakerWorld, écrit en fichier texte à côté du résultat et
+  copiable en un clic ("Copier description" sur la vignette).
+- **Graphique des crédits consommés** (icône "Crédits" en haut de l'écran) : barres horizontales
+  proportionnelles aux crédits de chaque lot, 40 derniers lots. Version simplifiée par rapport au
+  vrai graphique vectoriel de Windows (Views standard plutôt qu'un dessin Canvas personnalisé,
+  invérifiable visuellement sans appareil réel dans cet environnement).
+
+Vérifié par compilation réelle (kotlinc + stubs, plusieurs trous de stub comblés au passage :
+JSONObject.keys(), Intent(action, Uri), LinearLayout.LayoutParams à 3 arguments, ScrollView,
+ClipData/ClipboardManager) : zéro erreur.
+
 ## v0.21 (build 21)
 
 **Demande de Tomyn : les catégories/styles de prompt de la version Windows manquaient côté
