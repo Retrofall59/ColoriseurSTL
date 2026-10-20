@@ -2419,7 +2419,13 @@ $astuceTriangles.SetToolTip($numTriangles,
     "Sert a deux choses :`n`n" +
     "- Image en entree : nombre de triangles vise pour le maillage genere par l'IA (Image to 3D).`n`n" +
     "- .stl (binaire) ou .obj en entree, et au-dela de $SEUIL_TRIANGLES_REMESH_AUTO triangles : utilise comme cible pour une simplification automatique (API Remesh de Meshy) avant la colorisation, histoire de ne pas envoyer un maillage inutilement lourd. En dessous de ce seuil (ou pour un .stl ASCII, non detecte), le fichier part tel quel, ce reglage ne sert a rien dans ce cas.")
-$yActuel += 30
+# 20/10/2026, Tomyn (capture d'ecran) : corrige a +58 (au lieu de +30). Le label et le champ de
+# cette ligne "Triangles vises" sont dessines a $yActuel+32/+28 (pas directement a $yActuel), donc
+# la ligne occupe en realite jusqu'a +52 (champ de hauteur 24 demarrant a +28) - un +30 plagait
+# quasiment la case Smart Topology SUR cette meme ligne au lieu d'en dessous, d'ou le texte
+# tronque/chevauchant signale par Tomyn ("ology (meshy-t2.5...", le debut "Pour Meshy, image en
+# entree : activer Smart Top" etait cache derriere le champ numerique.
+$yActuel += 58
 
 # 20/10/2026, Tomyn (suite a sa question sur la derniere API Meshy) : "Smart Topology", confirme
 # reel dans le changelog officiel Meshy - model_type:"smart-topology" + ai_model:"meshy-t2.5",
