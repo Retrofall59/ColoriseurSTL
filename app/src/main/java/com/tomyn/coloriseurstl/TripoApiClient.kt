@@ -39,6 +39,61 @@ object TripoApiClient {
 
     data class ResultatColorisation(val urlZipObj: String, val creditsConsommes: Int)
 
+    // 20/10/2026, porte depuis la version Windows : endpoint de solde confirme reel
+    // (/account/balance), contrairement a "/user/balance" devine au depart cote Windows (jamais
+    // existant, trouve et corrige lors d'une relecture du changelog) - jamais implemente du tout
+    // cote Android jusqu'ici.
+    enum class StatutCle { VALIDE, INVALIDE, INCONNU }
+    data class VerificationCle(val statut: StatutCle, val solde: Double?)
+
+    fun verifierCleEtSolde(cleApi: String): VerificationCle {
+        return try {
+            val reponse = requeteJson("GET", "/account/balance", cleApi)
+            VerificationCle(StatutCle.VALIDE, reponse.optDouble("balance", 0.0))
+        } catch (e: ErreurApi) {
+            if (e.message?.startsWith("HTTP 401") == true || e.message?.startsWith("HTTP 403") == true) {
+                VerificationCle(StatutCle.INVALIDE, null)
+            } else {
+                VerificationCle(StatutCle.INCONNU, null)
+            }
+        } catch (e: Exception) {
+            VerificationCle(StatutCle.INCONNU, null)
+        }
+    }
+
+    data class ResultatImageModel(val idTache: String, val creditsConsommes: Double)
+
+    /**
+     * Image -> modele 3D (porte depuis la version Windows, "oui mais pour l'image ca sera bien
+     * d'avoir tripo aussi" - Tripo refusait les images jusqu'ici). "model" obligatoire depuis un
+     * changement reel cote API, trouve en usage reel par Tomyn (erreur recue : "model is
+     * required, allowed values: P1-20260311, P2-20260801, v2.5-20250123, v3.0-20250812,
+     * v3.1-20260211") malgre la doc qui le presentait comme facultatif avec un defaut - on
+     * l'envoie donc explicitement, meme correctif que cote Windows.
+     *
+     * @param avecTexture true = genere avec texturation integree (utilise quand il n'y a pas de
+     *   prompt texte - pas d'etape Texture separee ensuite) ; false = maillage seul, texture
+     *   refaite juste apres par Retexture-equivalent... mais Tripo n'a pas de "Retexture" separe
+     *   de la texturation depuis l'import, donc avecTexture=false sert seulement quand un prompt
+     *   sera applique via l'etape Texture normale sur le resultat (voir coloriserDepuisImage).
+     */
+    fun genererModeleDepuisImage(
+        jetonFichier: String,
+        avecTexture: Boolean,
+        cleApi: String,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatImageModel {
+        val corps = JSONObject()
+            .put("input", jetonFichier)
+            .put("model", "v3.1-20260211")
+            .put("texture", avecTexture)
+            .put("pbr", avecTexture)
+        val reponse = requeteJson("POST", "/generation/image-to-model", cleApi, corps)
+        val idTache = reponse.getString("task_id")
+        val tache = attendreTache(idTache, cleApi, "Image to 3D", ecouteur)
+        return ResultatImageModel(idTache, tache.optDouble("credits_consumed", 0.0))
+    }
+
     private fun requeteJson(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject {
         val url = URL("$BASE_URL$chemin")
         val connexion = url.openConnection() as HttpURLConnection
@@ -168,14 +223,33 @@ object TripoApiClient {
         // jamais ajoutes au total renvoye jusqu'ici, qui sous-comptait donc le vrai cout.
         val creditsImport = tacheImport.optDouble("credits_consumed", 0.0)
 
-        // --- Etape 4 : texturation (a partir du resultat de l'import) ---
+        val (urlSortie, creditsTextureConvert) = texturerEtConvertir(idImport, prompt, cleApi, ecouteur)
+
+        // Credits reellement consommes, sur les TROIS etapes facturees : import (confirme a 5
+        // credits, corrige le 07/10/2026), texturation (confirmee a 10 credits) et conversion.
+        val creditsTotal = (creditsImport + creditsTextureConvert).toInt()
+        return ResultatColorisation(urlSortie, creditsTotal)
+    }
+
+    /**
+     * Etapes 4-5 factorisees (texturation puis conversion en OBJ colore par sommet) - partagees
+     * entre coloriser() (source = import d'un fichier uploade) et coloriserImage() (source =
+     * resultat d'Image to 3D, voir plus bas), 20/10/2026.
+     */
+    private fun texturerEtConvertir(
+        idModeleSource: String,
+        prompt: String,
+        cleApi: String,
+        ecouteur: EcouteurAvancement?
+    ): Pair<String, Double> {
+        // --- Texturation (a partir du modele source) ---
         // Champs confirmes par la vraie doc officielle (platform.tripo3d.ai/docs/texture) : le
         // champ s'appelle "original_model_task_id", pas "input" comme envoye dans les premieres
         // versions - "input" etait silencieusement ignore par l'API, qui tournait alors sans
         // jamais avoir de vraie reference de modele, d'ou l'echec systematique observe en test
         // reel (meme sur un simple cube). Le prompt texte est imbrique dans "texture_prompt.text".
         val corpsTexture = JSONObject()
-            .put("original_model_task_id", idImport)
+            .put("original_model_task_id", idModeleSource)
             .put("texture_prompt", JSONObject().put("text", prompt))
         val reponseTexture = requeteJson("POST", "/models/texture", cleApi, corpsTexture)
         val idTexture = reponseTexture.getString("task_id")
@@ -183,7 +257,7 @@ object TripoApiClient {
         val tacheTexture = attendreTache(idTexture, cleApi, "Texturation", ecouteur)
         val creditsTexture = tacheTexture.optDouble("credits_consumed", 0.0)
 
-        // --- Etape 5 : conversion en OBJ colore par sommet (pas en 3MF) ---
+        // --- Conversion en OBJ colore par sommet (pas en 3MF) ---
         // Changement du 07/10/2026 : "export_vertex_colors" est documente par Tripo comme valide
         // UNIQUEMENT pour les formats OBJ et GLTF (developers.tripo3d.com/en/docs/models-convert)
         // - demande avec format=3MF comme avant, ce parametre etait silencieusement ignore, d'ou
@@ -191,8 +265,14 @@ object TripoApiClient {
         // geometrie (confirme par Tomyn : aucune texture visible, meme dans un lecteur .3mf).
         // Bambu Studio sachant lire un OBJ colore par sommet et proposer ses couleurs dans l'AMS,
         // on demande directement ce format-la a la place - meme correctif que la version Windows.
+        val (urlSortie, creditsConvert) = convertirEnObj(idTexture, cleApi, ecouteur)
+        return Pair(urlSortie, creditsTexture + creditsConvert)
+    }
+
+    /** Conversion seule en OBJ colore par sommet - retourne (url, credits_consommes). */
+    private fun convertirEnObj(idTache: String, cleApi: String, ecouteur: EcouteurAvancement?): Pair<String, Double> {
         val corpsConvert = JSONObject()
-            .put("input", idTexture)
+            .put("input", idTache)
             .put("format", "OBJ")
             .put("export_vertex_colors", true)
         val reponseConvert = requeteJson("POST", "/models/convert", cleApi, corpsConvert)
@@ -209,10 +289,44 @@ object TripoApiClient {
         if (urlSortie.isNullOrEmpty()) {
             throw ErreurApi("reponse de conversion sans URL de modele exploitable - reponse brute recue : $tacheConvert")
         }
+        return Pair(urlSortie, creditsConvert)
+    }
 
-        // Credits reellement consommes, sur les TROIS etapes facturees : import (confirme a 5
-        // credits, corrige le 07/10/2026), texturation (confirmee a 10 credits) et conversion.
-        val creditsTotal = (creditsImport + creditsTexture + creditsConvert).toInt()
+    /**
+     * Image -> OBJ colore (porte depuis la version Windows, "oui mais pour l'image ca sera bien
+     * d'avoir tripo aussi") : reservation d'upload -> envoi -> Image to 3D -> (texturation ->
+     * conversion, seulement si un prompt texte est fourni - voir genererModeleDepuisImage) ->
+     * conversion en OBJ colore par sommet. Sans prompt, Image to 3D texture directement (meme
+     * principe que cote Windows : la texturation integree evite de la payer deux fois).
+     */
+    fun coloriserImage(
+        octets: ByteArray,
+        extension: String,
+        prompt: String,
+        cleApi: String,
+        ecouteur: EcouteurAvancement? = null
+    ): ResultatColorisation {
+        val corpsPresign = JSONObject().put("format", extension.lowercase())
+        val reponsePresign = requeteJson("POST", "/files/presign", cleApi, corpsPresign)
+        val urlPresignee = reponsePresign.optString("presigned_url").ifEmpty { reponsePresign.optString("upload_url") }
+        val jetonFichier = reponsePresign.optString("file_token")
+        if (urlPresignee.isEmpty()) {
+            throw ErreurApi("reponse de reservation d'upload sans URL exploitable - reponse brute recue : $reponsePresign")
+        }
+        uploaderVersUrlPresignee(urlPresignee, octets)
+
+        val avecPrompt = prompt.isNotBlank()
+        val resultatImage = genererModeleDepuisImage(jetonFichier, !avecPrompt, cleApi, ecouteur)
+
+        if (!avecPrompt) {
+            // Deja texture par Image to 3D elle-meme (avecTexture=true) - juste la conversion.
+            val (urlSortie, creditsConvert) = convertirEnObj(resultatImage.idTache, cleApi, ecouteur)
+            val creditsTotal = (resultatImage.creditsConsommes + creditsConvert).toInt()
+            return ResultatColorisation(urlSortie, creditsTotal)
+        }
+
+        val (urlSortie, creditsTextureConvert) = texturerEtConvertir(resultatImage.idTache, prompt, cleApi, ecouteur)
+        val creditsTotal = (resultatImage.creditsConsommes + creditsTextureConvert).toInt()
         return ResultatColorisation(urlSortie, creditsTotal)
     }
 

@@ -176,8 +176,14 @@ class ColorisationService : Service() {
                 val octets = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw Exception("impossible de lire le fichier")
 
-                if (octets.size > 50 * 1024 * 1024) {
-                    throw Exception("fichier de ${octets.size / 1024 / 1024} Mo, limite Meshy = 50 Mo - non envoye")
+                // 20/10/2026, porte depuis la version Windows : les deux plafonds reels sont
+                // differents selon le fournisseur (confirmes via la doc officielle de chacun) -
+                // Meshy accepte jusqu'a 100 Mo en data URI (pas 50, perime), Tripo jusqu'a 150 Mo.
+                // Verification faite ici au plus large (150 Mo) pour laisser passer les cas ou le
+                // fichier n'a pas encore ete attribue a un fournisseur precis (mode comparaison) ;
+                // le plafond specifique a Meshy est revérifie plus bas, juste avant l'envoi reel.
+                if (octets.size > 150 * 1024 * 1024) {
+                    throw Exception("fichier de ${octets.size / 1024 / 1024} Mo, limite Tripo (150 Mo, le plus large des deux fournisseurs) - non envoye")
                 }
 
                 if (comparer) {
@@ -246,27 +252,34 @@ class ColorisationService : Service() {
         val estUneImage = extensionFichier in EXTENSIONS_IMAGES
 
         if (fournisseurEffectif == "Tripo") {
-            // Image -> STL (08/10/2026) : pas encore pris en charge cote Tripo dans cette
-            // version, Meshy seulement pour le moment - erreur explicite plutot qu'un echec API
-            // confus (Tripo recevrait l'image comme si c'etait un modele 3D).
-            if (estUneImage) {
-                throw Exception("les images ne sont pas encore prises en charge cote Tripo dans cette version - utilise Meshy pour une image")
-            }
-            // Depuis le 07/10/2026 : Tripo sort un .obj colore par sommet (plus un .3mf, voir
-            // TripoApiClient) livre en ZIP - extrait dans un sous-dossier dedie, meme logique que
-            // la version Windows.
-            EtatTraitement.ecrireJournal("  Envoi a l'API Texture (Tripo)...")
+            // Image -> OBJ (20/10/2026, porte depuis la version Windows - commit c330db4 "Ajoute
+            // le support des images cote Tripo") : Tripo accepte maintenant les images comme
+            // Meshy, via Image to 3D + (texturation si prompt fourni) + conversion OBJ colore.
+            EtatTraitement.ecrireJournal(if (estUneImage) "  Image detectee - envoi a l'API Tripo Image to 3D..." else "  Envoi a l'API Texture (Tripo)...")
             val extension = nom.substringAfterLast(".", "")
-            val resultat = TripoApiClient.coloriser(
-                octets, extension, prompt, cleApi,
-                object : TripoApiClient.EcouteurAvancement {
-                    override fun surProgres(etape: String, statutBrut: String, progres: Int) {
-                        if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
-                        EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
-                        mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+            val resultat = if (estUneImage) {
+                TripoApiClient.coloriserImage(
+                    octets, extension, prompt, cleApi,
+                    object : TripoApiClient.EcouteurAvancement {
+                        override fun surProgres(etape: String, statutBrut: String, progres: Int) {
+                            if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                            EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
+                            mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                        }
                     }
-                }
-            )
+                )
+            } else {
+                TripoApiClient.coloriser(
+                    octets, extension, prompt, cleApi,
+                    object : TripoApiClient.EcouteurAvancement {
+                        override fun surProgres(etape: String, statutBrut: String, progres: Int) {
+                            if (EtatTraitement.annulationDemandee) throw TripoApiClient.ErreurApi("ANNULATION_DEMANDEE")
+                            EtatTraitement.ecrireJournal("    $etape : statut brut recu = '$statutBrut' ($progres%)...")
+                            mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
+                        }
+                    }
+                )
+            }
             EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
             val octetsZip = TripoApiClient.telecharger(resultat.urlZipObj)
             val nomDossier = nomBase + suffixe
@@ -282,6 +295,15 @@ class ColorisationService : Service() {
             enregistrerHistoriqueFichier(racineSortie, nom, "Tripo", resultat.creditsConsommes, "$nomDossier/${fichierObj.name}")
             EtatTraitement.creditsReelsLot += resultat.creditsConsommes
             return resultat.creditsConsommes
+        }
+
+        // 20/10/2026, porte depuis la version Windows : plafond Meshy reel re-verifie ici (100 Mo,
+        // confirme par la doc officielle - une data URI en base64 gonfle ~33% mais Meshy l'accepte
+        // jusqu'a cette taille source). Le controle plus haut (150 Mo) etait large pour couvrir le
+        // cas Tripo avant que le fournisseur effectif soit connu ; celui-ci est le vrai plafond
+        // applique juste avant l'envoi reel a Meshy.
+        if (octets.size > 100 * 1024 * 1024) {
+            throw Exception("fichier de ${octets.size / 1024 / 1024} Mo, limite Meshy = 100 Mo - non envoye")
         }
 
         // Image -> STL (08/10/2026, idee de Tomyn, deja confirmee fonctionnelle sur la version

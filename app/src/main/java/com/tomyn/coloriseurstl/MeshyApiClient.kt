@@ -24,7 +24,19 @@ object MeshyApiClient {
     class ErreurApi(message: String) : Exception(message)
 
     enum class StatutCle { VALIDE, INVALIDE, INCONNU }
-    data class VerificationCle(val statut: StatutCle, val solde: Int?)
+    // 20/10/2026, porte depuis la version Windows (commit 5ae2cc4, deja confirme sur ce
+    // changelog Meshy) : l'endpoint /balance renvoie en realite deux soldes separes
+    // (monthly_credits = quota mensuel qui se reinitialise, permanent_credits = credits achetes
+    // qui ne se reinitialisent jamais) plutot qu'un seul chiffre - "solde" reste le TOTAL des
+    // deux (compatibilite avec le seul appelant existant, la verification avant lancement dans
+    // MainActivity), monthlyCredits/permanentCredits/monthlyResetsAt donnent le detail.
+    data class VerificationCle(
+        val statut: StatutCle,
+        val solde: Int?,
+        val monthlyCredits: Int? = null,
+        val permanentCredits: Int? = null,
+        val monthlyResetsAt: String? = null
+    )
 
     /**
      * Verifie la cle ET recupere le solde en un seul appel (meme endpoint /balance) :
@@ -35,7 +47,17 @@ object MeshyApiClient {
     fun verifierCleEtSolde(cleApi: String): VerificationCle {
         return try {
             val reponse = requete("GET", "/balance", cleApi)
-            VerificationCle(StatutCle.VALIDE, reponse.optInt("balance", 0))
+            val mensuel = if (reponse.has("monthly_credits")) reponse.optInt("monthly_credits", 0) else null
+            val permanent = if (reponse.has("permanent_credits")) reponse.optInt("permanent_credits", 0) else null
+            val soldeTotal = if (mensuel != null || permanent != null) {
+                (mensuel ?: 0) + (permanent ?: 0)
+            } else {
+                reponse.optInt("balance", 0)
+            }
+            VerificationCle(
+                StatutCle.VALIDE, soldeTotal, mensuel, permanent,
+                reponse.optString("monthly_resets_at", "").ifEmpty { null }
+            )
         } catch (e: ErreurApi) {
             if (e.message?.startsWith("HTTP 401") == true || e.message?.startsWith("HTTP 403") == true) {
                 VerificationCle(StatutCle.INVALIDE, null)
@@ -120,14 +142,48 @@ object MeshyApiClient {
         octetsImage: ByteArray,
         extensionFichier: String,
         cleApi: String,
-        ecouteur: EcouteurAvancement? = null
+        ecouteur: EcouteurAvancement? = null,
+        targetPolycount: Int = 30000,
+        smartTopology: Boolean = false,
+        geometryResolution: String = ""
     ): ResultatImage3D {
-        val mime = if (extensionFichier.lowercase() in listOf("jpg", "jpeg")) "image/jpeg" else "image/png"
+        // 20/10/2026 : .webp (porte depuis la version Windows, deja confirme dans le changelog
+        // Meshy du 10/10/2026 comme format d'entree accepte) - manquait ici, seuls jpg/jpeg/png
+        // etaient reconnus, un .webp partait donc etiquete "image/png" a tort.
+        val mime = when (extensionFichier.lowercase()) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            else -> "image/png"
+        }
         val dataUri = "data:$mime;base64," + Base64.encodeToString(octetsImage, Base64.NO_WRAP)
 
+        // 20/10/2026 : "should_remesh"/"target_polycount" (porte depuis la version Windows,
+        // reglage de base deja confirme sur ce changelog - Meshy ignore "target_polycount" sans
+        // "should_remesh=true" explicite, d'ou le maillage brut et clairseme obtenu jusqu'ici
+        // sans ce parametre). Pas encore de reglage utilisateur equivalent cote Android (pas de
+        // selecteur "Triangles vises" dans l'interface) - valeur fixe pour l'instant, identique
+        // au defaut Windows (30000), a exposer dans l'interface dans une passe ulterieure.
         val corps = JSONObject()
             .put("image_url", dataUri)
             .put("should_texture", false)
+            .put("should_remesh", true)
+            .put("target_polycount", targetPolycount)
+
+        // 20/10/2026 : Smart Topology (meshy-t2.5) et geometry_resolution (2k/4k) - portes depuis
+        // la version Windows, meme logique (Smart Topology plafonne a 30000 triangles max, voir
+        // le commentaire equivalent cote Windows). Pas de case/menu cote Android pour l'instant
+        // (parametres par defaut desactives, $false/"") - l'appel les accepte deja pour que la
+        // future UI n'ait qu'a les brancher, sans toucher a nouveau a ce fichier.
+        if (smartTopology) {
+            val cible = if (targetPolycount > 30000) 30000 else targetPolycount
+            corps.put("target_polycount", cible)
+            corps.put("model_type", "smart-topology")
+            corps.put("ai_model", "meshy-t2.5")
+        }
+        if (geometryResolution == "2k" || geometryResolution == "4k") {
+            corps.put("geometry_resolution", geometryResolution)
+        }
+
         val reponse = requete("POST", "/image-to-3d", cleApi, corps)
         val idTache = reponse.getString("result")
 
@@ -152,7 +208,8 @@ object MeshyApiClient {
         prompt: String,
         maxCouleurs: Int,
         cleApi: String,
-        ecouteur: EcouteurAvancement? = null
+        ecouteur: EcouteurAvancement? = null,
+        textureResolution: String = ""
     ): ResultatColorisation {
         val corpsRetexture = JSONObject()
             .put("text_style_prompt", prompt)
@@ -162,6 +219,13 @@ object MeshyApiClient {
         } else {
             val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl!!, Base64.NO_WRAP)
             corpsRetexture.put("model_url", dataUri)
+        }
+        // 20/10/2026 : "texture_resolution" (2k/4k/8k) - porte depuis la version Windows
+        // (troisieme relecture du changelog Meshy), parametre de l'API Retexture elle-meme,
+        // distinct de "geometry_resolution" ci-dessus (qui ne concerne que Image to 3D). Vide par
+        // defaut = on ne precise rien, Meshy applique son propre defaut ("2k").
+        if (textureResolution == "4k" || textureResolution == "8k") {
+            corpsRetexture.put("texture_resolution", textureResolution)
         }
         val reponseRetexture = requete("POST", "/retexture", cleApi, corpsRetexture)
         val idRetexture = reponseRetexture.getString("result")
@@ -210,7 +274,8 @@ object MeshyApiClient {
         idTacheSource: String?,
         prompt: String,
         cleApi: String,
-        ecouteur: EcouteurAvancement? = null
+        ecouteur: EcouteurAvancement? = null,
+        textureResolution: String = ""
     ): ResultatColorisationObj {
         val corpsRetexture = JSONObject()
             .put("text_style_prompt", prompt)
@@ -220,6 +285,9 @@ object MeshyApiClient {
         } else {
             val dataUri = "data:application/octet-stream;base64," + Base64.encodeToString(octetsStl!!, Base64.NO_WRAP)
             corpsRetexture.put("model_url", dataUri)
+        }
+        if (textureResolution == "4k" || textureResolution == "8k") {
+            corpsRetexture.put("texture_resolution", textureResolution)
         }
         val reponseRetexture = requete("POST", "/retexture", cleApi, corpsRetexture)
         val idRetexture = reponseRetexture.getString("result")
