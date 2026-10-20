@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.19 (build 19)
+
+**Correctif réel trouvé en testant sur téléphone** : Meshy refusait `geometry_resolution`
+("2k"/"4k") avec l'erreur HTTP 400 `geometry_resolution '4k' requires ai_model 'meshy-7.1'`.
+L'hypothèse de départ (l'API mettrait `meshy-7.1` par défaut toute seule) était fausse - corrigé
+en envoyant explicitement `ai_model` dans ce cas (sauf si Smart Topology est actif, qui fixe le
+sien). Même correctif appliqué côté Windows.
+
+**Portage complet des fonctions Meshy/Tripo avancées de la version Windows vers Android**
+(vagues 1 à 6, précédemment étiquetées par erreur sous la version 0.17 sans changelog à jour) :
+
+- Plafonds de taille réels (100 Mo Meshy, 150 Mo Tripo), balance détaillée des deux fournisseurs
+- Smart Topology, `geometry_resolution`/`texture_resolution`, support des images côté Tripo
+- Analyze/Repair Printability (Meshy) avec taille d'impression prévue
+- Conversion locale `.3mf` → `.stl` (gère la Production Extension de Bambu Studio)
+- Réglages avancés Meshy exposés dans l'interface (Smart Topology, résolutions, Printability)
+- Remesh automatique (Meshy) et Retopology/decimate automatique (Tripo) pour les gros maillages
+- Champ "Triangles visés" réglable (était fixé à 30000 partout)
+- Corrige deux bugs trouvés en comparant les listes d'extensions avec la version Windows
+  (`.webp` manquant, `.3mf` invisible dans le sélecteur de fichiers)
+
+**À partir de cette version : chaque modification livrée fait monter le numéro de version et
+déclenche la création d'une Release**, pour éviter qu'un fichier APK ancien et un fichier APK à
+jour portent le même nom (c'est ce qui vient de se produire entre les releases 0.17 et 0.18 :
+même nom de fichier `ColoriseurSTL-v0.17.apk` dans les deux, car le numéro de version n'avait pas
+été remonté - piège corrigé ici).
+
 ## v0.17 (build 17)
 
 **Portage de deux fonctions de la version Windows (ajoutées le 08/10/2026 côté bureau) :**
