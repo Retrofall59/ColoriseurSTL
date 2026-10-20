@@ -425,51 +425,98 @@ function Convertir-3MFVersSTL($Fichier3mf) {
             throw "aucun '3dmodel.model' trouve dans ce .3mf (fichier corrompu ou pas un vrai .3mf ?)"
         }
 
-        $xml = New-Object System.Xml.XmlDocument
-        $flux = $entreeModele.Open()
-        try { $xml.Load($flux) } finally { $flux.Close() }
-
         # XPath avec local-name() plutot qu'un XmlNamespaceManager : evite de devoir connaitre a
         # l'avance l'URI exacte du namespace 3MF utilisee par le logiciel qui a genere le fichier
         # (elle a change de version en version du standard, et certains exporteurs sont approximatifs
         # dessus) - local-name() ignore completement le namespace, se base juste sur le nom de balise.
         $ci = [System.Globalization.CultureInfo]::InvariantCulture
-        $objetsMaillage = @{}    # id -> @{ Sommets = [double[3]][]; Triangles = [int[3]][] }
-        $objetsComposants = @{}  # id -> liste de @{ ObjectId; Transform }
 
-        foreach ($noeudObjet in $xml.SelectNodes("//*[local-name()='object']")) {
-            $id = $noeudObjet.GetAttribute("id")
-            if (-not $id) { continue }
-            $noeudMesh = $noeudObjet.SelectSingleNode("*[local-name()='mesh']")
-            if ($noeudMesh) {
-                $sommets = New-Object System.Collections.Generic.List[double[]]
-                foreach ($v in $noeudMesh.SelectNodes(".//*[local-name()='vertex']")) {
-                    $sommets.Add(@(
-                        [double]::Parse($v.GetAttribute("x"), $ci),
-                        [double]::Parse($v.GetAttribute("y"), $ci),
-                        [double]::Parse($v.GetAttribute("z"), $ci)
-                    ))
+        # Corrige le 20/10/2026 (cas reel signale par Tomyn : "aucun maillage exploitable trouve")
+        # - Extension de Production 3MF (namespace .../production/2015/06, declaree via
+        # requiredextensions="p" sur <model>) : un <component> peut pointer, via un attribut "path"
+        # (prefixe variable, p:path en general), vers un AUTRE fichier XML interne au zip qui
+        # contient le vrai <object>. C'est le layout standard produit par Bambu Studio (et
+        # vraisemblablement Orca Slicer/PrusaSlicer) pour les .3mf a gros maillage : le
+        # 3dmodel.model racine ne contient qu'un <component path="..."> vide de maillage, le vrai
+        # maillage vit dans un fichier a part comme 3D/Objects/object_1.model. Chaque document XML
+        # charge est mis en cache et garde ses propres dictionnaires Maillage/Composants (les id
+        # d'objet ne sont uniques qu'au sein d'un meme document, pas globalement dans le zip).
+        $documentsCharges = @{}  # chemin zip normalise -> @{ Maillage = @{}; Composants = @{} }
+
+        function Analyser-Document3MF($xmlDoc) {
+            $objetsMaillage = @{}    # id -> @{ Sommets = [double[3]][]; Triangles = [int[3]][] }
+            $objetsComposants = @{}  # id -> liste de @{ ObjectId; Transform; Chemin }
+            foreach ($noeudObjet in $xmlDoc.SelectNodes("//*[local-name()='object']")) {
+                $id = $noeudObjet.GetAttribute("id")
+                if (-not $id) { continue }
+                $noeudMesh = $noeudObjet.SelectSingleNode("*[local-name()='mesh']")
+                if ($noeudMesh) {
+                    $sommets = New-Object System.Collections.Generic.List[double[]]
+                    foreach ($v in $noeudMesh.SelectNodes(".//*[local-name()='vertex']")) {
+                        $sommets.Add(@(
+                            [double]::Parse($v.GetAttribute("x"), $ci),
+                            [double]::Parse($v.GetAttribute("y"), $ci),
+                            [double]::Parse($v.GetAttribute("z"), $ci)
+                        ))
+                    }
+                    $triangles = New-Object System.Collections.Generic.List[int[]]
+                    foreach ($t in $noeudMesh.SelectNodes(".//*[local-name()='triangle']")) {
+                        $triangles.Add(@(
+                            [int]$t.GetAttribute("v1"),
+                            [int]$t.GetAttribute("v2"),
+                            [int]$t.GetAttribute("v3")
+                        ))
+                    }
+                    $objetsMaillage[$id] = @{ Sommets = $sommets; Triangles = $triangles }
+                    continue
                 }
-                $triangles = New-Object System.Collections.Generic.List[int[]]
-                foreach ($t in $noeudMesh.SelectNodes(".//*[local-name()='triangle']")) {
-                    $triangles.Add(@(
-                        [int]$t.GetAttribute("v1"),
-                        [int]$t.GetAttribute("v2"),
-                        [int]$t.GetAttribute("v3")
-                    ))
+                $noeudComposants = $noeudObjet.SelectSingleNode("*[local-name()='components']")
+                if ($noeudComposants) {
+                    $liste = New-Object System.Collections.Generic.List[object]
+                    foreach ($c in $noeudComposants.SelectNodes("*[local-name()='component']")) {
+                        # Attribut "path" de l'extension de Production : prefixe variable (p:path le
+                        # plus souvent) donc recherche par LocalName plutot que par nom fixe, pour
+                        # rester agnostique au prefixe/namespace exact utilise par l'exporteur.
+                        $attributPath = $c.Attributes | Where-Object { $_.LocalName -eq 'path' } | Select-Object -First 1
+                        $liste.Add(@{
+                            ObjectId  = $c.GetAttribute("objectid")
+                            Transform = $c.GetAttribute("transform")
+                            Chemin    = if ($attributPath) { $attributPath.Value } else { $null }
+                        })
+                    }
+                    $objetsComposants[$id] = $liste
                 }
-                $objetsMaillage[$id] = @{ Sommets = $sommets; Triangles = $triangles }
-                continue
             }
-            $noeudComposants = $noeudObjet.SelectSingleNode("*[local-name()='components']")
-            if ($noeudComposants) {
-                $liste = New-Object System.Collections.Generic.List[object]
-                foreach ($c in $noeudComposants.SelectNodes("*[local-name()='component']")) {
-                    $liste.Add(@{ ObjectId = $c.GetAttribute("objectid"); Transform = $c.GetAttribute("transform") })
-                }
-                $objetsComposants[$id] = $liste
-            }
+            return @{ Maillage = $objetsMaillage; Composants = $objetsComposants }
         }
+
+        function Obtenir-Document3MF([string]$cheminZip) {
+            $cheminNormalise = $cheminZip.TrimStart('/')
+            if ($documentsCharges.ContainsKey($cheminNormalise)) { return $documentsCharges[$cheminNormalise] }
+            $entree = $archive.Entries | Where-Object { $_.FullName -eq $cheminNormalise } | Select-Object -First 1
+            if (-not $entree) {
+                # Tolerance : comparaison insensible a la casse si la correspondance exacte echoue
+                # (certains exporteurs sont approximatifs sur la casse des chemins internes au zip).
+                $entree = $archive.Entries | Where-Object { $_.FullName -ieq $cheminNormalise } | Select-Object -First 1
+            }
+            if (-not $entree) {
+                $vide = @{ Maillage = @{}; Composants = @{} }
+                $documentsCharges[$cheminNormalise] = $vide
+                return $vide
+            }
+            $xmlExterne = New-Object System.Xml.XmlDocument
+            $fluxExterne = $entree.Open()
+            try { $xmlExterne.Load($fluxExterne) } finally { $fluxExterne.Close() }
+            $document = Analyser-Document3MF $xmlExterne
+            $documentsCharges[$cheminNormalise] = $document
+            return $document
+        }
+
+        $xml = New-Object System.Xml.XmlDocument
+        $flux = $entreeModele.Open()
+        try { $xml.Load($flux) } finally { $flux.Close() }
+        $documentRacine = Analyser-Document3MF $xml
+        $documentsCharges[$entreeModele.FullName.TrimStart('/')] = $documentRacine
 
         # Transform 3MF : 12 nombres (3x3 de rotation/echelle + 3 de translation), applique a un
         # point en vecteur-ligne (v' = v * M). Represente ici en 4x4 ligne-major (identite par
@@ -504,19 +551,26 @@ function Convertir-3MFVersSTL($Fichier3mf) {
         $trianglesGlobaux = New-Object System.Collections.Generic.List[int[]]
         $profondeurMax = 8  # garde-fou anti-boucle (composants qui se referencent entre eux)
 
-        function Resoudre-Objet3MF([string]$id, [double[]]$transformCumule, [int]$profondeur) {
+        function Resoudre-Objet3MF([string]$id, [double[]]$transformCumule, [int]$profondeur, $documentActuel) {
             if ($profondeur -gt $profondeurMax) { return }
-            if ($objetsMaillage.ContainsKey($id)) {
+            if ($documentActuel.Maillage.ContainsKey($id)) {
                 $decalage = $sommetsGlobaux.Count
-                foreach ($s in $objetsMaillage[$id].Sommets) { $sommetsGlobaux.Add((Appliquer-Transform3MF $s $transformCumule)) }
-                foreach ($t in $objetsMaillage[$id].Triangles) {
+                foreach ($s in $documentActuel.Maillage[$id].Sommets) { $sommetsGlobaux.Add((Appliquer-Transform3MF $s $transformCumule)) }
+                foreach ($t in $documentActuel.Maillage[$id].Triangles) {
                     $trianglesGlobaux.Add(@($t[0] + $decalage, $t[1] + $decalage, $t[2] + $decalage))
                 }
-            } elseif ($objetsComposants.ContainsKey($id)) {
-                foreach ($comp in $objetsComposants[$id]) {
+            } elseif ($documentActuel.Composants.ContainsKey($id)) {
+                foreach ($comp in $documentActuel.Composants[$id]) {
                     $transformComposant = Analyser-Transform3MF $comp.Transform
                     $cumul = Multiplier-Transform3MF $transformComposant $transformCumule
-                    Resoudre-Objet3MF $comp.ObjectId $cumul ($profondeur + 1)
+                    if ($comp.Chemin) {
+                        # Reference vers un AUTRE fichier XML du zip (extension de Production) :
+                        # l'objectid se resout dans CE document externe, pas dans le document actuel.
+                        $documentCible = Obtenir-Document3MF $comp.Chemin
+                        Resoudre-Objet3MF $comp.ObjectId $cumul ($profondeur + 1) $documentCible
+                    } else {
+                        Resoudre-Objet3MF $comp.ObjectId $cumul ($profondeur + 1) $documentActuel
+                    }
                 }
             }
             # id inconnu (reference cassee) : ignore silencieusement, pas bloquant pour le reste.
@@ -527,13 +581,13 @@ function Convertir-3MFVersSTL($Fichier3mf) {
         if ($noeudsItem.Count -gt 0) {
             foreach ($item in $noeudsItem) {
                 $t = Analyser-Transform3MF $item.GetAttribute("transform")
-                Resoudre-Objet3MF $item.GetAttribute("objectid") $t 0
+                Resoudre-Objet3MF $item.GetAttribute("objectid") $t 0 $documentRacine
             }
         } else {
             # Pas de section <build> (ou vide) : rare, mais plutot que d'echouer completement, on
             # reprend tous les objets a maillage direct tels quels (sans transform), au cas ou le
             # fichier soit quand meme exploitable.
-            foreach ($id in $objetsMaillage.Keys) { Resoudre-Objet3MF $id $identite 0 }
+            foreach ($id in $documentRacine.Maillage.Keys) { Resoudre-Objet3MF $id $identite 0 $documentRacine }
         }
 
         if ($trianglesGlobaux.Count -eq 0) {
@@ -573,7 +627,10 @@ function Convertir-3MFVersSTL($Fichier3mf) {
             $flux.Close()
         }
 
-        return @{ Fichier = (Get-Item $cheminStl); NbTriangles = $trianglesGlobaux.Count; NbObjets = $objetsMaillage.Count }
+        # Nombre d'objets a maillage direct, tous documents confondus (racine + parties externes
+        # chargees via l'extension de Production) - juste indicatif pour le journal.
+        $nbObjetsTotal = ($documentsCharges.Values | ForEach-Object { $_.Maillage.Count } | Measure-Object -Sum).Sum
+        return @{ Fichier = (Get-Item $cheminStl); NbTriangles = $trianglesGlobaux.Count; NbObjets = $nbObjetsTotal }
     } finally {
         if ($archive) { $archive.Dispose() }
     }
