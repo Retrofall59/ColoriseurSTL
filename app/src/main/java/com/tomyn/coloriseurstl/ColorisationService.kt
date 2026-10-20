@@ -50,6 +50,13 @@ class ColorisationService : Service() {
         // Porte depuis la version Windows le 10/10/2026 (reglage ajoute le 08/10/2026 cote
         // Windows, pas encore porte jusqu'ici) - voir assombrirFichierImage plus bas.
         const val EXTRA_ASSOMBRIR_TEXTURE_POURCENT = "assombrir_texture_pourcent"
+        // 20/10/2026, vague 4 : reglages avances Meshy portes dans les vagues precedentes mais
+        // jusqu'ici sans controle dans l'UI Android (valeurs par defaut uniquement).
+        const val EXTRA_SMART_TOPOLOGY = "smart_topology"
+        const val EXTRA_GEOMETRY_RESOLUTION = "geometry_resolution"
+        const val EXTRA_TEXTURE_RESOLUTION = "texture_resolution"
+        const val EXTRA_REPARER_PAROIS = "reparer_parois"
+        const val EXTRA_TAILLE_IMPRESSION_MM = "taille_impression_mm"
 
         private const val ID_CANAL = "colorisation"
         private const val ID_NOTIFICATION = 1001
@@ -93,6 +100,11 @@ class ColorisationService : Service() {
         val comparer = intent.getBooleanExtra(EXTRA_COMPARER, false)
         val meshyObjExperimental = intent.getBooleanExtra(EXTRA_MESHY_OBJ_EXPERIMENTAL, false)
         val assombrirTexturePourcent = intent.getDoubleExtra(EXTRA_ASSOMBRIR_TEXTURE_POURCENT, 0.0)
+        val smartTopology = intent.getBooleanExtra(EXTRA_SMART_TOPOLOGY, false)
+        val geometryResolution = intent.getStringExtra(EXTRA_GEOMETRY_RESOLUTION) ?: ""
+        val textureResolution = intent.getStringExtra(EXTRA_TEXTURE_RESOLUTION) ?: ""
+        val reparerParois = intent.getBooleanExtra(EXTRA_REPARER_PAROIS, false)
+        val tailleImpressionMm = intent.getIntExtra(EXTRA_TAILLE_IMPRESSION_MM, 0).let { if (it > 0) it else null }
 
         startForeground(ID_NOTIFICATION, construireNotificationProgression(0, uris.size, "Demarrage..."))
 
@@ -101,7 +113,11 @@ class ColorisationService : Service() {
         EtatTraitement.totalFichiersLot = uris.size
 
         threadTraitement = Thread {
-            traiterLot(uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
+            traiterLot(
+                uris, noms, prompt, maxCouleurs, dossierSortieUri, avecHorodatage, fournisseur, comparer,
+                meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution,
+                textureResolution, reparerParois, tailleImpressionMm
+            )
         }
         threadTraitement?.start()
 
@@ -124,7 +140,9 @@ class ColorisationService : Service() {
     private fun traiterLot(
         uris: List<Uri>, noms: List<String>, prompt: String, maxCouleurs: Int,
         dossierSortieUri: Uri, avecHorodatage: Boolean, fournisseur: String, comparer: Boolean,
-        meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0
+        meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0,
+        smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = "",
+        reparerParois: Boolean = false, tailleImpressionMm: Int? = null
     ) {
         val cleMeshy = GestionnaireParametres.lireCleApi(this)
         val cleTripo = GestionnaireParametres.lireCleApiTripo(this)
@@ -208,7 +226,7 @@ class ColorisationService : Service() {
                     // resultat de l'autre - meme logique que la version Windows.
                     var auMoinsUnReussi = false
                     try {
-                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent)
+                        coloriserAvecUnFournisseur("Meshy", cleMeshy, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "_meshy", i, uris.size, "Meshy", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution)
                         reussitesMeshy++
                         auMoinsUnReussi = true
                     } catch (e: Exception) {
@@ -229,7 +247,7 @@ class ColorisationService : Service() {
                         ajouterEchec(EtatTraitement.FichierEchec(uri, nom, "echec sur les deux fournisseurs (Meshy et Tripo)"))
                     }
                 } else {
-                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent)
+                    coloriserAvecUnFournisseur(fournisseur, cleApi, octets, nomEffectif, prompt, maxCouleurs, racineSortie, avecHorodatage, "", i, uris.size, "", meshyObjExperimental, assombrirTexturePourcent, reparerParois, tailleImpressionMm, smartTopology, geometryResolution, textureResolution)
                     reussites++
                 }
             } catch (e: Exception) {
@@ -257,7 +275,8 @@ class ColorisationService : Service() {
         fournisseurEffectif: String, cleApi: String, octets: ByteArray, nom: String, prompt: String,
         maxCouleurs: Int, racineSortie: DocumentFile, avecHorodatage: Boolean, suffixeFournisseur: String,
         indexFichier: Int, totalFichiers: Int, badgeFournisseur: String, meshyObjExperimental: Boolean,
-        assombrirTexturePourcent: Double = 0.0, reparerParois: Boolean = false, tailleImpressionMm: Int? = null
+        assombrirTexturePourcent: Double = 0.0, reparerParois: Boolean = false, tailleImpressionMm: Int? = null,
+        smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = ""
     ): Int {
         val suffixe = suffixeFournisseur + if (avecHorodatage) {
             "_colorise_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(java.util.Date())
@@ -338,7 +357,8 @@ class ColorisationService : Service() {
                         EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
                         mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                     }
-                }
+                },
+                smartTopology = smartTopology, geometryResolution = geometryResolution
             )
             idTacheSource = resultatImage.idTache
             creditsImage3D = resultatImage.creditsConsommes
@@ -385,7 +405,8 @@ class ColorisationService : Service() {
                         EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
                         mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                     }
-                }
+                },
+                textureResolution = textureResolution
             )
             EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
             val nomDossier = nomBase + suffixe
@@ -431,7 +452,8 @@ class ColorisationService : Service() {
                     EtatTraitement.ecrireJournal("    $etape : $statut ($progres%)...")
                     mettreAJourNotification(indexFichier + 1, totalFichiers, "$nom - $etape")
                 }
-            }
+            },
+            textureResolution = textureResolution
         )
         EtatTraitement.ecrireJournal("  Termine (${resultat.creditsConsommes} credits).")
         val octetsResultat = MeshyApiClient.telecharger(resultat.url3mf)

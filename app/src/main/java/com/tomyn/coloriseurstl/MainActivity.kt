@@ -92,6 +92,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var caseMeshyObjExperimental: CheckBox
     private lateinit var texteAssombrirTexture: TextView
     private lateinit var champAssombrirTexture: EditText
+    // 20/10/2026, vague 4 : reglages avances Meshy (deja portes cote API, pas encore exposes).
+    private lateinit var caseSmartTopology: CheckBox
+    private lateinit var menuGeometrieResolution: Spinner
+    private lateinit var menuTextureResolution: Spinner
+    private lateinit var caseReparationParois: CheckBox
+    private lateinit var texteTailleImpression: TextView
+    private lateinit var champTailleImpression: EditText
 
     private var fichiersSource: List<FichierSource> = emptyList()
     private var uriDossierSortie: Uri? = null
@@ -152,6 +159,12 @@ class MainActivity : AppCompatActivity() {
         caseMeshyObjExperimental = findViewById(R.id.caseMeshyObjExperimental)
         texteAssombrirTexture = findViewById(R.id.texteAssombrirTexture)
         champAssombrirTexture = findViewById(R.id.champAssombrirTexture)
+        caseSmartTopology = findViewById(R.id.caseSmartTopology)
+        menuGeometrieResolution = findViewById(R.id.menuGeometrieResolution)
+        menuTextureResolution = findViewById(R.id.menuTextureResolution)
+        caseReparationParois = findViewById(R.id.caseReparationParois)
+        texteTailleImpression = findViewById(R.id.texteTailleImpression)
+        champTailleImpression = findViewById(R.id.champTailleImpression)
         btnLancer = findViewById(R.id.btnLancer)
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
@@ -192,6 +205,11 @@ class MainActivity : AppCompatActivity() {
             texteAssombrirTexture.isEnabled = coche
             champAssombrirTexture.isEnabled = coche
             mettreAJourEstimation()
+        }
+        configurerMenuResolutions()
+        caseReparationParois.setOnCheckedChangeListener { _, coche ->
+            texteTailleImpression.isEnabled = coche
+            champTailleImpression.isEnabled = coche
         }
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
@@ -378,6 +396,36 @@ class MainActivity : AppCompatActivity() {
      * fournisseur exige en particulier, voir mettreAJourMenuFournisseur appele aussi au retour
      * de l'ecran Paramètres (onResume) au cas ou les cles auraient change entretemps.
      */
+    // 20/10/2026, vague 4 : index 0 = "" (defaut Meshy, rien envoye), voir
+    // ColorisationService.coloriserAvecUnFournisseur (geometryResolution/textureResolution).
+    private fun configurerMenuResolutions() {
+        val adaptateurGeometrie = ArrayAdapter(
+            this, android.R.layout.simple_spinner_item,
+            listOf("Standard (défaut Meshy)", "2k", "4k")
+        )
+        adaptateurGeometrie.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        menuGeometrieResolution.adapter = adaptateurGeometrie
+
+        val adaptateurTexture = ArrayAdapter(
+            this, android.R.layout.simple_spinner_item,
+            listOf("Standard (défaut Meshy, 2k)", "4k", "8k")
+        )
+        adaptateurTexture.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        menuTextureResolution.adapter = adaptateurTexture
+    }
+
+    private fun geometrieResolutionChoisie(): String = when (menuGeometrieResolution.selectedItemPosition) {
+        1 -> "2k"
+        2 -> "4k"
+        else -> ""
+    }
+
+    private fun textureResolutionChoisie(): String = when (menuTextureResolution.selectedItemPosition) {
+        1 -> "4k"
+        2 -> "8k"
+        else -> ""
+    }
+
     private fun configurerMenuFournisseur() {
         mettreAJourMenuFournisseur()
         menuFournisseur.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -737,9 +785,21 @@ class MainActivity : AppCompatActivity() {
         val assombrirTexturePourcent = if (meshyObjExperimental) {
             champAssombrirTexture.text.toString().replace(",", ".").toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0
         } else 0.0
+        // 20/10/2026, vague 4 : reglages avances Meshy - sans effet sur Tripo (voir
+        // ColorisationService.coloriserAvecUnFournisseur, branche Tripo les ignore).
+        val smartTopology = caseSmartTopology.isChecked
+        val geometryResolution = geometrieResolutionChoisie()
+        val textureResolution = textureResolutionChoisie()
+        val reparerParois = caseReparationParois.isChecked
+        // "0" (valeur par defaut du champ) -> null, pour que le service sache qu'il ne faut rien
+        // envoyer (et laisser Meshy appliquer son propre defaut de 150 mm) - meme logique que
+        // Obtenir-TailleImpressionChoisie cote Windows.
+        val tailleImpressionMm = if (reparerParois) {
+            champTailleImpression.text.toString().toIntOrNull()?.coerceIn(0, 1000)?.takeIf { it > 0 }
+        } else null
 
         if (fournisseur == "Tripo") {
-            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
+            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm)
             return
         }
 
@@ -760,7 +820,7 @@ class MainActivity : AppCompatActivity() {
                         AlertDialog.Builder(this)
                             .setTitle("Vérification impossible")
                             .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent) }
+                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm) }
                             .setNegativeButton("Annuler", null)
                             .show()
                     }
@@ -775,11 +835,11 @@ class MainActivity : AppCompatActivity() {
                             AlertDialog.Builder(this)
                                 .setTitle("Solde potentiellement insuffisant")
                                 .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot (Meshy seul) : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent) }
+                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm) }
                                 .setNegativeButton("Annuler", null)
                                 .show()
                         } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent)
+                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm)
                         }
                     }
                 }
@@ -787,7 +847,12 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun demarrerServiceColorisation(fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String, comparer: Boolean, meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0) {
+    private fun demarrerServiceColorisation(
+        fichiersAtraiter: List<Pair<Uri, String>>, dossierSortie: Uri, prompt: String, fournisseur: String,
+        comparer: Boolean, meshyObjExperimental: Boolean, assombrirTexturePourcent: Double = 0.0,
+        smartTopology: Boolean = false, geometryResolution: String = "", textureResolution: String = "",
+        reparerParois: Boolean = false, tailleImpressionMm: Int? = null
+    ) {
         val intent = Intent(this, ColorisationService::class.java).apply {
             putParcelableArrayListExtra(ColorisationService.EXTRA_URIS, ArrayList(fichiersAtraiter.map { it.first }))
             putStringArrayListExtra(ColorisationService.EXTRA_NOMS, ArrayList(fichiersAtraiter.map { it.second }))
@@ -798,6 +863,11 @@ class MainActivity : AppCompatActivity() {
             putExtra(ColorisationService.EXTRA_COMPARER, comparer)
             putExtra(ColorisationService.EXTRA_MESHY_OBJ_EXPERIMENTAL, meshyObjExperimental)
             putExtra(ColorisationService.EXTRA_ASSOMBRIR_TEXTURE_POURCENT, assombrirTexturePourcent)
+            putExtra(ColorisationService.EXTRA_SMART_TOPOLOGY, smartTopology)
+            putExtra(ColorisationService.EXTRA_GEOMETRY_RESOLUTION, geometryResolution)
+            putExtra(ColorisationService.EXTRA_TEXTURE_RESOLUTION, textureResolution)
+            putExtra(ColorisationService.EXTRA_REPARER_PAROIS, reparerParois)
+            tailleImpressionMm?.let { putExtra(ColorisationService.EXTRA_TAILLE_IMPRESSION_MM, it) }
         }
         galerieResultats.removeAllViews()
         nombreResultatsAffiches = 0

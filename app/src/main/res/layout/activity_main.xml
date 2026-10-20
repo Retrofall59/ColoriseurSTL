@@ -285,6 +285,91 @@
 
                 </LinearLayout>
 
+                <!-- 20/10/2026, vague 4 : reglages avances Meshy (portes cote API dans les vagues
+                     precedentes, jusqu'ici sans controle dans l'UI). Sans effet sur Tripo. -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Réglages avancés (Meshy uniquement)"
+                    android:textColor="@color/texte_principal"
+                    android:textStyle="bold"
+                    android:textSize="13sp" />
+
+                <CheckBox
+                    android:id="@+id/caseSmartTopology"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Smart Topology (retopologie quad, limite le maillage à 30000 polygones)"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Qualité du maillage (image vers 3D)"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <Spinner
+                    android:id="@+id/menuGeometrieResolution"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Résolution de la texture"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <Spinner
+                    android:id="@+id/menuTextureResolution"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" />
+
+                <CheckBox
+                    android:id="@+id/caseReparationParois"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Réparer les parois trop fines si nécessaire (analyse gratuite, réparation +10 crédits seulement si besoin, image uniquement)"
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/texteTailleImpression"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:enabled="false"
+                        android:text="Taille d'impression prévue, plus grand côté en mm (0 = défaut Meshy, 150 mm)"
+                        android:textColor="@color/texte_secondaire"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/champTailleImpression"
+                        android:layout_width="70dp"
+                        android:layout_height="wrap_content"
+                        android:enabled="false"
+                        android:inputType="number"
+                        android:text="0"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+
             </LinearLayout>
 
         </androidx.cardview.widget.CardView>
