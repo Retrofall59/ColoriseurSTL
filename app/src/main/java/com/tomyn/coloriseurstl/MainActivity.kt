@@ -229,6 +229,19 @@ class MainActivity : AppCompatActivity() {
             texteTailleImpression.isEnabled = coche
             champTailleImpression.isEnabled = coche
         }
+        // 21/10/2026, bug reel trouve en usage (Tomyn avait coche les deux a la fois) : Smart
+        // Topology et la resolution 2k/4k exigent chacun un ai_model different et incompatible
+        // cote Meshy (confirme sur leur documentation officielle) - impossible de combiner les
+        // deux sans echec HTTP 400 garanti, quel que soit le correctif cote reseau. On empeche
+        // directement cette combinaison dans l'interface plutot que de la laisser echouer en
+        // silence plus tard (le reseau ignore quand meme Smart Topology si jamais les deux
+        // arrivaient actives malgre tout, voir MeshyApiClient.genererMaillageDepuisImage).
+        caseSmartTopology.setOnCheckedChangeListener { _, coche ->
+            menuGeometrieResolution.isEnabled = !coche
+            if (coche) {
+                menuGeometrieResolution.setSelection(0)
+            }
+        }
         configurerOnglets()
         demanderPermissionNotificationsSiNecessaire()
         proposerExemptionBatterieSiNecessaire()

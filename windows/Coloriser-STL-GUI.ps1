@@ -4204,13 +4204,17 @@ function Lancer-Image3D($FichierImage, $Entetes, [int]$TargetPolycount = 30000, 
     # etait FAUSSE - erreur reelle recue : "geometry_resolution '4k' requires ai_model
     # 'meshy-7.1'". L'API ne defaut PAS silencieusement dessus, il faut l'envoyer explicitement.
     # On l'envoie pour "2k" aussi par prudence (meme famille de parametre, jamais teste seul).
-    # Ne s'applique que si Smart Topology n'est pas deja active juste au-dessus (qui fixe son
-    # propre ai_model "meshy-t2.5", incompatible avec "meshy-7.1").
-    if ($GeometryResolution -in @("2k", "4k")) {
+    # CORRECTIF du 21/10/2026 (usage reel, meme pipeline) : Smart Topology ET geometry_resolution
+    # coches en meme temps donnaient ENCORE HTTP 400, meme apres le correctif ci-dessus, car les
+    # deux exigent chacun un ai_model incompatible avec l'autre ("meshy-t2.5" vs "meshy-7.1"),
+    # confirme sur la documentation officielle Meshy - ce n'est pas un oubli, c'est une combinaison
+    # invalide cote API. Smart Topology est prioritaire : geometry_resolution est simplement ignore
+    # si Smart Topology est actif, avec un mot dans le journal plutot qu'un echec silencieux.
+    if ($SmartTopology -and $GeometryResolution -in @("2k", "4k")) {
+        Ecrire-Journal "  Smart Topology et la resolution $GeometryResolution sont incompatibles cote Meshy (modeles differents) - Smart Topology est prioritaire, la resolution choisie est ignoree."
+    } elseif ($GeometryResolution -in @("2k", "4k")) {
         $corps.geometry_resolution = $GeometryResolution
-        if (-not $SmartTopology) {
-            $corps.ai_model = "meshy-7.1"
-        }
+        $corps.ai_model = "meshy-7.1"
     }
 
     Ecrire-Journal "  Image detectee - envoi a l'API Image to 3D (maillage seul, $($corps.target_polycount) triangle(s) vises$(if ($SmartTopology) { ', Smart Topology' })$(if ($corps.geometry_resolution) { ", resolution $($corps.geometry_resolution)" }))..."

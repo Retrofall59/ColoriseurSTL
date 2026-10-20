@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.20 (build 20)
+
+**Vrai bug trouvé en test sur téléphone (0.19)** : "Smart Topology" et la résolution 2k/4k
+cochées en même temps donnaient encore HTTP 400, même après le correctif `ai_model` de la 0.19.
+Cause confirmée sur la doc officielle Meshy : les deux réglages exigent chacun un `ai_model`
+différent et incompatible (`meshy-t2.5` vs `meshy-7.1`) - ce n'est pas un oubli, c'est une
+combinaison invalide côté API. Corrigé des deux côtés (Windows et Android) :
+- L'interface empêche maintenant de cocher Smart Topology et une résolution 2k/4k en même temps
+  (cocher Smart Topology repasse la résolution sur "Standard" et grise le menu).
+- Par sécurité réseau, si jamais les deux arrivent quand même actives (anciens réglages
+  enregistrés, par exemple), Smart Topology est prioritaire et la résolution est ignorée plutôt
+  que d'envoyer une requête vouée à l'échec - avec un mot dans le journal pour que ce ne soit pas
+  silencieux.
+
 ## v0.19 (build 19)
 
 **Correctif réel trouvé en testant sur téléphone** : Meshy refusait `geometry_resolution`

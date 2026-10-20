@@ -364,6 +364,19 @@ class ColorisationService : Service() {
         var idTacheSource: String? = null
         var creditsImage3D = 0
         if (estUneImage) {
+            // CORRECTIF du 21/10/2026 : trouve en usage reel (Tomyn avait Smart Topology ET
+            // resolution 4k coches en meme temps) - Smart Topology et geometry_resolution exigent
+            // chacun un ai_model different et incompatible cote Meshy (confirme sur leur doc
+            // officielle), donc cette combinaison echouait TOUJOURS avec HTTP 400, meme apres le
+            // correctif ai_model du 20/10/2026. Smart Topology l'emporte (deja le defaut dans
+            // MeshyApiClient.genererMaillageDepuisImage), ici on previent juste Tomyn dans le
+            // journal plutot que de le laisser deviner pourquoi la resolution choisie est ignoree.
+            if (smartTopology && (geometryResolution == "2k" || geometryResolution == "4k")) {
+                EtatTraitement.ecrireJournal(
+                    "  Smart Topology et la resolution $geometryResolution sont incompatibles " +
+                    "cote Meshy (modeles differents) - Smart Topology est prioritaire, la resolution choisie est ignoree."
+                )
+            }
             EtatTraitement.ecrireJournal("  Image detectee - envoi a l'API Image to 3D (maillage seul)...")
             val resultatImage = MeshyApiClient.genererMaillageDepuisImage(
                 octets, extensionFichier, cleApi,

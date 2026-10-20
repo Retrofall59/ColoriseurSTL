@@ -258,14 +258,17 @@ object MeshyApiClient {
         // CORRECTIF du 20/10/2026 : trouve en usage reel sur un vrai telephone (erreur HTTP 400
         // recue : "geometry_resolution '4k' requires ai_model 'meshy-7.1'") - l'hypothese de
         // depart ("l'API defaut silencieusement sur meshy-7.1 si on ne precise rien") etait
-        // fausse, meme erreur corrigee cote Windows en parallele. ai_model envoye pour "2k" aussi
-        // par prudence (meme famille de parametre, jamais teste seul), sauf si Smart Topology est
-        // deja actif juste au-dessus (qui fixe son propre ai_model "meshy-t2.5").
-        if (geometryResolution == "2k" || geometryResolution == "4k") {
+        // fausse, meme erreur corrigee cote Windows en parallele.
+        // CORRECTIF du 21/10/2026 : trouve en usage reel (Tomyn avait coche Smart Topology ET une
+        // resolution 4k en meme temps - meme erreur HTTP 400, car Smart Topology exige
+        // ai_model "meshy-t2.5" alors que geometry_resolution exige ai_model "meshy-7.1" : les deux
+        // sont INCOMPATIBLES, confirme sur la documentation officielle Meshy. Smart Topology est
+        // prioritaire ici (deja actif juste au-dessus) - geometry_resolution est simplement ignore
+        // dans ce cas plutot que d'envoyer une requete vouee a l'echec (le journal d'appel previent
+        // deja Tomyn de ce choix, voir ColorisationService).
+        if (!smartTopology && (geometryResolution == "2k" || geometryResolution == "4k")) {
             corps.put("geometry_resolution", geometryResolution)
-            if (!smartTopology) {
-                corps.put("ai_model", "meshy-7.1")
-            }
+            corps.put("ai_model", "meshy-7.1")
         }
 
         val reponse = requete("POST", "/image-to-3d", cleApi, corps)
