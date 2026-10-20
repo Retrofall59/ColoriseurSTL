@@ -540,10 +540,16 @@ function Convertir-3MFVersSTL($Fichier3mf) {
             return $r
         }
         function Appliquer-Transform3MF([double[]]$p, [double[]]$M) {
+            # Chaque element entre parentheses explicites : en PowerShell, l'operateur virgule
+            # (construction de tableau) a une PRIORITE PLUS HAUTE que + / * en dehors de parentheses
+            # - sans elles, "a+b, c+d" est en fait interprete comme "a + (b,c) + d" et non comme deux
+            # sommes separees (verifie reellement en PowerShell 7.4, pas une simple supposition -
+            # piege classique mais discret du langage). Les parentheses forcent chaque somme a etre
+            # evaluee en scalaire AVANT d'etre placee dans le tableau @(...).
             return @(
-                $p[0]*$M[0] + $p[1]*$M[4] + $p[2]*$M[8]  + $M[12],
-                $p[0]*$M[1] + $p[1]*$M[5] + $p[2]*$M[9]  + $M[13],
-                $p[0]*$M[2] + $p[1]*$M[6] + $p[2]*$M[10] + $M[14]
+                ($p[0]*$M[0] + $p[1]*$M[4] + $p[2]*$M[8]  + $M[12]),
+                ($p[0]*$M[1] + $p[1]*$M[5] + $p[2]*$M[9]  + $M[13]),
+                ($p[0]*$M[2] + $p[1]*$M[6] + $p[2]*$M[10] + $M[14])
             )
         }
 
@@ -557,7 +563,9 @@ function Convertir-3MFVersSTL($Fichier3mf) {
                 $decalage = $sommetsGlobaux.Count
                 foreach ($s in $documentActuel.Maillage[$id].Sommets) { $sommetsGlobaux.Add((Appliquer-Transform3MF $s $transformCumule)) }
                 foreach ($t in $documentActuel.Maillage[$id].Triangles) {
-                    $trianglesGlobaux.Add(@($t[0] + $decalage, $t[1] + $decalage, $t[2] + $decalage))
+                    # Memes parentheses explicites et pour la meme raison que dans
+                    # Appliquer-Transform3MF ci-dessus (priorite de la virgule > + en PowerShell).
+                    $trianglesGlobaux.Add(@(($t[0] + $decalage), ($t[1] + $decalage), ($t[2] + $decalage)))
                 }
             } elseif ($documentActuel.Composants.ContainsKey($id)) {
                 foreach ($comp in $documentActuel.Composants[$id]) {
