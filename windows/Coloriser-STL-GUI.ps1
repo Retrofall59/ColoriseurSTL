@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 15, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 25, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4140,12 +4140,37 @@ function Grouper-CouleursKMeans($CouleursTriangles, [int]$K, [int]$IterationsMax
     $kReel = [Math]::Min($K, $vues.Count)
     if ($kReel -le 0) { return [PSCustomObject]@{ CentresR = @(); CentresG = @(); CentresB = @(); Affectations = (New-Object int[] $n) } }
 
-    $pasGerme = [Math]::Max(1, [int]($nEch / $kReel))
+    # 21/10/2026, retour de Tomyn : avec un trio Melangeur, les 16 couleurs demandees ressortaient
+    # bien au nombre de 16 mais "tres approchantes" les unes des autres au lieu de couvrir le
+    # noir/beige/marron-rouge reel du modele. Cause : l'ancienne initialisation prenait les germes
+    # en parcourant l'ECHANTILLON dans son ORDRE DE FICHIER (pas selon la diversite des couleurs) -
+    # sur un maillage ou une seule couleur dominante occupe la majorite des triangles, la plupart
+    # des germes atterrissaient dans cette zone et le k-means convergeait vers plusieurs centres
+    # quasi identiques au lieu de capturer les vraies couleurs minoritaires (taches, collier).
+    # Remplace par un "farthest-point seeding" deterministe (variante sans alea de k-means++) : le
+    # premier germe est le premier point de l'echantillon, puis chaque germe suivant est le point
+    # le PLUS ELOIGNE (en couleur) de tous les germes deja choisis - garantit des centres de depart
+    # bien repartis sur toute la diversite de couleurs, quel que soit le nombre de couleurs demande.
     $cr = New-Object double[] $kReel
     $cg = New-Object double[] $kReel
     $cb = New-Object double[] $kReel
-    for ($c = 0; $c -lt $kReel; $c++) {
-        $idxGerme = $indicesEchantillon[[Math]::Min($c * $pasGerme, $nEch - 1)]
+    $distMinGerme = New-Object double[] $nEch
+    for ($j = 0; $j -lt $nEch; $j++) { $distMinGerme[$j] = [double]::MaxValue }
+
+    $idxGerme0 = $indicesEchantillon[0]
+    $cr[0] = $tr[$idxGerme0]; $cg[0] = $tg[$idxGerme0]; $cb[0] = $tb[$idxGerme0]
+
+    for ($c = 1; $c -lt $kReel; $c++) {
+        $dernierR = $cr[$c - 1]; $dernierG = $cg[$c - 1]; $dernierB = $cb[$c - 1]
+        $meilleurJ = 0; $meilleureDistMax = -1.0
+        for ($j = 0; $j -lt $nEch; $j++) {
+            $idx = $indicesEchantillon[$j]
+            $dr = $tr[$idx] - $dernierR; $dg = $tg[$idx] - $dernierG; $db = $tb[$idx] - $dernierB
+            $d = $dr * $dr + $dg * $dg + $db * $db
+            if ($d -lt $distMinGerme[$j]) { $distMinGerme[$j] = $d }
+            if ($distMinGerme[$j] -gt $meilleureDistMax) { $meilleureDistMax = $distMinGerme[$j]; $meilleurJ = $j }
+        }
+        $idxGerme = $indicesEchantillon[$meilleurJ]
         $cr[$c] = $tr[$idxGerme]; $cg[$c] = $tg[$idxGerme]; $cb[$c] = $tb[$idxGerme]
     }
 

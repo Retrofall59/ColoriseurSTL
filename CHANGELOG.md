@@ -1,5 +1,39 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : palette k-means "trop approchante" - mauvaise initialisation des clusters
+
+Suite au lissage, Tomyn a teste avec 16 couleurs demandees sur un vrai modele Tripo (chien) :
+l'outil Melangeur de couleurs detectait bien 16 valeurs distinctes dans le fichier, mais "tres
+approchantes" les unes des autres - aucune ne representait vraiment le noir de la tete ou le
+marron-rouge du collier, qui dominent visuellement mais sont minoritaires en nombre de triangles.
+
+- Cause : l'initialisation des centres de depart du k-means parcourait l'echantillon dans son
+  ORDRE DE FICHIER (indices equirepartis), pas selon la diversite des couleurs. Sur un maillage ou
+  une seule couleur domine en nombre de triangles (le pelage beige), la plupart des germes
+  atterrissaient dans cette zone et le k-means convergeait vers plusieurs centres quasi identiques
+  au lieu de capturer les couleurs minoritaires mais visuellement importantes.
+- Corrige : remplace par un "farthest-point seeding" deterministe (variante sans alea de
+  k-means++) - le premier germe est le premier point de l'echantillon, puis chaque germe suivant
+  est le point le plus eloigne en couleur de tous les germes deja choisis. Garantit des centres de
+  depart bien repartis sur toute la diversite de couleurs, quel que soit k.
+- Nouveau test dedie (`test_seeding_kmeans.ps1`, bac a sable) : distribution tres desequilibree
+  (95% d'une couleur dominante, deux couleurs minoritaires tres differentes) - verifie que les 2
+  couleurs minoritaires sont bien retrouvees par un centre proche, pas absorbees par la dominante.
+- Verifie sur le vrai fichier de Tomyn avec k=16 : palette resultante nettement plus variee
+  (gris fonces, beige, rouge-brun pour le collier...) au lieu de nuances quasi identiques de beige.
+  93,8s de conversion, toujours dans un budget raisonnable.
+- **Important, pas encore resolu** : Tomyn a aussi remonte que Bambu Studio n'affiche que 4
+  couleurs dans le viewport quel que soit le nombre demande (4 ou 16), alors que le Melangeur en
+  detecte bien 16 dans le fichier. C'est un probleme SEPARE de celui-ci : le fichier n'a pas de
+  balise `<metadata name="Application">BambuStudio-...</metadata>` dans `3D/3dmodel.model`, donc
+  Bambu Studio desactive le chargement de la configuration projet (mon `project_settings.config`
+  avec la palette) et affiche uniquement les 4 filaments deja configures par defaut dans le projet
+  ("configuration invalide, chargement des donnees geometriques uniquement"). Corriger ca
+  proprement demande d'ajouter cette metadonnee ET un `Metadata/model_settings.config` valide
+  (sinon, une fois la metadonnee "BambuStudio-" ajoutee, l'absence de ce fichier devient une
+  erreur FATALE qui bloquerait le chargement entier). Pas encore tente - risque de regression trop
+  eleve pour l'improviser sans mieux connaitre le schema exact attendu par Bambu Studio.
+
 ## Windows (21/10/2026, amélioration) : couleurs "à l'arrache" - lissage par vote majoritaire + nombre de couleurs configurable
 
 Retour de Tomyn apres avoir enfin pu ouvrir un .3mf peint : "les couleurs sont pas tres bien
