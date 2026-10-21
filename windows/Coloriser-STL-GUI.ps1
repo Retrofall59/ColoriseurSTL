@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 16)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -3914,6 +3914,242 @@ function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
     return $tache
 }
 
+# =====================================================================================
+# Conversion automatique de l'OBJ colore par sommet (export Tripo) en .3mf peint pour
+# Bambu Studio. 21/10/2026, demande de Tomyn suite au bug "pas un vrai .3mf" remonte sur
+# le Melangeur (voir CHANGELOG.md melangecouleurs3mf) avec un fichier issu de ce pipeline
+# Tripo - puis demande explicite de transformer directement l'OBJ colore en .3mf peint,
+# automatiquement, a cote de l'OBJ (pas un outil/bouton separe).
+#
+# Format d'entree (confirme par recherche : doc Tripo + doc 3D AI Studio, meme
+# ecosysteme) : lignes "v x y z r g b" (couleur ajoutee aux 3 premieres coordonnees,
+# extension non standard mais repandue type MeshLab/PCL), lignes "f ..." standard (index
+# 1-based, eventuellement suivis de /texture/normale a ignorer).
+#
+# Format de sortie (confirme par lecture du vrai code source BambuStudio/OrcaSlicer, pas
+# d'une doc tierce) : attribut "paint_color" en hexa MAJUSCULE directement sur chaque
+# <triangle> de 3D/3dmodel.model. Regle (etat = index de filament/extrudeur, 1-based) :
+#   etat 0 (non peint)   -> pas d'attribut du tout
+#   etat 1 ou 2          -> UN nibble = etat*4, converti en 1 chiffre hexa (4 ou 8)
+#   etat 3..17           -> DEUX nibbles ecrits dans l'ordre [C, etat-3], mais chaque
+#                            nouveau nibble est PREPEND au resultat -> chaine finale =
+#                            hex(etat-3) + "C"
+#   etat >= 18           -> C, puis floor((etat-3)/15) nibbles F, puis le nibble terminal
+#                            (etat-3) % 15 - chaine finale (prepend a chaque etape) =
+#                            hex(terminal) + "F"*repeats + "C"
+#
+# AVERTISSEMENT honnete : je n'ai pas Bambu Studio sous la main pour verifier a l'oeil que
+# le .3mf produit s'ouvre et se peint correctement - le moteur est verifie par execution
+# reelle (parsing, clustering, ecriture ET relecture du zip/XML produits, voir les tests),
+# mais seul un premier essai reel de Tomyn dans Bambu Studio validera le resultat final.
+
+function Convertir-EtatFilamentEnPaintColor([int]$EtatFilament) {
+    if ($EtatFilament -le 0) { return $null }
+    if ($EtatFilament -le 2) {
+        $nibble = $EtatFilament * 4
+        return ("{0:X}" -f $nibble)
+    }
+    if ($EtatFilament -le 17) {
+        $nibbleTerminal = $EtatFilament - 3
+        return ("{0:X}" -f $nibbleTerminal) + "C"
+    }
+    $n = $EtatFilament - 3
+    $repetitionsF = [Math]::Floor($n / 15)
+    $terminal = $n % 15
+    return ("{0:X}" -f $terminal) + ("F" * $repetitionsF) + "C"
+}
+
+# Lit un OBJ colore par sommet (export Tripo). Retourne @{ Sommets = @(@{X;Y;Z;R;G;B});
+# Triangles = @(@(i1;i2;i3)) } avec des index de sommet 0-based (plus pratique pour
+# l'indexation PowerShell derriere, meme si l'OBJ lui-meme est 1-based).
+function Lire-ObjColoreParSommet([string]$CheminObj) {
+    $sommets = New-Object System.Collections.Generic.List[object]
+    $triangles = New-Object System.Collections.Generic.List[int[]]
+    $cultureInvariante = [System.Globalization.CultureInfo]::InvariantCulture
+
+    foreach ($ligne in [System.IO.File]::ReadLines($CheminObj)) {
+        $ligneCourte = $ligne.Trim()
+        if ($ligneCourte.Length -eq 0) { continue }
+        if ($ligneCourte.StartsWith("v ")) {
+            $valeurs = $ligneCourte.Substring(2).Trim() -split '\s+'
+            if ($valeurs.Count -lt 3) { continue }
+            $x = [double]::Parse($valeurs[0], $cultureInvariante)
+            $y = [double]::Parse($valeurs[1], $cultureInvariante)
+            $z = [double]::Parse($valeurs[2], $cultureInvariante)
+            if ($valeurs.Count -ge 6) {
+                $r = [double]::Parse($valeurs[3], $cultureInvariante)
+                $g = [double]::Parse($valeurs[4], $cultureInvariante)
+                $b = [double]::Parse($valeurs[5], $cultureInvariante)
+                # Certains exporteurs ecrivent du 0-1, d'autres du 0-255 - une seule valeur
+                # du triplet au-dela de 1.5 suffit a trancher pour l'echelle 0-255 (une
+                # couleur reelle en 0-1 ne depasse jamais 1.0 ; la marge de 1.5 evite un
+                # faux positif sur une valeur 1.0 arrondie au-dessus par erreur de
+                # precision flottante).
+                if ($r -gt 1.5 -or $g -gt 1.5 -or $b -gt 1.5) {
+                    $r /= 255.0; $g /= 255.0; $b /= 255.0
+                }
+            } else {
+                $r = 1.0; $g = 1.0; $b = 1.0
+            }
+            [void]$sommets.Add([PSCustomObject]@{
+                X = $x; Y = $y; Z = $z
+                R = [Math]::Round([Math]::Max(0, [Math]::Min(255, $r * 255)))
+                G = [Math]::Round([Math]::Max(0, [Math]::Min(255, $g * 255)))
+                B = [Math]::Round([Math]::Max(0, [Math]::Min(255, $b * 255)))
+            })
+        } elseif ($ligneCourte.StartsWith("f ")) {
+            # "f v1 v2 v3" ou "f v1/vt1/vn1 ..." (texture/normale ignorees - seule la
+            # couleur par sommet compte ici). Triangulation en eventail si plus de 3
+            # sommets (quad/polygone, rare sur un export deja triangule mais pas suppose).
+            $jetons = $ligneCourte.Substring(2).Trim() -split '\s+'
+            $indices = @($jetons | ForEach-Object {
+                $partieIndex = ($_ -split '/')[0]
+                [int]$partieIndex - 1
+            })
+            if ($indices.Count -lt 3) { continue }
+            for ($k = 1; $k -lt $indices.Count - 1; $k++) {
+                [void]$triangles.Add(@($indices[0], $indices[$k], $indices[$k + 1]))
+            }
+        }
+    }
+
+    if ($sommets.Count -eq 0) { throw "aucun sommet lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
+    if ($triangles.Count -eq 0) { throw "aucun triangle lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
+
+    return [PSCustomObject]@{ Sommets = $sommets.ToArray(); Triangles = $triangles.ToArray() }
+}
+
+function Obtenir-CouleursTriangles($Sommets, [int[][]]$Triangles) {
+    return @($Triangles | ForEach-Object {
+        $s1 = $Sommets[$_[0]]; $s2 = $Sommets[$_[1]]; $s3 = $Sommets[$_[2]]
+        [PSCustomObject]@{
+            R = [int](($s1.R + $s2.R + $s3.R) / 3)
+            G = [int](($s1.G + $s2.G + $s3.G) / 3)
+            B = [int](($s1.B + $s2.B + $s3.B) / 3)
+        }
+    })
+}
+
+function Obtenir-DistanceRGB($Couleur1, $Couleur2) {
+    $dr = $Couleur1.R - $Couleur2.R; $dg = $Couleur1.G - $Couleur2.G; $db = $Couleur1.B - $Couleur2.B
+    return [Math]::Sqrt($dr * $dr + $dg * $dg + $db * $db)
+}
+
+# K-means simple en espace RGB (regroupement grossier pour la peinture du .3mf, pas un
+# dosage de melange precis - ca reste le travail du Melangeur en aval). Graine
+# DETERMINISTE (indices regulierement espaces dans la liste, pas aleatoire) : resultat
+# reproductible d'un lancement a l'autre sur le meme fichier.
+function Grouper-CouleursKMeans([object[]]$Couleurs, [int]$K, [int]$IterationsMax = 15) {
+    $couleursUniques = @($Couleurs | Select-Object -Unique -Property R, G, B)
+    $kReel = [Math]::Min($K, $couleursUniques.Count)
+    if ($kReel -le 0) { return [PSCustomObject]@{ Centres = @(); Affectations = @() } }
+
+    $pasEchantillon = [Math]::Max(1, [int]($Couleurs.Count / $kReel))
+    $centres = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $kReel; $i++) {
+        $idx = [Math]::Min($i * $pasEchantillon, $Couleurs.Count - 1)
+        [void]$centres.Add([PSCustomObject]@{ R = $Couleurs[$idx].R; G = $Couleurs[$idx].G; B = $Couleurs[$idx].B })
+    }
+
+    $affectations = New-Object int[] $Couleurs.Count
+    for ($iter = 0; $iter -lt $IterationsMax; $iter++) {
+        $aChange = $false
+        for ($i = 0; $i -lt $Couleurs.Count; $i++) {
+            $meilleurIdx = 0
+            $meilleureDist = [double]::MaxValue
+            for ($c = 0; $c -lt $centres.Count; $c++) {
+                $d = Obtenir-DistanceRGB $Couleurs[$i] $centres[$c]
+                if ($d -lt $meilleureDist) { $meilleureDist = $d; $meilleurIdx = $c }
+            }
+            if ($affectations[$i] -ne $meilleurIdx) { $aChange = $true }
+            $affectations[$i] = $meilleurIdx
+        }
+        for ($c = 0; $c -lt $centres.Count; $c++) {
+            $membres = @(for ($i = 0; $i -lt $Couleurs.Count; $i++) { if ($affectations[$i] -eq $c) { $Couleurs[$i] } })
+            if ($membres.Count -gt 0) {
+                $centres[$c] = [PSCustomObject]@{
+                    R = [int](($membres | Measure-Object -Property R -Average).Average)
+                    G = [int](($membres | Measure-Object -Property G -Average).Average)
+                    B = [int](($membres | Measure-Object -Property B -Average).Average)
+                }
+            }
+        }
+        if (-not $aChange) { break }
+    }
+
+    return [PSCustomObject]@{ Centres = $centres.ToArray(); Affectations = $affectations }
+}
+
+function Obtenir-HexDepuisRGB24([int]$R, [int]$G, [int]$B) {
+    return ("#{0:X2}{1:X2}{2:X2}" -f $R, $G, $B)
+}
+
+# Fonction principale : lit l'OBJ colore par Tripo, regroupe les couleurs en au plus
+# $NombreCouleursMax teintes, et ecrit un .3mf peint directement exploitable dans Bambu
+# Studio (geometrie + attribut paint_color par triangle + palette filament_colour dans
+# Metadata/project_settings.config, meme schema que celui deja lu par le Melangeur).
+function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8) {
+    $donnees = Lire-ObjColoreParSommet $CheminObj
+    $couleursTriangles = Obtenir-CouleursTriangles $donnees.Sommets $donnees.Triangles
+    $groupes = Grouper-CouleursKMeans $couleursTriangles $NombreCouleursMax
+
+    $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("obj3mf_" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path (Join-Path $dossierTemp "3D") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $dossierTemp "_rels") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $dossierTemp "Metadata") -Force | Out-Null
+
+    try {
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.Append('<?xml version="1.0" encoding="UTF-8"?>')
+        [void]$sb.Append('<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">')
+        [void]$sb.Append('<resources><object id="1" type="model"><mesh><vertices>')
+        foreach ($s in $donnees.Sommets) {
+            $xStr = $s.X.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $yStr = $s.Y.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $zStr = $s.Z.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            [void]$sb.Append("<vertex x=`"$xStr`" y=`"$yStr`" z=`"$zStr`"/>")
+        }
+        [void]$sb.Append('</vertices><triangles>')
+        for ($i = 0; $i -lt $donnees.Triangles.Count; $i++) {
+            $tri = $donnees.Triangles[$i]
+            $etatFilament = $groupes.Affectations[$i] + 1
+            $hexPeinture = Convertir-EtatFilamentEnPaintColor $etatFilament
+            $attrPeinture = if ($hexPeinture) { " paint_color=`"$hexPeinture`"" } else { "" }
+            [void]$sb.Append("<triangle v1=`"$($tri[0])`" v2=`"$($tri[1])`" v3=`"$($tri[2])`"$attrPeinture/>")
+        }
+        [void]$sb.Append('</triangles></mesh></object></resources>')
+        [void]$sb.Append('<build><item objectid="1"/></build>')
+        [void]$sb.Append('</model>')
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "3D/3dmodel.model"), $sb.ToString(), [System.Text.Encoding]::UTF8)
+
+        $contentTypes = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="text/xml"/></Types>'
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "[Content_Types].xml"), $contentTypes, [System.Text.Encoding]::UTF8)
+
+        $rels = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "_rels/.rels"), $rels, [System.Text.Encoding]::UTF8)
+
+        # Metadata/project_settings.config - meme schema que les vrais .3mf Bambu Studio,
+        # pour que le Melangeur (Obtenir-CouleursFichier3MF) et le reste du pipeline
+        # existant le lisent sans rien changer de leur cote.
+        $hexCouleurs = @($groupes.Centres | ForEach-Object { Obtenir-HexDepuisRGB24 $_.R $_.G $_.B })
+        $configJson = @{ filament_colour = $hexCouleurs } | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, [System.Text.Encoding]::UTF8)
+
+        if (Test-Path -LiteralPath $CheminSortie3mf) { Remove-Item -LiteralPath $CheminSortie3mf -Force }
+        [System.IO.Compression.ZipFile]::CreateFromDirectory($dossierTemp, $CheminSortie3mf)
+    } finally {
+        Remove-Item -Path $dossierTemp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    return [PSCustomObject]@{
+        NombreSommets   = $donnees.Sommets.Count
+        NombreTriangles = $donnees.Triangles.Count
+        NombreCouleurs  = $groupes.Centres.Count
+        Couleurs        = $hexCouleurs
+    }
+}
+# =====================================================================================
+
 function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", [int]$TargetPolycount = 30000) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) (via Tripo) ==="
@@ -4151,6 +4387,19 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
         throw "le ZIP recu de Tripo ne contient aucun fichier .obj (contenu extrait dans $dossierResultat)"
     }
     Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir le fichier $($fichierObj.Name) dans Bambu Studio)"
+
+    # 21/10/2026, demande explicite de Tomyn : convertir automatiquement l'OBJ colore par
+    # sommet en .3mf peint, directement a cote de l'OBJ (pas un outil/bouton separe). En
+    # defense en profondeur : un echec de conversion (OBJ malforme, cas non prevu) ne doit
+    # jamais faire perdre le resultat Tripo deja obtenu - l'OBJ reste utilisable tel quel,
+    # on journalise juste l'echec sans faire planter tout le traitement du fichier.
+    try {
+        $cheminSortie3mf = Join-Path $dossierResultat ($fichierObj.BaseName + ".3mf")
+        $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf 8
+        Ecrire-Journal "  -> .3mf peint genere automatiquement : $($infoConversion.NombreCouleurs) couleur(s), $($infoConversion.NombreTriangles) triangles ($cheminSortie3mf)"
+    } catch {
+        Ecrire-Journal "  -> ECHEC de la conversion automatique en .3mf peint (l'OBJ colore reste disponible) : $_"
+    }
 
     # 13/10/2026 : titre + description prets a coller dans le formulaire de depot MakerWorld (voir
     # Generer-DescriptionMakerWorld) - fichier texte a cote du resultat, et bouton "Copier

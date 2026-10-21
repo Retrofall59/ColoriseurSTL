@@ -1,5 +1,39 @@
 # Changelog
 
+## Windows (21/10/2026) : conversion automatique de l'OBJ Tripo en .3mf peint
+
+Bug remonté par Tomyn : utiliser "Suggérer un trio pour ce fichier..." (Mélangeur) sur un `.obj`
+généré par Tripo plantait silencieusement (exception `ExtractToDirectory` non rattrapée — voir le
+correctif côté melangecouleurs3mf). Cause racine : Tripo livre désormais un OBJ coloré par sommet
+(pas un vrai `.3mf`), donc aucun outil de la chaîne ne pouvait en tirer une palette/un dosage.
+
+Demande explicite de Tomyn : convertir lui-même cet OBJ en un vrai `.3mf` peint pour Bambu Studio,
+**automatiquement**, immédiatement après chaque colorisation Tripo, déposé à côté du `.obj`.
+
+- Nouveau moteur de conversion (dans `Coloriser-STL-GUI.ps1`, pas dans le Mélangeur — l'automatisme
+  doit vivre là où l'OBJ est produit) :
+  - lecture de l'OBJ coloré par sommet (lignes `v x y z r g b`, couleur en 0-1 ou 0-255 détectée
+    automatiquement ; lignes `f` standard, avec ou sans index texture/normale, triangulation en
+    éventail si plus de 3 sommets par face) ;
+  - regroupement des couleurs par triangle en au plus 8 teintes (k-means en espace RGB, graine
+    déterministe) ;
+  - écriture d'un `.3mf` valide : `3D/3dmodel.model` avec l'attribut `paint_color` par triangle
+    (encodage confirmé en lisant le vrai code source BambuStudio/OrcaSlicer — `bbs_3mf.cpp` /
+    `Model.cpp` — pas une doc tierce) et `Metadata/project_settings.config` avec `filament_colour`
+    (même schéma que les `.3mf` réels, lu sans rien changer par le Mélangeur existant).
+- Câblé automatiquement dans `Coloriser-UnFichierTripo`, juste après l'extraction de l'OBJ : le
+  `.3mf` apparaît dans le même dossier, nommé comme l'OBJ. Un échec de conversion est journalisé
+  sans faire perdre le résultat Tripo (l'OBJ reste utilisable tel quel).
+- **Vérification effectuée** : analyse syntaxique réelle du fichier complet (aucune erreur), 20
+  assertions d'exécution réelle sur le moteur extrait du fichier livré (parsing OBJ avec/sans
+  index texture, triangulation de quads, échelles 0-1 et 0-255, clustering, écriture PUIS
+  **relecture réelle** du zip/XML produit, encodage `paint_color` vérifié contre les exemples
+  documentés du code source Bambu, palette `filament_colour` au format attendu).
+- **Ce qui n'a PAS pu être vérifié** : je n'ai pas Bambu Studio sous la main pour ouvrir le `.3mf`
+  produit et confirmer à l'oeil que la peinture s'applique correctement à l'AMS. Le format écrit
+  correspond exactement à ce que lit le code source réel de Bambu Studio/OrcaSlicer, mais seul un
+  premier essai réel de Tomyn validera le résultat.
+
 ## v0.29 (build 29) + Windows
 
 **Réactivation de la vérification du solde Tripo** (avant lancement ET en cours de lot), trouvée
