@@ -6,3 +6,7 @@ windows/historique_lots.csv
 windows/historique_fichiers.csv
 windows/dernier_prompt_*.txt
 windows/colorise/
+
+# Worktrees temporaires crees par des agents de recherche/outillage internes a la session Claude -
+# jamais du code livre, jamais a committer.
+.claude/
