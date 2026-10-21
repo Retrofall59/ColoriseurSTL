@@ -838,6 +838,96 @@ class MainActivity : AppCompatActivity() {
             .setMessage(texte)
             .setPositiveButton("Fermer", null)
             .setNegativeButton("Vider l'historique") { _, _ -> GestionnaireParametres.viderHistoriqueLots(this) }
+            .setNeutralButton("Historique par fichier") { _, _ -> afficherHistoriqueFichiers() }
+            .show()
+    }
+
+    /**
+     * 21/10/2026, porte depuis la version Windows (Afficher-FenetreHistoriqueFichiers) :
+     * contrairement a l'historique des LOTS ci-dessus (prive a l'app), celui-ci lit
+     * "historique_fichiers.csv" ECRIT DANS LE DOSSIER DE SORTIE choisi (voir
+     * ColorisationService.enregistrerHistoriqueFichier) - une ligne par fichier reussi, avec son
+     * nom, pour le retrouver. Champ de recherche filtrant en direct, meme principe que le
+     * ListView+TextBox cote Windows, mais a base de View standard (meme choix que le graphique
+     * des credits, voir afficherGraphiqueCredits ci-dessus).
+     */
+    private fun afficherHistoriqueFichiers() {
+        val dossierSortie = uriDossierSortie
+        if (dossierSortie == null) {
+            Toast.makeText(this, "Choisis d'abord un dossier de sortie (aucun historique par fichier sans ça).", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val racine = DocumentFile.fromTreeUri(this, dossierSortie)
+        val fichierCsv = racine?.findFile("historique_fichiers.csv")
+        if (fichierCsv == null) {
+            Toast.makeText(this, "Aucun historique par fichier pour l'instant dans ce dossier de sortie.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val lignesBrutes = try {
+            contentResolver.openInputStream(fichierCsv.uri)?.bufferedReader()?.readLines() ?: emptyList()
+        } catch (e: Exception) { emptyList() }
+        // Premiere ligne = entete ("Date;Fichier;Fournisseur;Credits;CheminSortie") - ignoree.
+        val entrees = lignesBrutes.drop(1).mapNotNull { ligne ->
+            val champs = ligne.split(";")
+            if (champs.size >= 5) champs else null
+        }
+        if (entrees.isEmpty()) {
+            Toast.makeText(this, "Aucune ligne d'historique exploitable pour l'instant.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val densite = resources.displayMetrics.density
+        fun px(dp: Int) = (dp * densite).toInt()
+
+        val champRecherche = EditText(this)
+        champRecherche.hint = "Rechercher par nom de fichier..."
+
+        val conteneurResultats = LinearLayout(this)
+        conteneurResultats.orientation = LinearLayout.VERTICAL
+
+        fun rafraichirResultats(filtre: String) {
+            conteneurResultats.removeAllViews()
+            val filtreNorm = filtre.trim().lowercase()
+            val correspondances = entrees.filter { filtreNorm.isEmpty() || it[1].lowercase().contains(filtreNorm) }
+            if (correspondances.isEmpty()) {
+                val vide = TextView(this)
+                vide.text = "Aucun résultat."
+                vide.textSize = 11f
+                vide.setPadding(0, px(8), 0, px(8))
+                conteneurResultats.addView(vide)
+                return
+            }
+            // Plus recent en premier (le CSV est ecrit chronologiquement croissant).
+            for (champs in correspondances.asReversed()) {
+                val (date, nomFichier, fournisseurLabel, credits) = champs
+                val ligneVue = TextView(this)
+                ligneVue.text = "$date — $nomFichier\n$fournisseurLabel, $credits crédits"
+                ligneVue.textSize = 11f
+                ligneVue.setPadding(0, px(6), 0, px(6))
+                conteneurResultats.addView(ligneVue)
+            }
+        }
+        rafraichirResultats("")
+
+        champRecherche.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) { rafraichirResultats(s.toString()) }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        val conteneurGeneral = LinearLayout(this)
+        conteneurGeneral.orientation = LinearLayout.VERTICAL
+        conteneurGeneral.setPadding(px(16), px(8), px(16), px(8))
+        conteneurGeneral.addView(champRecherche)
+        conteneurGeneral.addView(conteneurResultats)
+
+        val defilement = ScrollView(this)
+        defilement.addView(conteneurGeneral)
+
+        AlertDialog.Builder(this)
+            .setTitle("Historique par fichier (${entrees.size} au total)")
+            .setView(defilement)
+            .setPositiveButton("Fermer", null)
             .show()
     }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.23 (build 23)
+
+**Encore un écart trouvé en comparant avec la version Windows** : l'historique PAR FICHIER
+(`historique_fichiers.csv`, écrit depuis plusieurs versions déjà) était écrit mais jamais
+consultable depuis l'appli - fallait aller l'ouvrir à la main avec un gestionnaire de fichiers.
+
+- Nouveau bouton "Historique par fichier" dans la boîte "Historique des lots" (icône horloge en
+  haut de l'écran) : liste cherchable par nom de fichier, plus récent en premier - même principe
+  que la fenêtre dédiée côté Windows, en plus simple (pas de vrai ListView triable par colonne).
+
 ## v0.22 (build 22)
 
 **4 fonctionnalités manquantes portées depuis la version Windows** (choisies par Tomyn parmi les
