@@ -67,6 +67,11 @@ class ColorisationService : Service() {
         // Estimation large (les .3mf colorises observes jusqu'ici restent en dessous), par
         // prudence plutot que de sous-estimer et tomber a court en plein milieu du lot.
         private const val ESTIMATION_OCTETS_PAR_FICHIER = 20L * 1024 * 1024
+        // 21/10/2026, porte depuis la version Windows (idee en passant validee "2-4") - memes
+        // valeurs que MainActivity.CREDITS_ESTIMES_PAR_FICHIER/INTERVALLE_VERIF_SOLDE_LOT cote
+        // Windows. Voir la verification periodique dans traiterLot plus bas.
+        private const val CREDITS_ESTIMES_PAR_FICHIER = 20
+        private const val INTERVALLE_VERIF_SOLDE_LOT = 20
     }
 
     private var threadTraitement: Thread? = null
@@ -192,6 +197,41 @@ class ColorisationService : Service() {
             val uri = uris[i]
             val nom = noms[i]
             mettreAJourNotification(i + 1, uris.size, nom)
+
+            // 21/10/2026, porte depuis la version Windows (idee en passant validee "2-4") :
+            // jusqu'ici le solde Meshy n'etait verifie qu'UNE FOIS avant de lancer tout le lot
+            // (voir MainActivity) - sur un dossier de 250 fichiers payes par le collegue
+            // dessinateur de Tomyn, un derapage du cout reel ne se voyait qu'en echouant fichier
+            // par fichier une fois le solde epuise. Tous les INTERVALLE_VERIF_SOLDE_LOT fichiers,
+            // on reverifie le solde REEL contre le cout estime des fichiers RESTANTS.
+            //
+            // Difference deliberee avec Windows : la ici tourne dans un Service Android, pas une
+            // fenetre WinForms - pas de boite de dialogue bloquante Oui/Non possible sans
+            // complexite supplementaire (overlay systeme, permission dediee). On se contente donc
+            // d'un AVERTISSEMENT non-bloquant dans le journal (visible immediatement dans l'onglet
+            // Avancement, que MainActivity sonde en direct) plutot que d'interrompre : Tomyn garde
+            // la main via le bouton Annuler deja existant s'il juge que ca vaut le coup d'arreter.
+            if ((fournisseur == "Meshy" || comparer) && EtatTraitement.indexFichierCourant > 1 &&
+                (EtatTraitement.indexFichierCourant - 1) % INTERVALLE_VERIF_SOLDE_LOT == 0
+            ) {
+                val verifSoldeEnCours = MeshyApiClient.verifierCleEtSolde(cleMeshy)
+                if (verifSoldeEnCours.statut == MeshyApiClient.StatutCle.VALIDE && verifSoldeEnCours.solde != null) {
+                    val fichiersRestants = uris.size - EtatTraitement.indexFichierCourant + 1
+                    val coutEstimeRestant = fichiersRestants * CREDITS_ESTIMES_PAR_FICHIER
+                    if (verifSoldeEnCours.solde < coutEstimeRestant) {
+                        EtatTraitement.ecrireJournal(
+                            "\n⚠ Apres ${EtatTraitement.indexFichierCourant - 1} fichier(s) : solde Meshy restant " +
+                            "${verifSoldeEnCours.solde} credits, cout estime pour les $fichiersRestants fichier(s) " +
+                            "restant(s) ~$coutEstimeRestant credits - pourrait depasser le solde. " +
+                            "Annule maintenant si besoin (bouton Annuler)."
+                        )
+                    }
+                }
+                // INVALIDE/INCONNU : jamais bloquant ici, meme raisonnement que cote Windows -
+                // interrompre un gros lot pour UN controle de solde rate serait pire que le
+                // probleme vise. Le pipeline reel s'en apercevra de lui-meme si la cle est
+                // vraiment devenue invalide (chaque fichier echouera avec un message HTTP clair).
+            }
 
             try {
                 EtatTraitement.ecrireJournal("\n=== $nom ===")

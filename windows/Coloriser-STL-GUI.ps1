@@ -773,6 +773,15 @@ $CheminConfigMelangeCouleurs = Join-Path $PSScriptRoot "chemin_melange_couleurs.
 # (25+15+16 = 56), le vrai detail confirme juste apres est Retexture = 10 credits et Multi-Color
 # Print = 10 credits, soit 20 au total - l'estimation d'origine etait donc la bonne.
 $CREDITS_ESTIMES_PAR_FICHIER = 20
+# 21/10/2026, idee en passant validee par Tomyn ("2-4") : jusqu'ici le solde n'etait verifie
+# qu'UNE FOIS, juste avant de lancer tout le lot - sur un dossier de 250 fichiers payes par son
+# collegue dessinateur, un derapage du cout reel (options changees en cours de route, generation
+# plus chere que l'estimation) ne se voyait qu'en echouant fichier par fichier une fois le solde
+# epuise, sans prevenir avant. Tous les N fichiers, on reverifie le solde REEL contre le cout
+# estime des fichiers RESTANTS (pas tout le lot a nouveau) - voir la verification dans la boucle
+# de Lancer-Traitement plus bas. 20 fichiers : assez espace pour ne pas gaspiller un appel API a
+# chaque fichier, assez frequent pour reagir avant d'avoir trop depense sur un gros lot.
+$INTERVALLE_VERIF_SOLDE_LOT = 20
 # Cout de la seule etape Retexture (sans Multi-Color Print) - utilise pour l'estimation quand la
 # case "exporter en .obj" est cochee, qui saute Multi-Color Print.
 $CREDITS_ESTIMES_RETEXTURE_SEULE = 10
@@ -5134,6 +5143,44 @@ function Lancer-Traitement($fichiersStl) {
                     if ($caseComparerFournisseurs.Checked) { $reussitesMeshy++; $reussitesTripo++ }
                     continue
                 }
+            }
+            # Reverification periodique du solde Meshy EN COURS de lot (21/10/2026, idee en passant
+            # validee "2-4" - jusqu'ici le solde n'etait verifie qu'UNE FOIS avant de lancer tout le
+            # lot ; sur un dossier de 250 fichiers payes par le collegue dessinateur de Tomyn, un
+            # derapage du cout reel ne se voyait qu'en echouant fichier par fichier une fois le
+            # solde epuise, sans prevenir avant). Seulement si Meshy est reellement utilise, et
+            # seulement tous les $INTERVALLE_VERIF_SOLDE_LOT fichiers (pas a chaque fichier - un
+            # appel reseau par fichier serait inutile et plus lent). Compare au cout estime des
+            # fichiers RESTANTS, pas tout le lot a nouveau - ce qui a deja ete depense est depense.
+            if (($fournisseur -eq "Meshy" -or $caseComparerFournisseurs.Checked) -and $script:indexFichierCourant -gt 1 -and (($script:indexFichierCourant - 1) % $INTERVALLE_VERIF_SOLDE_LOT -eq 0)) {
+                $verifSoldeEnCours = Verifier-CleEtSolde $txtCleApi.Text
+                if ($verifSoldeEnCours.Statut -eq "valide") {
+                    $fichiersRestants = $fichiersStl.Count - $script:indexFichierCourant + 1
+                    $coutEstimeRestant = $fichiersRestants * $CREDITS_ESTIMES_PAR_FICHIER
+                    if ($verifSoldeEnCours.Solde -lt $coutEstimeRestant) {
+                        # Overlay masque AVANT la boite - sinon, etant TopMost, il passerait devant
+                        # et empecherait de cliquer sur Oui/Non (meme souci deja corrige plus bas
+                        # pour la boite d'erreur).
+                        Masquer-OverlayProgression
+                        $reponseSoldeEnCours = Afficher-Boite "Apres $($script:indexFichierCourant - 1) fichier(s), solde Meshy restant : $($verifSoldeEnCours.Solde) credits. Cout estime pour les $fichiersRestants fichier(s) restant(s) : ~$coutEstimeRestant credits (pourrait depasser ton solde).`n`nContinuer le lot quand meme ?" "Solde potentiellement insuffisant en cours de lot" "YesNo" "Warning"
+                        if ($reponseSoldeEnCours -ne "Yes") {
+                            Ecrire-Journal "`n=== Annule par l'utilisateur (solde Meshy juge insuffisant apres $($script:indexFichierCourant - 1) fichier(s)) ==="
+                            $interrompu = $true
+                            break
+                        }
+                        # Reaffiche l'overlay (juste .Show(), pas Afficher-OverlayProgression qui
+                        # remettrait le pourcentage et les boutons Pause/Annuler a zero pour rien -
+                        # on reprend exactement ou on en etait).
+                        $overlayProgression.Show()
+                    }
+                }
+                # "invalide"/"inconnu" (cle devenue invalide en cours de route, ou simple souci
+                # reseau transitoire malgre le reessai deja tente dans Verifier-CleEtSolde) : jamais
+                # bloquant ici, contrairement a la verification initiale avant lancement -
+                # interrompre un lot de 250 fichiers a cause d'UN controle de solde rate serait pire
+                # que le probleme que ca essaie d'eviter. Le vrai pipeline s'en apercevra de
+                # lui-meme si la cle est vraiment devenue invalide (chaque fichier echouera alors
+                # avec un message HTTP clair).
             }
             Afficher-ProgressionEnCours "Retexture en cours..."
             try {

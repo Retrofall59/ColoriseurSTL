@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.28 (build 28) + Windows
+
+**Revérification du solde Meshy en cours de lot**, idée proposée en passant et validée par Tomyn
+("2-4") pendant une session de recherche d'améliorations : jusqu'ici le solde n'était vérifié
+qu'UNE fois avant de lancer tout le lot. Sur un dossier de 250 fichiers payé par le collègue
+dessinateur de Tomyn, un dérapage du coût réel (prompts plus gourmands que prévu, options
+activées en cours de route) ne se voyait qu'en échouant fichier par fichier une fois le solde
+épuisé - trop tard pour agir à temps.
+
+- Tous les 20 fichiers traités (`INTERVALLE_VERIF_SOLDE_LOT`), le solde Meshy RÉEL est revérifié
+  et comparé au coût estimé des fichiers RESTANTS (`CREDITS_ESTIMES_PAR_FICHIER` par fichier,
+  comme à l'estimation de départ).
+- **Windows** : si le solde restant est insuffisant pour couvrir l'estimation, une boîte de
+  dialogue Oui/Non interrompt le lot ("Continuer quand même ?") - même pattern que les dialogues
+  existants (overlay de progression masqué avant la boîte, ré-affiché seulement si l'utilisateur
+  choisit de continuer). Vérifié par analyse syntaxique réelle du script entier (0 erreur) et par
+  une exécution PowerShell réelle du calcul de déclenchement (9 assertions, dont les cas limites
+  exacts sur un lot de 250 fichiers et la non-déclenchement sur un lot de 15 fichiers).
+- **Android** : différence délibérée - `ColorisationService` tourne dans un Service, pas une
+  fenêtre WinForms, donc pas de boîte de dialogue bloquante Oui/Non sans complexité
+  supplémentaire. À la place, un AVERTISSEMENT non-bloquant est écrit dans le journal (visible
+  immédiatement dans l'onglet Avancement) ; Tomyn garde la main via le bouton Annuler déjà
+  existant s'il juge que ça vaut le coup d'arrêter. App entière recompilée avec les stubs (0
+  erreur sur le nouveau code).
+
 ## v0.27 (build 27)
 
 **Temps restant estimé pendant un lot**, porté depuis la version Windows (`Obtenir-TexteEtaLot` /
