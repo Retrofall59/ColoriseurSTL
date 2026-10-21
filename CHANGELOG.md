@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.29 (build 29) + Windows
+
+**Réactivation de la vérification du solde Tripo** (avant lancement ET en cours de lot), trouvée
+en continuant la comparaison systématique Windows/Android après la session précédente : la
+fonction existait déjà des deux côtés (`Verifier-CleEtSoldeTripo` / `TripoApiClient.verifierCleEtSolde`),
+pointait depuis le 20/10/2026 vers le bon endpoint documenté (`/account/balance`), mais n'était
+appelée nulle part — désactivée depuis l'origine à cause d'un blocage de l'UI provoqué par le tout
+premier endpoint deviné (jamais confirmé), jamais revérifiée depuis.
+
+- Avant lancement : si Meshy ET Tripo sont utilisés (mode comparaison), les deux soldes sont
+  vérifiés et regroupés dans une seule boîte d'avertissement plutôt que deux popups successives.
+  Clé invalide : bloquant, message précisant quel fournisseur (Meshy vérifié en premier).
+- En cours de lot (tous les 20 fichiers, voir la revérif ajoutée en v0.28/v8.28) : étendue à Tripo
+  en plus de Meshy, même principe — avertissement non-bloquant côté Android (journal), boîte
+  Oui/Non côté Windows.
+- **Pas de test réseau réel effectué** : aucune clé Tripo utilisable n'était disponible pour cette
+  session (la capture partagée ne montrait que le Client ID, pas la clé secrète — jamais réaffichée
+  par Tripo après sa création). Le raisonnement pour réactiver quand même : le squelette de
+  `Verifier-CleEtSoldeTripo`/`TripoApiClient.verifierCleEtSolde` (try/catch, retry réseau, timeout)
+  est identique à celui de Meshy, déjà en production sans souci de ce type — le blocage original
+  était très probablement dû au endpoint deviné lui-même (jamais confirmé), pas à un défaut
+  structurel. **À surveiller au premier vrai lot Tripo lancé après cette mise à jour** — en cas de
+  souci, redésactiver est aussi simple qu'avant.
+- Vérifié par analyse syntaxique PowerShell réelle du script entier (0 erreur), exécution
+  PowerShell réelle de la logique de décision combinée Meshy+Tripo (14 assertions, dont les cas
+  cle invalide/solde insuffisant/mode comparaison/intervalle mid-batch), et recompilation Kotlin
+  complète contre les stubs (0 erreur sur le nouveau code).
+
 ## v0.28 (build 28) + Windows
 
 **Revérification du solde Meshy en cours de lot**, idée proposée en passant et validée par Tomyn

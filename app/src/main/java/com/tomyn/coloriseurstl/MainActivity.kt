@@ -1098,11 +1098,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Verification cle+solde : seulement pour Meshy (quand il va etre utilise, donc aussi en
-        // mode comparaison puisque Meshy y est toujours sollicite). Cote Tripo, desactivee -
-        // l'endpoint devine (/user/balance, jamais confirme) provoquait un blocage de l'appli sur
-        // la version Windows ; rien d'essentiel perdu, le vrai pipeline n'est pas touche, les
-        // erreurs eventuelles remontent normalement depuis le service pendant le traitement.
+        // Verification cle+solde, Meshy ET Tripo (21/10/2026 : Tripo reactivee ici, meme session
+        // que cote Windows - TripoApiClient.verifierCleEtSolde pointait deja vers le bon endpoint
+        // confirme ("/account/balance") depuis le 20/10/2026 mais n'etait appelee nulle part cote
+        // Android. Le blocage original observe cote Windows venait du tout premier endpoint
+        // devine (/user/balance, jamais confirme) ; pas de raison de penser que l'appel Android
+        // (meme squelette ReessaiReseau/HttpURLConnection que Meshy, deja en production ici) aurait
+        // le meme souci. Pas de test reseau live possible (pas de cle Tripo utilisable a
+        // disposition) - a surveiller au premier vrai lot Tripo de Tomyn.
         val meshyObjExperimental = caseMeshyObjExperimental.isChecked
         // N'a de sens que si meshyObjExperimental est coche (champ grise sinon) ; texte invalide
         // ou vide -> 0 (aucun assombrissement), jamais une erreur bloquante pour un simple reglage.
@@ -1123,50 +1126,65 @@ class MainActivity : AppCompatActivity() {
             champTailleImpression.text.toString().toIntOrNull()?.coerceIn(0, 1000)?.takeIf { it > 0 }
         } else null
 
-        if (fournisseur == "Tripo") {
-            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount)
-            return
-        }
+        val utiliseMeshyPourCeLot = (fournisseur == "Meshy" || comparer)
+        val utiliseTripoPourCeLot = (fournisseur == "Tripo" || comparer)
 
         btnLancer.isEnabled = false
         Thread {
-            val verif = MeshyApiClient.verifierCleEtSolde(cleMeshy)
+            val verifMeshy = if (utiliseMeshyPourCeLot) MeshyApiClient.verifierCleEtSolde(cleMeshy) else null
+            val verifTripo = if (utiliseTripoPourCeLot) TripoApiClient.verifierCleEtSolde(cleTripo) else null
             runOnUiThread {
                 btnLancer.isEnabled = true
-                when (verif.statut) {
-                    MeshyApiClient.StatutCle.INVALIDE -> {
-                        AlertDialog.Builder(this)
-                            .setTitle("Clé API invalide")
-                            .setMessage("La clé API Meshy semble invalide ou expirée. Vérifie-la dans Paramètres.")
-                            .setPositiveButton("OK", null)
-                            .show()
+
+                // Cles invalides : bloquant, Meshy verifie en premier (meme ordre que la version
+                // Windows) - s'arrete au premier probleme plutot que de cumuler les boites.
+                if (verifMeshy?.statut == MeshyApiClient.StatutCle.INVALIDE) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Clé API invalide")
+                        .setMessage("La clé API Meshy semble invalide ou expirée. Vérifie-la dans Paramètres.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@runOnUiThread
+                }
+                if (verifTripo?.statut == TripoApiClient.StatutCle.INVALIDE) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Clé API invalide")
+                        .setMessage("La clé API Tripo semble invalide ou expirée. Vérifie-la dans Paramètres.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@runOnUiThread
+                }
+
+                // "Verification impossible" / "solde insuffisant" regroupes en UNE SEULE boite
+                // (mode comparaison : eviter deux popups successives pour le meme lancement).
+                val avertissements = mutableListOf<String>()
+                if (verifMeshy?.statut == MeshyApiClient.StatutCle.INCONNU) {
+                    avertissements.add("Meshy : impossible de vérifier la clé ou le solde pour l'instant (problème réseau ?).")
+                } else if (verifMeshy?.statut == MeshyApiClient.StatutCle.VALIDE) {
+                    val creditsParFichierMeshy = if (meshyObjExperimental) CREDITS_ESTIMES_RETEXTURE_SEULE else CREDITS_ESTIMES_PAR_FICHIER
+                    val coutEstime = fichiersAtraiter.size * creditsParFichierMeshy
+                    if ((verifMeshy.solde ?: 0) < coutEstime) {
+                        avertissements.add("Meshy : solde actuel ${verifMeshy.solde} crédits, coût estimé ~$coutEstime crédits pour ce lot.")
                     }
-                    MeshyApiClient.StatutCle.INCONNU -> {
-                        AlertDialog.Builder(this)
-                            .setTitle("Vérification impossible")
-                            .setMessage("Impossible de vérifier la clé API ou le solde pour l'instant (problème réseau ?). Continuer quand même ?")
-                            .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount) }
-                            .setNegativeButton("Annuler", null)
-                            .show()
+                }
+                if (verifTripo?.statut == TripoApiClient.StatutCle.INCONNU) {
+                    avertissements.add("Tripo : impossible de vérifier la clé ou le solde pour l'instant (problème réseau ?).")
+                } else if (verifTripo?.statut == TripoApiClient.StatutCle.VALIDE) {
+                    val coutEstimeTripo = fichiersAtraiter.size * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+                    if ((verifTripo.solde ?: 0.0) < coutEstimeTripo) {
+                        avertissements.add("Tripo : solde actuel ${verifTripo.solde} crédits, coût estimé ~$coutEstimeTripo crédits pour ce lot.")
                     }
-                    MeshyApiClient.StatutCle.VALIDE -> {
-                        // En mode comparaison, Tripo s'ajoute a ce cout mais n'a pas d'estimation
-                        // fiable (echelle de credits differente, jamais documentee avec certitude -
-                        // voir TripoApiClient) : on compare juste au cout Meshy seul, honnete plutot
-                        // que d'inventer un total combine.
-                        val creditsParFichierMeshy = if (meshyObjExperimental) CREDITS_ESTIMES_RETEXTURE_SEULE else CREDITS_ESTIMES_PAR_FICHIER
-                        val coutEstime = fichiersAtraiter.size * creditsParFichierMeshy
-                        if ((verif.solde ?: 0) < coutEstime) {
-                            AlertDialog.Builder(this)
-                                .setTitle("Solde potentiellement insuffisant")
-                                .setMessage("Solde actuel : ${verif.solde} crédits. Coût estimé pour ce lot (Meshy seul) : ~$coutEstime crédits.\n\nContinuer quand même ?")
-                                .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount) }
-                                .setNegativeButton("Annuler", null)
-                                .show()
-                        } else {
-                            demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount)
-                        }
-                    }
+                }
+
+                if (avertissements.isNotEmpty()) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Vérification du solde avant lancement")
+                        .setMessage(avertissements.joinToString("\n") + "\n\nContinuer quand même ?")
+                        .setPositiveButton("Continuer") { _, _ -> demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount) }
+                        .setNegativeButton("Annuler", null)
+                        .show()
+                } else {
+                    demarrerServiceColorisation(fichiersAtraiter, dossierSortie, prompt, fournisseur, comparer, meshyObjExperimental, assombrirTexturePourcent, smartTopology, geometryResolution, textureResolution, reparerParois, tailleImpressionMm, targetPolycount)
                 }
             }
         }.start()

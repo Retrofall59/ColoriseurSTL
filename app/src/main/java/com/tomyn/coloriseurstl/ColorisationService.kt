@@ -72,6 +72,9 @@ class ColorisationService : Service() {
         // Windows. Voir la verification periodique dans traiterLot plus bas.
         private const val CREDITS_ESTIMES_PAR_FICHIER = 20
         private const val INTERVALLE_VERIF_SOLDE_LOT = 20
+        // 21/10/2026 (meme session) : etendu a Tripo, meme valeur que
+        // MainActivity.CREDITS_ESTIMES_PAR_FICHIER_TRIPO cote Android / Windows.
+        private const val CREDITS_ESTIMES_PAR_FICHIER_TRIPO = 20
     }
 
     private var threadTraitement: Thread? = null
@@ -199,11 +202,12 @@ class ColorisationService : Service() {
             mettreAJourNotification(i + 1, uris.size, nom)
 
             // 21/10/2026, porte depuis la version Windows (idee en passant validee "2-4") :
-            // jusqu'ici le solde Meshy n'etait verifie qu'UNE FOIS avant de lancer tout le lot
-            // (voir MainActivity) - sur un dossier de 250 fichiers payes par le collegue
-            // dessinateur de Tomyn, un derapage du cout reel ne se voyait qu'en echouant fichier
-            // par fichier une fois le solde epuise. Tous les INTERVALLE_VERIF_SOLDE_LOT fichiers,
-            // on reverifie le solde REEL contre le cout estime des fichiers RESTANTS.
+            // jusqu'ici le solde n'etait verifie qu'UNE FOIS avant de lancer tout le lot (voir
+            // MainActivity) - sur un dossier de 250 fichiers payes par le collegue dessinateur de
+            // Tomyn, un derapage du cout reel ne se voyait qu'en echouant fichier par fichier une
+            // fois le solde epuise. Tous les INTERVALLE_VERIF_SOLDE_LOT fichiers, on reverifie le
+            // solde REEL contre le cout estime des fichiers RESTANTS.
+            // Etendu a Tripo plus tard la meme session, meme principe que cote Windows.
             //
             // Difference deliberee avec Windows : la ici tourne dans un Service Android, pas une
             // fenetre WinForms - pas de boite de dialogue bloquante Oui/Non possible sans
@@ -211,26 +215,44 @@ class ColorisationService : Service() {
             // d'un AVERTISSEMENT non-bloquant dans le journal (visible immediatement dans l'onglet
             // Avancement, que MainActivity sonde en direct) plutot que d'interrompre : Tomyn garde
             // la main via le bouton Annuler deja existant s'il juge que ca vaut le coup d'arreter.
-            if ((fournisseur == "Meshy" || comparer) && EtatTraitement.indexFichierCourant > 1 &&
+            val utiliseMeshyIci = (fournisseur == "Meshy" || comparer)
+            val utiliseTripoIci = (fournisseur == "Tripo" || comparer)
+            if ((utiliseMeshyIci || utiliseTripoIci) && EtatTraitement.indexFichierCourant > 1 &&
                 (EtatTraitement.indexFichierCourant - 1) % INTERVALLE_VERIF_SOLDE_LOT == 0
             ) {
-                val verifSoldeEnCours = MeshyApiClient.verifierCleEtSolde(cleMeshy)
-                if (verifSoldeEnCours.statut == MeshyApiClient.StatutCle.VALIDE && verifSoldeEnCours.solde != null) {
-                    val fichiersRestants = uris.size - EtatTraitement.indexFichierCourant + 1
-                    val coutEstimeRestant = fichiersRestants * CREDITS_ESTIMES_PAR_FICHIER
-                    if (verifSoldeEnCours.solde < coutEstimeRestant) {
-                        EtatTraitement.ecrireJournal(
-                            "\n⚠ Apres ${EtatTraitement.indexFichierCourant - 1} fichier(s) : solde Meshy restant " +
-                            "${verifSoldeEnCours.solde} credits, cout estime pour les $fichiersRestants fichier(s) " +
-                            "restant(s) ~$coutEstimeRestant credits - pourrait depasser le solde. " +
-                            "Annule maintenant si besoin (bouton Annuler)."
-                        )
+                val fichiersRestants = uris.size - EtatTraitement.indexFichierCourant + 1
+                if (utiliseMeshyIci) {
+                    val verifSoldeEnCours = MeshyApiClient.verifierCleEtSolde(cleMeshy)
+                    if (verifSoldeEnCours.statut == MeshyApiClient.StatutCle.VALIDE && verifSoldeEnCours.solde != null) {
+                        val coutEstimeRestant = fichiersRestants * CREDITS_ESTIMES_PAR_FICHIER
+                        if (verifSoldeEnCours.solde < coutEstimeRestant) {
+                            EtatTraitement.ecrireJournal(
+                                "\n⚠ Apres ${EtatTraitement.indexFichierCourant - 1} fichier(s) : solde Meshy restant " +
+                                "${verifSoldeEnCours.solde} credits, cout estime pour les $fichiersRestants fichier(s) " +
+                                "restant(s) ~$coutEstimeRestant credits - pourrait depasser le solde. " +
+                                "Annule maintenant si besoin (bouton Annuler)."
+                            )
+                        }
+                    }
+                    // INVALIDE/INCONNU : jamais bloquant ici, meme raisonnement que cote Windows -
+                    // interrompre un gros lot pour UN controle de solde rate serait pire que le
+                    // probleme vise. Le pipeline reel s'en apercevra de lui-meme si la cle est
+                    // vraiment devenue invalide (chaque fichier echouera avec un message HTTP clair).
+                }
+                if (utiliseTripoIci) {
+                    val verifSoldeTripoEnCours = TripoApiClient.verifierCleEtSolde(cleTripo)
+                    if (verifSoldeTripoEnCours.statut == TripoApiClient.StatutCle.VALIDE && verifSoldeTripoEnCours.solde != null) {
+                        val coutEstimeRestantTripo = fichiersRestants * CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+                        if (verifSoldeTripoEnCours.solde < coutEstimeRestantTripo) {
+                            EtatTraitement.ecrireJournal(
+                                "\n⚠ Apres ${EtatTraitement.indexFichierCourant - 1} fichier(s) : solde Tripo restant " +
+                                "${verifSoldeTripoEnCours.solde} credits, cout estime pour les $fichiersRestants fichier(s) " +
+                                "restant(s) ~$coutEstimeRestantTripo credits - pourrait depasser le solde. " +
+                                "Annule maintenant si besoin (bouton Annuler)."
+                            )
+                        }
                     }
                 }
-                // INVALIDE/INCONNU : jamais bloquant ici, meme raisonnement que cote Windows -
-                // interrompre un gros lot pour UN controle de solde rate serait pire que le
-                // probleme vise. Le pipeline reel s'en apercevra de lui-meme si la cle est
-                // vraiment devenue invalide (chaque fichier echouera avec un message HTTP clair).
             }
 
             try {

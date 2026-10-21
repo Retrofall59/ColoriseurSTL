@@ -4981,24 +4981,36 @@ function Lancer-Traitement($fichiersStl) {
     } catch { }
 
     # --- Verification de la cle API et du solde avant de lancer, selon le fournisseur choisi ---
-    # Cote Tripo : desactivee pour l'instant. L'ancien endpoint devine (/user/balance, jamais
-    # confirme) provoquait un blocage de l'appli des le clic sur Lancer - rien d'essentiel perdu
-    # (ce n'etait qu'un avertissement avant coup), le vrai pipeline (upload/texture/convert) n'est
-    # pas touche. 20/10/2026 : Verifier-CleEtSoldeTripo pointe maintenant vers le vrai endpoint
-    # documente (/account/balance), mais reste desactivee ici tant que le blocage original n'a pas
-    # ete reproduit/confirme regle (peut-etre juste l'URL en cause, peut-etre autre chose - pas
-    # teste en conditions reelles).
+    # 21/10/2026 : Tripo reactivee ici. Elle etait desactivee depuis l'origine car le tout premier
+    # endpoint devine (/user/balance, jamais confirme) provoquait un blocage de l'appli des le clic
+    # sur Lancer. Le 20/10/2026, Verifier-CleEtSoldeTripo a ete corrigee vers le vrai endpoint
+    # documente (/account/balance, developers.tripo3d.ai/fr/docs/account) mais etait restee non
+    # appelee, le blocage original n'ayant pas encore ete reproduit/confirme regle. Elle partage
+    # exactement le meme squelette (try/catch, Invoquer-AvecReessaiReseau, TimeoutSec) que
+    # Verifier-CleEtSolde (Meshy), deja en production sans souci de ce type - le blocage etait tres
+    # probablement du a l'ancien endpoint devine (404 ou reponse inattendue mal geree), pas a un
+    # defaut structurel de la fonction. Pas de test reseau live possible ici (pas de cle Tripo
+    # utilisable a disposition) : a surveiller au tout premier lot Tripo lance apres cette mise a
+    # jour - en cas de souci, redesactiver est aussi simple que remettre "ignore" en dur ci-dessous.
     $coutEstime = $fichiersStl.Count * $CREDITS_ESTIMES_PAR_FICHIER
-    # Meshy est verifie des qu'il va etre utilise (fournisseur unique "Meshy", ou mode comparaison
-    # ou les deux sont utilises) - Tripo reste non verifie avant lancement (voir Verifier-CleEtSoldeTripo).
-    $verifCle = if ($fournisseur -eq "Meshy" -or $caseComparerFournisseurs.Checked) { Verifier-CleEtSolde $txtCleApi.Text } else { @{ Statut = "ignore"; Solde = $null } }
+    $coutEstimeTripo = $fichiersStl.Count * $CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+    $utiliseMeshyPourCeLot = ($fournisseur -eq "Meshy" -or $caseComparerFournisseurs.Checked)
+    $utiliseTripoPourCeLot = ($fournisseur -eq "Tripo" -or $caseComparerFournisseurs.Checked)
+    $verifCle = if ($utiliseMeshyPourCeLot) { Verifier-CleEtSolde $txtCleApi.Text } else { @{ Statut = "ignore"; Solde = $null } }
     if ($verifCle.Statut -eq "invalide") {
-        Afficher-Boite "La cle API $fournisseur semble invalide ou expiree. Verifie-la dans le champ correspondant avant de relancer." "Cle API invalide" "OK" "Error" | Out-Null
+        Afficher-Boite "La cle API Meshy semble invalide ou expiree. Verifie-la dans le champ correspondant avant de relancer." "Cle API invalide" "OK" "Error" | Out-Null
         return
     }
+    $verifCleTripo = if ($utiliseTripoPourCeLot) { Verifier-CleEtSoldeTripo $txtCleApiTripo.Text } else { @{ Statut = "ignore"; Solde = $null } }
+    if ($verifCleTripo.Statut -eq "invalide") {
+        Afficher-Boite "La cle API Tripo semble invalide ou expiree. Verifie-la dans le champ correspondant avant de relancer." "Cle API invalide" "OK" "Error" | Out-Null
+        return
+    }
+    # Avertissements "solde potentiellement insuffisant" / "verification impossible" regroupes en
+    # UNE SEULE boite (mode comparaison : eviter deux popups successives pour le meme lancement).
+    $avertissementsPrelancement = @()
     if ($verifCle.Statut -eq "inconnu") {
-        $reponseBoite = Afficher-Boite "Impossible de verifier la cle API $fournisseur ou le solde pour l'instant (probleme reseau ?). Continuer quand meme, sans cette verification ?" "Verification impossible" "YesNo" "Warning"
-        if ($reponseBoite -ne "Yes") { return }
+        $avertissementsPrelancement += "Meshy : impossible de verifier la cle ou le solde pour l'instant (probleme reseau ?)."
     } elseif ($verifCle.Solde -ne $null -and $verifCle.Solde -lt $coutEstime) {
         # 20/10/2026 : detail mensuel/permanent ajoute au message quand Meshy le fournit (voir
         # Verifier-CleEtSolde) - utile ici precisement, puisque c'est le moment ou Tomyn doit decider
@@ -5010,7 +5022,16 @@ function Lancer-Traitement($fichiersStl) {
             if ($verifCle.RenouvellementLe) { $detailSolde += ", renouvellement le $($verifCle.RenouvellementLe)" }
             $detailSolde += ")"
         }
-        $reponseBoite = Afficher-Boite "Solde actuel : $($verifCle.Solde) credits$detailSolde. Cout estime pour ce lot : ~$coutEstime credits (pourrait depasser ton solde).`n`nContinuer quand meme ?" "Solde potentiellement insuffisant" "YesNo" "Warning"
+        $avertissementsPrelancement += "Meshy : solde actuel $($verifCle.Solde) credits$detailSolde, cout estime ~$coutEstime credits pour ce lot."
+    }
+    if ($verifCleTripo.Statut -eq "inconnu") {
+        $avertissementsPrelancement += "Tripo : impossible de verifier la cle ou le solde pour l'instant (probleme reseau ?)."
+    } elseif ($verifCleTripo.Solde -ne $null -and $verifCleTripo.Solde -lt $coutEstimeTripo) {
+        $avertissementsPrelancement += "Tripo : solde actuel $($verifCleTripo.Solde) credits, cout estime ~$coutEstimeTripo credits pour ce lot."
+    }
+    if ($avertissementsPrelancement.Count -gt 0) {
+        $texteAvertPrelancement = ($avertissementsPrelancement -join "`n")
+        $reponseBoite = Afficher-Boite "$texteAvertPrelancement`n`nContinuer quand meme ?" "Verification du solde avant lancement" "YesNo" "Warning"
         if ($reponseBoite -ne "Yes") { return }
     }
 
@@ -5144,38 +5165,65 @@ function Lancer-Traitement($fichiersStl) {
                     continue
                 }
             }
-            # Reverification periodique du solde Meshy EN COURS de lot (21/10/2026, idee en passant
+            # Reverification periodique du solde EN COURS de lot (21/10/2026, idee en passant
             # validee "2-4" - jusqu'ici le solde n'etait verifie qu'UNE FOIS avant de lancer tout le
             # lot ; sur un dossier de 250 fichiers payes par le collegue dessinateur de Tomyn, un
             # derapage du cout reel ne se voyait qu'en echouant fichier par fichier une fois le
-            # solde epuise, sans prevenir avant). Seulement si Meshy est reellement utilise, et
-            # seulement tous les $INTERVALLE_VERIF_SOLDE_LOT fichiers (pas a chaque fichier - un
-            # appel reseau par fichier serait inutile et plus lent). Compare au cout estime des
-            # fichiers RESTANTS, pas tout le lot a nouveau - ce qui a deja ete depense est depense.
-            if (($fournisseur -eq "Meshy" -or $caseComparerFournisseurs.Checked) -and $script:indexFichierCourant -gt 1 -and (($script:indexFichierCourant - 1) % $INTERVALLE_VERIF_SOLDE_LOT -eq 0)) {
-                $verifSoldeEnCours = Verifier-CleEtSolde $txtCleApi.Text
-                if ($verifSoldeEnCours.Statut -eq "valide") {
-                    $fichiersRestants = $fichiersStl.Count - $script:indexFichierCourant + 1
-                    $coutEstimeRestant = $fichiersRestants * $CREDITS_ESTIMES_PAR_FICHIER
-                    if ($verifSoldeEnCours.Solde -lt $coutEstimeRestant) {
-                        # Overlay masque AVANT la boite - sinon, etant TopMost, il passerait devant
-                        # et empecherait de cliquer sur Oui/Non (meme souci deja corrige plus bas
-                        # pour la boite d'erreur).
-                        Masquer-OverlayProgression
-                        $reponseSoldeEnCours = Afficher-Boite "Apres $($script:indexFichierCourant - 1) fichier(s), solde Meshy restant : $($verifSoldeEnCours.Solde) credits. Cout estime pour les $fichiersRestants fichier(s) restant(s) : ~$coutEstimeRestant credits (pourrait depasser ton solde).`n`nContinuer le lot quand meme ?" "Solde potentiellement insuffisant en cours de lot" "YesNo" "Warning"
-                        if ($reponseSoldeEnCours -ne "Yes") {
-                            Ecrire-Journal "`n=== Annule par l'utilisateur (solde Meshy juge insuffisant apres $($script:indexFichierCourant - 1) fichier(s)) ==="
-                            $interrompu = $true
-                            break
+            # solde epuise, sans prevenir avant). Seulement tous les $INTERVALLE_VERIF_SOLDE_LOT
+            # fichiers (pas a chaque fichier - un appel reseau par fichier serait inutile et plus
+            # lent). Compare au cout estime des fichiers RESTANTS, pas tout le lot a nouveau - ce
+            # qui a deja ete depense est depense.
+            # 21/10/2026 (meme session) : etendu a Tripo. Verifier-CleEtSoldeTripo pointait deja
+            # vers le bon endpoint documente ("/account/balance", corrige un peu plus tot le meme
+            # jour) mais n'etait encore appelee nulle part - le vieux souci de blocage UI au clic sur
+            # "Lancer" venait du tout premier endpoint devine (jamais confirme), pas d'un probleme
+            # structurel : Verifier-CleEtSoldeTripo partage exactement le meme squelette
+            # try/catch + Invoquer-AvecReessaiReseau + TimeoutSec que Verifier-CleEtSolde (Meshy),
+            # deja en production sans souci. Pas de test reseau live possible ici (pas de cle Tripo
+            # utilisable a disposition) - a surveiller au premier vrai lot Tripo de Tomyn.
+            $utiliseMeshyIci = ($fournisseur -eq "Meshy" -or $caseComparerFournisseurs.Checked)
+            $utiliseTripoIci = ($fournisseur -eq "Tripo" -or $caseComparerFournisseurs.Checked)
+            if (($utiliseMeshyIci -or $utiliseTripoIci) -and $script:indexFichierCourant -gt 1 -and (($script:indexFichierCourant - 1) % $INTERVALLE_VERIF_SOLDE_LOT -eq 0)) {
+                $fichiersRestants = $fichiersStl.Count - $script:indexFichierCourant + 1
+                $avertissementsSolde = @()
+                if ($utiliseMeshyIci) {
+                    $verifSoldeEnCours = Verifier-CleEtSolde $txtCleApi.Text
+                    if ($verifSoldeEnCours.Statut -eq "valide") {
+                        $coutEstimeRestant = $fichiersRestants * $CREDITS_ESTIMES_PAR_FICHIER
+                        if ($verifSoldeEnCours.Solde -lt $coutEstimeRestant) {
+                            $avertissementsSolde += "Meshy : solde restant $($verifSoldeEnCours.Solde) credits, cout estime ~$coutEstimeRestant credits pour les $fichiersRestants fichier(s) restant(s)."
                         }
-                        # Reaffiche l'overlay (juste .Show(), pas Afficher-OverlayProgression qui
-                        # remettrait le pourcentage et les boutons Pause/Annuler a zero pour rien -
-                        # on reprend exactement ou on en etait).
-                        $overlayProgression.Show()
+                    }
+                    # "invalide"/"inconnu" : jamais bloquant ici (voir note plus bas).
+                }
+                if ($utiliseTripoIci) {
+                    $verifSoldeTripoEnCours = Verifier-CleEtSoldeTripo $txtCleApiTripo.Text
+                    if ($verifSoldeTripoEnCours.Statut -eq "valide") {
+                        $coutEstimeRestantTripo = $fichiersRestants * $CREDITS_ESTIMES_PAR_FICHIER_TRIPO
+                        if ($verifSoldeTripoEnCours.Solde -lt $coutEstimeRestantTripo) {
+                            $avertissementsSolde += "Tripo : solde restant $($verifSoldeTripoEnCours.Solde) credits, cout estime ~$coutEstimeRestantTripo credits pour les $fichiersRestants fichier(s) restant(s)."
+                        }
                     }
                 }
+                if ($avertissementsSolde.Count -gt 0) {
+                    # Overlay masque AVANT la boite - sinon, etant TopMost, il passerait devant et
+                    # empecherait de cliquer sur Oui/Non (meme souci deja corrige plus bas pour la
+                    # boite d'erreur).
+                    Masquer-OverlayProgression
+                    $texteAvertissements = ($avertissementsSolde -join "`n")
+                    $reponseSoldeEnCours = Afficher-Boite "Apres $($script:indexFichierCourant - 1) fichier(s) :`n$texteAvertissements`n`nContinuer le lot quand meme ?" "Solde potentiellement insuffisant en cours de lot" "YesNo" "Warning"
+                    if ($reponseSoldeEnCours -ne "Yes") {
+                        Ecrire-Journal "`n=== Annule par l'utilisateur (solde juge insuffisant apres $($script:indexFichierCourant - 1) fichier(s)) ==="
+                        $interrompu = $true
+                        break
+                    }
+                    # Reaffiche l'overlay (juste .Show(), pas Afficher-OverlayProgression qui
+                    # remettrait le pourcentage et les boutons Pause/Annuler a zero pour rien - on
+                    # reprend exactement ou on en etait).
+                    $overlayProgression.Show()
+                }
                 # "invalide"/"inconnu" (cle devenue invalide en cours de route, ou simple souci
-                # reseau transitoire malgre le reessai deja tente dans Verifier-CleEtSolde) : jamais
+                # reseau transitoire malgre le reessai deja tente dans Verifier-CleEtSolde*) : jamais
                 # bloquant ici, contrairement a la verification initiale avant lancement -
                 # interrompre un lot de 250 fichiers a cause d'UN controle de solde rate serait pire
                 # que le probleme que ca essaie d'eviter. Le vrai pipeline s'en apercevra de
