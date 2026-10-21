@@ -1,5 +1,22 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : le .3mf généré automatiquement était invisible dans l'appli
+
+Bug remonté par Tomyn : après le correctif de performance ci-dessous, le `.3mf` peint se générait
+bien et était bien présent sur le disque (confirmé par Tomyn dans l'Explorateur Windows, 67,2 Mo,
+reconnu comme fichier BambuStudio) — mais rien ne le signalait dans l'onglet "Résultats colorisés"
+de l'appli, qui n'affichait toujours que la vignette de l'`.obj`.
+
+Correctif : une seconde vignette est maintenant ajoutée automatiquement, juste à côté de celle de
+l'OBJ, dès que la conversion en `.3mf` réussit. Cette vignette .3mf récupère au passage les boutons
+"Analyser les couleurs..." (vers le Mélangeur) et "Copier desc." déjà prévus pour tout résultat
+`.3mf` dans la galerie — pas disponibles sur la vignette OBJ, puisque ces outils ne lisent que des
+`.3mf`.
+
+Note technique : le rendu maison des vignettes (`RenduSTL`) ne sait lire que `.obj`/`.stl`, pas
+`.3mf` — la nouvelle vignette affiche donc l'image de remplacement générique plutôt qu'un rendu 3D,
+sans risque de lenteur sur un maillage énorme (celui testé par Tomyn faisait 1 464 680 triangles).
+
 ## Windows (21/10/2026, correctif) : blocage de l'appli sur un gros maillage ("Ne répond pas")
 
 Bug remonté par Tomyn en conditions réelles, sur un lot visant 300 000 triangles : juste après

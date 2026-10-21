@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 12, 0, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 13, 0, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4493,10 +4493,12 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     # defense en profondeur : un echec de conversion (OBJ malforme, cas non prevu) ne doit
     # jamais faire perdre le resultat Tripo deja obtenu - l'OBJ reste utilisable tel quel,
     # on journalise juste l'echec sans faire planter tout le traitement du fichier.
+    $cheminSortie3mfReussi = $null
     try {
         $cheminSortie3mf = Join-Path $dossierResultat ($fichierObj.BaseName + ".3mf")
         $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf 8
         Ecrire-Journal "  -> .3mf peint genere automatiquement : $($infoConversion.NombreCouleurs) couleur(s), $($infoConversion.NombreTriangles) triangles ($cheminSortie3mf)"
+        $cheminSortie3mfReussi = $cheminSortie3mf
     } catch {
         Ecrire-Journal "  -> ECHEC de la conversion automatique en .3mf peint (l'OBJ colore reste disponible) : $_"
     }
@@ -4509,6 +4511,18 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
 
     Ajouter-Vignette $GalerieCible $fichierObj.FullName $null -texteDescription $descriptionGeneree.Texte
     [System.Windows.Forms.Application]::DoEvents()
+
+    # 21/10/2026, bug remonte par Tomyn : le .3mf genere automatiquement ci-dessus etait bien sur
+    # le disque, mais totalement invisible dans l'onglet Resultats (seul l'OBJ y avait une
+    # vignette) - rien ne signalait sa presence sans aller fouiller dans l'Explorateur Windows.
+    # Deuxieme vignette, juste a cote de celle de l'OBJ, des que la conversion a reussi - elle
+    # recupere au passage le bouton "Analyser les couleurs..." (vers le Melangeur) et "Couleurs..."
+    # deja prevus pour tout resultat .3mf (voir $estResultat3mf dans Ajouter-Vignette), pas
+    # disponibles sur la vignette OBJ puisque ces outils ne lisent que des .3mf.
+    if ($cheminSortie3mfReussi) {
+        Ajouter-Vignette $GalerieCible $cheminSortie3mfReussi $null -texteDescription $descriptionGeneree.Texte
+        [System.Windows.Forms.Application]::DoEvents()
+    }
 
     # Credits reellement consommes sur les TROIS etapes facturees : import (5), texturation (10)
     # et conversion (confirmes par Tomyn le 07/10/2026 - l'import n'est pas gratuit, contrairement
