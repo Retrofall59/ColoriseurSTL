@@ -1,5 +1,28 @@
 # Changelog
 
+## Windows (21/10/2026, correctif confirmé) : BOM UTF-8 en tête de fichier, cause réelle du rejet
+
+Suite du correctif précédent (index OBJ négatifs) : Tomyn a régénéré un `.3mf` avec ce correctif,
+et Bambu Studio a renvoyé **exactement les mêmes erreurs**. Il m'a envoyé directement le `.obj`
+source et le `.3mf` cassé — analyse en conditions réelles plutôt qu'en devinant :
+
+- Le vrai `.obj` de Tomyn (730 372 sommets, 1 460 768 triangles) ne contient **aucun** index
+  négatif ni hors bornes : le correctif précédent était un vrai bug (toujours utile), mais pas la
+  cause de CE rejet précis.
+- Inspection **octet par octet** du `.3mf` cassé envoyé par Tomyn : le fichier `3D/3dmodel.model`
+  commençait par `EF BB BF` (un BOM UTF-8) avant `<?xml version="1.0"...`. Le XML lui-même était
+  par ailleurs complet et bien formé (aucune troncature, `</model>` final présent).
+- Cause : `[System.Text.Encoding]::UTF8` de .NET ajoute automatiquement ce BOM avec
+  `WriteAllText` — un piège classique, et un `.3mf` ne doit jamais en contenir un.
+- Corrigé : écriture de tous les fichiers du paquet (`3dmodel.model`, `[Content_Types].xml`,
+  `_rels/.rels`, `project_settings.config`) avec un encodage UTF-8 explicitement sans BOM.
+- **Vérifié directement sur le fichier réel de Tomyn**, avec le code tel qu'il est livré dans
+  `Coloriser-STL-GUI.ps1` (extrait et exécuté tel quel, pas une reconstruction) : conversion
+  complète du vrai `.obj` (730 372 sommets / 1 460 768 triangles) en ~75 secondes, `.3mf` résultant
+  sans BOM confirmé au niveau octet, XML intégralement reparsable (tous les sommets et triangles
+  présents). C'est la vérification la plus poussée possible sans Bambu Studio lui-même — reste à
+  confirmer que le fichier s'ouvre bien chez Tomyn.
+
 ## Windows (21/10/2026, correctif) : le .3mf généré ne s'ouvrait pas dans Bambu Studio
 
 Bug remonté par Tomyn sur son premier vrai test : le `.3mf` généré automatiquement se créait bien

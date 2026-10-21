@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 22, 0, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 22, 30, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4211,6 +4211,15 @@ function Obtenir-HexDepuisRGB24([int]$R, [int]$G, [int]$B) {
     return ("#{0:X2}{1:X2}{2:X2}" -f $R, $G, $B)
 }
 
+# 21/10/2026, cause racine du rejet du .3mf par Bambu Studio ("chargement echoue" / "pas de
+# donnees geometriques") sur le vrai fichier de Tomyn : [System.Text.Encoding]::UTF8 de .NET
+# ecrit un BOM (3 octets EF BB BF) en tete de fichier avec WriteAllText - confirme en inspectant
+# octet par octet le .3mf rejete (envoye par Tomyn), qui commencait bien par EF BB BF avant
+# "<?xml", alors que le XML lui-meme etait par ailleurs complet et bien forme (pas de troncature).
+# Reproduit et corrige sur le vrai fichier (730372 sommets, 1460768 triangles) : le XML reparse
+# sans erreur une fois le BOM retire.
+$script:EncodageUtf8SansBOM = New-Object System.Text.UTF8Encoding($false)
+
 # Fonction principale : lit l'OBJ colore par Tripo, regroupe les couleurs en au plus
 # $NombreCouleursMax teintes, et ecrit un .3mf peint directement exploitable dans Bambu
 # Studio (geometrie + attribut paint_color par triangle + palette filament_colour dans
@@ -4250,13 +4259,13 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         [void]$sb.Append('</triangles></mesh></object></resources>')
         [void]$sb.Append('<build><item objectid="1"/></build>')
         [void]$sb.Append('</model>')
-        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "3D/3dmodel.model"), $sb.ToString(), [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "3D/3dmodel.model"), $sb.ToString(), $script:EncodageUtf8SansBOM)
 
         $contentTypes = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="text/xml"/></Types>'
-        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "[Content_Types].xml"), $contentTypes, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "[Content_Types].xml"), $contentTypes, $script:EncodageUtf8SansBOM)
 
         $rels = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'
-        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "_rels/.rels"), $rels, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "_rels/.rels"), $rels, $script:EncodageUtf8SansBOM)
 
         # Metadata/project_settings.config - meme schema que les vrais .3mf Bambu Studio,
         # pour que le Melangeur (Obtenir-CouleursFichier3MF) et le reste du pipeline
@@ -4266,7 +4275,7 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
             [void]$hexCouleurs.Add((Obtenir-HexDepuisRGB24 $groupes.CentresR[$c] $groupes.CentresG[$c] $groupes.CentresB[$c]))
         }
         $configJson = @{ filament_colour = $hexCouleurs.ToArray() } | ConvertTo-Json -Compress
-        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, $script:EncodageUtf8SansBOM)
 
         if (Test-Path -LiteralPath $CheminSortie3mf) { Remove-Item -LiteralPath $CheminSortie3mf -Force }
         [System.IO.Compression.ZipFile]::CreateFromDirectory($dossierTemp, $CheminSortie3mf)
