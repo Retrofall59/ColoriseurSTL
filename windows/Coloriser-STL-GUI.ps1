@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 1, 15, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 1, 45, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4531,7 +4531,16 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
             if ($i % 50000 -eq 0) { Pomper-MessagesUI }
         }
         [void]$sb.Append('</triangles></mesh></object></resources>')
-        [void]$sb.Append('<build><item objectid="1"/></build>')
+        # 22/10/2026, bug remonte par Tomyn (capture d'ecran) : meme apres le centrage X/Y sur
+        # l'origine (0,0) ci-dessus, le modele flotte a cote du plateau dans Bambu Studio au lieu
+        # d'etre dessus - "objets places au-dessus" toujours affiche. Cause : le maillage est bien
+        # centre sur (0,0), mais le plateau Bambu (A1 : 256x256mm) a son origine au coin avant-
+        # gauche, pas au centre - un objet centre sur (0,0) se retrouve donc a moitie hors du
+        # plateau, dans le quadrant negatif. Il manque une translation de l'item vers le centre du
+        # plateau (128,128 pour un plateau 256x256). Ajoutee ici via le transform de <item> plutot
+        # que de retoucher les sommets : matrice 3mf = 9 valeurs de rotation/echelle (identite) +
+        # 3 valeurs de translation (Tx Ty Tz).
+        [void]$sb.Append('<build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 128 128 0"/></build>')
         [void]$sb.Append('</model>')
         [System.IO.File]::WriteAllText((Join-Path $dossierTemp "3D/3dmodel.model"), $sb.ToString(), $script:EncodageUtf8SansBOM)
 

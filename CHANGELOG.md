@@ -1,5 +1,27 @@
 # Changelog
 
+## Windows (22/10/2026, correctif) : .3mf peint Tripo flotte a cote du plateau Bambu Studio
+
+Apres le correctif de centrage/pose ci-dessous, Tomyn a teste avec la nouvelle version : le
+modele (voiture) touche desormais bien Z=0, mais flotte toujours a cote du plateau dans Bambu
+Studio (visible sur capture d'ecran), avec le meme avertissement "Les objets suivants sont
+places au-dessus...".
+
+- Cause : le correctif precedent centre le maillage sur l'origine (0,0) en X/Y, ce qui est
+  correct POUR LE MAILLAGE LUI-MEME, mais le plateau Bambu Studio (A1 : 256x256mm) a son origine
+  au coin avant-gauche, pas au centre - un objet centre sur (0,0) se retrouve donc pour moitie
+  dans le quadrant negatif, hors du plateau. Il manquait une translation vers le centre reel du
+  plateau (128,128 pour un plateau 256x256).
+- Corrige : ajout de cette translation directement sur l'`<item>` du `<build>` du .3mf (attribut
+  `transform`, matrice identite + translation 128/128/0), sans retoucher le maillage - le
+  centrage sur l'origine reste la bonne base, il ne manquait que ce decalage final.
+- Teste : `test_pose_plateau.ps1` complete avec une verification du `transform` sur l'`<item>`
+  (bac a sable puis rejoue contre le code reel extrait). Suite complete rejouee sans regression.
+- Hypothese basee sur un plateau Bambu Lab A1 (256x256mm, visible sur la capture d'ecran de
+  Tomyn) - si un autre modele d'imprimante avec un plateau de taille differente est utilise un
+  jour, ce centre (128,128) devra etre adapte.
+- **Pas encore confirme dans Bambu Studio lui-meme** - a verifier par Tomyn sur son prochain test.
+
 ## Windows (22/10/2026, correctif) : .3mf peint Tripo coupe en deux par le plateau Bambu Studio
 
 Apres le correctif d'echelle (ci-dessous), Tomyn a teste avec un nouveau modele (voiture) :
@@ -16,8 +38,9 @@ sous le niveau du plateau) avec l'avertissement "Les objets suivants sont places
   centrage X/Y symetrique. Suite complete existante rejouee sans regression. Bout en bout sur le
   vrai fichier du chien : Z va desormais de 0 a 126,4mm (au lieu de -63,2 a +63,2), X/Y toujours
   centres, 16 couleurs toujours presentes - reverifie independamment en Python.
-- **Pas encore confirme dans Bambu Studio lui-meme** (pas d'acces direct au logiciel) - a verifier
-  par Tomyn sur son prochain test.
+- **Confirme insuffisant par Tomyn** : le Z=0 est correct, mais le modele flotte a cote du
+  plateau (voir correctif suivant, au-dessus) - il manquait le centrage sur le plateau lui-meme,
+  pas seulement sur l'origine du maillage.
 
 ## Windows (22/10/2026, correctif) : .3mf peint Tripo minuscule (puis demesure) sur le plateau Bambu Studio
 
