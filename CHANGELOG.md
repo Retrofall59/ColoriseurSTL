@@ -1,5 +1,45 @@
 # Changelog
 
+## Windows (22/10/2026, hypothese non confirmee) : .obj Tripo genere par l'appli moins bien regroupe par Bambu que celui du site web Tripo
+
+Apres le correctif des metadonnees BambuStudio (voir entree suivante), Tomyn a teste le .3mf
+genere par une version pas encore mise a jour (mon erreur : j'avais pousse sur GitHub mais pas
+renvoye le fichier .ps1 lui-meme dans cette conversation - verifie directement dans le .3mf
+qu'il a teste : pas de metadonnee `Application`, `project_settings.config` encore a l'ancien
+format 181 octets). Une fois le bon fichier envoye, reste un probleme distinct remonte sur le
+`.obj` brut (pas le `.3mf`) : la boite "Modele d'importation" de Bambu Studio (regroupement
+auto des couleurs par sommet en N filaments, 4/8/16 + bouton Appliquer) reste quasi plate sur le
+.obj genere par l'appli, meme a 16 couleurs + Appliquer, alors que le MEME .obj genere directement
+via le site web Tripo (meme image source confirmee par Tomyn : "l'image est la meme") s'y
+regroupe correctement.
+
+- Comparaison octet pour octet des deux fichiers reels (statistiques RGB/teinte/saturation,
+  nombre de sommets orphelins, presence de materiaux/coordonnees UV, nettete des transitions de
+  couleur entre sommets voisins adjacents) : aucune difference franche trouvee qui expliquerait a
+  coup sur le comportement different de l'algo de regroupement de Bambu Studio - cet algo est
+  proprietaire/ferme, pas de moyen de le debugger directement depuis cet environnement.
+- Hypothese testee (PAS CONFIRMEE par une vraie generation - pas d'acces a la cle API Tripo de
+  Tomyn pour tester sans consommer ses credits) : `pbr` vaut `true` par defaut chez Tripo pour
+  `/generation/image-to-model` (confirme dans leur documentation officielle), et mon code le
+  forcait explicitement a `true` sur le chemin "image sans prompt" (`pbr = $AvecTexture`). Un
+  materiau PBR (cartes couleur/rugosite/normale projetees en UV, pense pour un rendu realiste
+  shade) pourrait exporter moins bien en simple couleur-par-sommet qu'une texture "standard"
+  classique - le site web Tripo ne force peut-etre pas ce mode par defaut pour une generation
+  simple image -> modele.
+- Change : `pbr` force explicitement a `$false` sur les deux chemins de texturation Tripo
+  (`Lancer-ImageModelTripo` ET l'appel `/models/texture` separe pour le cas "avec prompt", qui
+  n'envoyait meme pas ce champ avant et dependait donc du defaut serveur - potentiellement `true`
+  aussi).
+- **A confirmer par Tomyn avec une vraie generation** : ni la cause (hypothese PBR) ni l'effet du
+  changement n'ont pu etre verifies ici. Si le probleme persiste malgre ce changement, la vraie
+  cause est ailleurs et il faudra regarder autre chose (peut-etre directement cote Tripo, hors de
+  mon controle).
+- Rappel important independant de ce bug : la boite "Modele d'importation" ne concerne QUE
+  l'ouverture d'un `.obj` brut dans Bambu Studio - elle ne s'applique jamais au `.3mf` genere
+  automatiquement par l'appli a cote (qui ecrit les couleurs directement, sans recourir a cet
+  algo). Le `.3mf` reste le livrable recommande, independamment de ce que fait ou ne fait pas
+  cette boite de dialogue sur le `.obj`.
+
 ## Windows (21/10/2026, correctif) : Bambu Studio n'affichait que 4 couleurs - usurpation de metadonnees BambuStudio
 
 Suite au correctif precedent (seeding k-means), Tomyn a remonte que meme avec un fichier aux

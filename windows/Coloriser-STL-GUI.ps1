@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 55, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 0, 25, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -3897,6 +3897,20 @@ function Lancer-DecimateTripo($Entetes, $JetonFichier, [int]$TargetFaceLimit) {
 # Meshy, devise sa : "payer la texturation deux fois... n'aurait aucun sens") ; a $true quand il n'y
 # a pas de prompt, pour laisser Tripo texturer directement depuis la photo plutot que de faire un
 # appel Texture separe sans rien a lui dire de particulier.
+#
+# 22/10/2026, Tomyn : bug remonte ou la boite "Modele d'importation" de Bambu Studio (regroupement
+# auto des couleurs par sommet en N filaments) reste quasi plate sur un .obj genere par l'appli,
+# alors que le MEME .obj genere directement via le site web Tripo (meme image source, confirme par
+# Tomyn : "l'image est la meme") s'y regroupe correctement. Comparaison octet pour octet des deux
+# fichiers (statistiques RGB/teinte, nettete des transitions entre zones de couleur voisines) sans
+# trouver de difference franche - MAIS "pbr" vaut true PAR DEFAUT chez Tripo (confirme dans leur
+# doc), hypothese : un materiau PBR (cartes couleur/rugosite/normale projetees en UV, pensees pour
+# un rendu realiste) exporte moins bien en simple couleur-par-sommet qu'une texture "standard"
+# classique - le site web Tripo ne force peut-etre pas ce mode PBR par defaut pour une simple
+# generation image -> modele. $AvecTexture (true pour "pas de prompt, Tripo texture directement
+# depuis la photo") forcait aussi pbr=true jusqu'ici - separe desormais : texture demandee comme
+# avant, mais pbr explicitement a $false. PAS CONFIRME avec une vraie generation Tripo (pas d'acces
+# a la cle API de Tomyn pour tester ici, et ca consommerait des credits) - a verifier par Tomyn.
 function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
     Ecrire-Journal "  Envoi a l'API Image to 3D (Tripo)..."
     # 20/10/2026, trouve en usage reel par Tomyn : malgre la doc qui donne "v3.1-20260211" comme
@@ -3905,7 +3919,7 @@ function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
     # values: P1-20260311, P2-20260801, v2.5-20250123, v3.0-20250812, v3.1-20260211"}. On envoie
     # donc explicitement la valeur la plus recente de cette liste (v3.1-20260211, qui est deja
     # celle documentee comme defaut) plutot que de compter sur un defaut cote serveur.
-    $corps = @{ input = $JetonFichier; model = "v3.1-20260211"; texture = $AvecTexture; pbr = $AvecTexture } | ConvertTo-Json
+    $corps = @{ input = $JetonFichier; model = "v3.1-20260211"; texture = $AvecTexture; pbr = $false } | ConvertTo-Json
     $reponse = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/generation/image-to-model" -Headers $Entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Image to 3D Tripo"
     $idReponse = if ($reponse.data) { $reponse.data } else { $reponse }
     $idTache = $idReponse.task_id
@@ -4716,7 +4730,12 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
         # $idModeleSource : resultat de l'import habituel, de la simplification Retopology (maillage
         # volumineux), ou de l'Image to 3D (geometrie seule, texture=$false) - les trois sont un
         # task_id Tripo valide.
-        $corps = @{ original_model_task_id = $idModeleSource; input = $idModeleSource; texture_prompt = @{ text = $Prompt }; model = "v3.5-20260815" } | ConvertTo-Json
+        # 22/10/2026 : "pbr" ajoute explicitement a $false - ce champ n'etait pas envoye ici avant,
+        # ce qui laissait l'API appliquer SON propre defaut (potentiellement $true, comme confirme
+        # sur /generation/image-to-model - voir le commentaire dans Lancer-ImageModelTripo pour le
+        # detail de l'hypothese PBR/couleur-par-sommet). Meme precaution ici par coherence/securite,
+        # pas confirmee non plus avec une vraie generation.
+        $corps = @{ original_model_task_id = $idModeleSource; input = $idModeleSource; texture_prompt = @{ text = $Prompt }; model = "v3.5-20260815"; pbr = $false } | ConvertTo-Json
         $reponseTexture = Invoquer-AvecReessaiReseau { Invoke-RestMethod -Uri "$BaseUrlTripo/models/texture" -Headers $entetes -Method Post -ContentType "application/json" -Body $corps -TimeoutSec 30 } "Texture Tripo"
         $idTextureReponse = if ($reponseTexture.data) { $reponseTexture.data } else { $reponseTexture }
         $idTexture = $idTextureReponse.task_id
