@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 0, 25, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 0, 55, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4441,12 +4441,36 @@ function Construire-ModelSettingsBambu([int]$NombreTriangles) {
 "@
 }
 
-function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8) {
+function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8, [double]$TailleImpressionMm = 0) {
     $donnees = Lire-ObjColoreParSommet $CheminObj
     $couleursTriangles = Obtenir-CouleursTriangles $donnees
     $groupes = Grouper-CouleursKMeans $couleursTriangles $NombreCouleursMax
     $voisinsTriangles = Obtenir-VoisinsTriangles $donnees
     $groupes.Affectations = Lisser-AffectationsCouleurs $voisinsTriangles $groupes.Affectations
+
+    # 22/10/2026, bug remonte par Tomyn : le modele apparaissait MINUSCULE sur le plateau Bambu
+    # Studio. Cause : l'export .obj de Tripo n'est PAS en metres comme suppose au premier correctif
+    # (un facteur fixe *1000 donnait alors un objet de PRES D'1 METRE, verifie trop grand aussi) -
+    # en realite Tripo normalise son maillage dans une boite de 1x1x1 SANS rapport avec une taille
+    # physique reelle (confirme : le plus grand cote des coordonnees brutes vaut quasiment
+    # exactement 1.0). Il n'y a donc pas de "bonne" taille a deduire du fichier lui-meme - on
+    # reutilise le champ UI existant "Taille d'impression prevue (plus grand cote, mm)"
+    # ($numTailleImpression, deja utilise pour Meshy/Lancer-AnalyseImprimabilite), avec le meme
+    # defaut de repli que cote Meshy (150 mm) quand il vaut 0/n'est pas renseigne.
+    $xMin = [double]::MaxValue; $xMax = [double]::MinValue
+    $yMin = [double]::MaxValue; $yMax = [double]::MinValue
+    $zMin = [double]::MaxValue; $zMax = [double]::MinValue
+    for ($i = 0; $i -lt $donnees.VX.Count; $i++) {
+        if ($donnees.VX[$i] -lt $xMin) { $xMin = $donnees.VX[$i] }
+        if ($donnees.VX[$i] -gt $xMax) { $xMax = $donnees.VX[$i] }
+        if ($donnees.VY[$i] -lt $yMin) { $yMin = $donnees.VY[$i] }
+        if ($donnees.VY[$i] -gt $yMax) { $yMax = $donnees.VY[$i] }
+        if ($donnees.VZ[$i] -lt $zMin) { $zMin = $donnees.VZ[$i] }
+        if ($donnees.VZ[$i] -gt $zMax) { $zMax = $donnees.VZ[$i] }
+    }
+    $plusGrandCote = [Math]::Max(($xMax - $xMin), [Math]::Max(($yMax - $yMin), ($zMax - $zMin)))
+    $tailleCibleMm = if ($TailleImpressionMm -gt 0) { $TailleImpressionMm } else { 150.0 }
+    $echelle = if ($plusGrandCote -gt 0) { $tailleCibleMm / $plusGrandCote } else { 1.0 }
 
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("obj3mf_" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path (Join-Path $dossierTemp "3D") -Force | Out-Null
@@ -4478,11 +4502,13 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         [void]$sb.Append('<metadata name="BambuStudio:3mfVersion">2</metadata>')
         [void]$sb.Append('<metadata name="BambuStudio:MmPaintingVersion">1</metadata>')
         [void]$sb.Append('<resources><object id="1" type="model"><mesh><vertices>')
+        # Mise a l'echelle vers $tailleCibleMm (plus grand cote) - voir le commentaire detaille
+        # plus haut sur la normalisation 1x1x1 de Tripo et le champ $numTailleImpression reutilise.
         $nSommets = $donnees.VX.Count
         for ($i = 0; $i -lt $nSommets; $i++) {
-            $xStr = $donnees.VX[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $yStr = $donnees.VY[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $zStr = $donnees.VZ[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $xStr = ($donnees.VX[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $yStr = ($donnees.VY[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $zStr = ($donnees.VZ[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
             [void]$sb.Append("<vertex x=`"$xStr`" y=`"$yStr`" z=`"$zStr`"/>")
             if ($i % 50000 -eq 0) { Pomper-MessagesUI }
         }
@@ -4562,7 +4588,7 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
 }
 # =====================================================================================
 
-function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", [int]$TargetPolycount = 30000) {
+function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie, $AvecHorodatage, $GalerieCible, $SuffixeFournisseur = "", [int]$TargetPolycount = 30000, [double]$TailleImpressionMm = 0) {
     Ecrire-Journal ""
     Ecrire-Journal "=== $($FichierStl.Name) (via Tripo) ==="
 
@@ -4816,7 +4842,7 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
         # 21/10/2026 : utilise le reglage "Nombre de couleurs" de l'interface (deja utilise pour
         # Meshy, voir $numCouleurs plus haut dans le script) au lieu d'un 8 fixe code en dur - pas
         # de raison que ce reglage n'influence pas aussi le regroupement cote Tripo.
-        $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf ([int]$numCouleurs.Value)
+        $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf ([int]$numCouleurs.Value) $TailleImpressionMm
         Ecrire-Journal "  -> .3mf peint genere automatiquement : $($infoConversion.NombreCouleurs) couleur(s), $($infoConversion.NombreTriangles) triangles ($cheminSortie3mf)"
         $cheminSortie3mfReussi = $cheminSortie3mf
     } catch {
@@ -5935,7 +5961,7 @@ function Lancer-Traitement($fichiersStl) {
                     $reussiMeshy = $false
                     $reussiTripo = $false
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked (Obtenir-TailleImpressionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "_meshy" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked ([double]$numTailleImpression.Value)
                         $reussiMeshy = $true
                         $reussitesMeshy++
                     } catch {
@@ -5944,7 +5970,7 @@ function Lancer-Traitement($fichiersStl) {
                         $echecsMeshy++
                     }
                     try {
-                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo" ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "_tripo" ([int]$numTriangles.Value) ([double]$numTailleImpression.Value)
                         $reussiTripo = $true
                         $reussitesTripo++
                     } catch {
@@ -5955,9 +5981,9 @@ function Lancer-Traitement($fichiersStl) {
                     if ($reussiMeshy -or $reussiTripo) { $reussites++ } else { $echecsCeLot.Add($fichier) }
                 } else {
                     if ($fournisseur -eq "Meshy") {
-                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked (Obtenir-TailleImpressionChoisie)
+                        $script:creditsReelsLot += Coloriser-UnFichier $fichier $txtPrompt.Text $entetes $dossierSortie ([int]$numCouleurs.Value) $caseHorodatage.Checked $galerieResultatsMeshy "" $caseMeshyObjExperimental.Checked ([double]$assombrirTexture.Value) ([int]$numTriangles.Value) $caseSmartTopology.Checked (Obtenir-GeometryResolutionChoisie) (Obtenir-TextureResolutionChoisie) $caseReparationParois.Checked ([double]$numTailleImpression.Value)
                     } else {
-                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value)
+                        $script:creditsReelsLot += Coloriser-UnFichierTripo $fichier $txtPrompt.Text $txtCleApiTripo.Text $dossierSortie $caseHorodatage.Checked $galerieResultatsTripo "" ([int]$numTriangles.Value) ([double]$numTailleImpression.Value)
                     }
                     $reussites++
                 }

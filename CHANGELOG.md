@@ -1,5 +1,35 @@
 # Changelog
 
+## Windows (22/10/2026, correctif) : .3mf peint Tripo minuscule (puis demesure) sur le plateau Bambu Studio
+
+En testant le .3mf avec le correctif des metadonnees BambuStudio (16 couleurs bien affichees,
+confirme par Tomyn screenshot a l'appui), le modele apparaissait MINUSCULE sur le plateau.
+
+- Cause : l'export .obj de Tripo (via Blender) sort des coordonnees SANS unite physique reelle -
+  verifie sur deux vrais fichiers de Tomyn : le plus grand cote du maillage brut vaut quasiment
+  exactement 1.0, quel que soit le modele. Tripo normalise sa geometrie dans une boite ~1x1x1,
+  copiees telles quelles dans un .3mf qui declare "unit=millimeter" -> Bambu Studio interpretait
+  un objet de longueur "1.0" comme 1 MILLIMETRE.
+- Premiere tentative (facteur fixe x1000, en supposant des coordonnees en metres) : fausse piste -
+  verifie que ca donnait au contraire un objet de PRES D'1 METRE (toujours faux, juste dans l'autre
+  sens). Pas de "bonne" taille deductible du fichier source lui-meme, il n'y a aucune reference
+  d'echelle dans une generation IA depuis une seule image.
+- Corrige : reutilisation du champ UI existant "Taille d'impression prevue (plus grand cote, mm)"
+  ($numTailleImpression, deja cable pour l'analyse d'imprimabilite Meshy) - le maillage Tripo est
+  maintenant mis a l'echelle pour que son plus grand cote corresponde a cette valeur, avec le meme
+  defaut de repli que cote Meshy (150mm) si le champ est laisse a 0. Parametre ajoute de bout en
+  bout : `Convertir-ObjColoreVers3mfPeint` -> `Coloriser-UnFichierTripo` -> les deux sites d'appel
+  (lot normal et lot Meshy+Tripo compare cote a cote).
+- Teste : nouveau test dedie (`test_echelle.ps1`, bac a sable puis rejoue contre le code reel
+  extrait) verifiant le defaut 150mm et deux tailles demandees explicitement (80mm, 300mm) sur un
+  petit objet synthetique normalise comme Tripo. Suite complete existante rejouee sans regression.
+  Bout en bout sur le vrai fichier de Tomyn (706567 sommets / 1413194 triangles) : sortie
+  reverifiee independamment en Python - plus grand cote exactement 150,0mm (defaut), structure
+  BambuStudio toujours valide (16 couleurs, model_settings.config coherent).
+- **Pas encore confirme dans Bambu Studio lui-meme** (pas d'acces direct au logiciel depuis cet
+  environnement) - a verifier par Tomyn, en particulier que 150mm est une taille de depart
+  raisonnable pour ses propres modeles (ajustable via le champ existant si besoin).
+
 ## Windows (22/10/2026, hypothese non confirmee) : .obj Tripo genere par l'appli moins bien regroupe par Bambu que celui du site web Tripo
 
 Apres le correctif des metadonnees BambuStudio (voir entree suivante), Tomyn a teste le .3mf
