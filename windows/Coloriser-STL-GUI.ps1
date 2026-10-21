@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 0, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 15, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4211,6 +4211,86 @@ function Obtenir-HexDepuisRGB24([int]$R, [int]$G, [int]$B) {
     return ("#{0:X2}{1:X2}{2:X2}" -f $R, $G, $B)
 }
 
+# 21/10/2026, retour de Tomyn apres avoir enfin pu ouvrir un .3mf peint : "les couleurs sont pas
+# tres bien definies, on dirait qu'il a fait ca a l'arrache". Cause : les couleurs de sommet
+# exportees par Tripo integrent l'ombrage du rendu (pas des couleurs "materiau" plates), donc la
+# simple moyenne par triangle + k-means produit des affectations bruitees - des triangles isoles
+# mal classes au milieu d'une zone par ailleurs uniforme. Les 2 fonctions suivantes construisent
+# l'adjacence des triangles (voisins = triangles partageant une arete) puis lissent les
+# affectations par vote majoritaire, pour corriger ces triangles isoles sans effacer les
+# vraies frontieres de couleur (qui ont toujours une majorite de voisins du meme cote).
+function Obtenir-VoisinsTriangles($Donnees) {
+    $n = $Donnees.T1.Count
+    $voisin1 = New-Object int[] $n; $voisin2 = New-Object int[] $n; $voisin3 = New-Object int[] $n
+    for ($i = 0; $i -lt $n; $i++) { $voisin1[$i] = -1; $voisin2[$i] = -1; $voisin3[$i] = -1 }
+    # Cle = arete non orientee (min,max sommets) empaquetee dans un long - pas besoin de
+    # materialiser une vraie liste d'aretes : chaque arete est resolue (appariee) des qu'elle
+    # est vue une 2e fois, puis retiree du dictionnaire.
+    $aretesEnAttente = New-Object 'System.Collections.Generic.Dictionary[long,long]'
+    $t1 = $Donnees.T1; $t2 = $Donnees.T2; $t3 = $Donnees.T3
+    for ($i = 0; $i -lt $n; $i++) {
+        $sommetsTri = @($t1[$i], $t2[$i], $t3[$i])
+        for ($slot = 0; $slot -lt 3; $slot++) {
+            $u = $sommetsTri[$slot]; $v = $sommetsTri[($slot + 1) % 3]
+            $mn = [Math]::Min($u, $v); $mx = [Math]::Max($u, $v)
+            $cle = ([long]$mn -shl 32) -bor [long]$mx
+            $valeur = $null
+            if ($aretesEnAttente.TryGetValue($cle, [ref]$valeur)) {
+                $jAutre = [int]($valeur -shr 2); $slotAutre = [int]($valeur -band 3)
+                switch ($slot) { 0 { $voisin1[$i] = $jAutre } 1 { $voisin2[$i] = $jAutre } 2 { $voisin3[$i] = $jAutre } }
+                switch ($slotAutre) { 0 { $voisin1[$jAutre] = $i } 1 { $voisin2[$jAutre] = $i } 2 { $voisin3[$jAutre] = $i } }
+                $aretesEnAttente.Remove($cle) | Out-Null
+            } else {
+                $aretesEnAttente[$cle] = ([long]$i -shl 2) -bor [long]$slot
+            }
+        }
+        if ($i % 50000 -eq 0) { Pomper-MessagesUI }
+    }
+    return [PSCustomObject]@{ V1 = $voisin1; V2 = $voisin2; V3 = $voisin3 }
+}
+
+function Lisser-AffectationsCouleurs($Voisins, [int[]]$Affectations, [int]$Iterations = 2) {
+    $n = $Affectations.Count
+    if ($n -eq 0) { return $Affectations }
+    # Comparaisons manuelles (pas de pipeline Group-Object/Where-Object par triangle - beaucoup
+    # trop lent sur plusieurs millions de triangles, recreerait le blocage "Ne repond pas" deja
+    # corrige ailleurs). Au plus 3 voisins : le "vote majoritaire" se reduit a quelques
+    # comparaisons directes.
+    $v1 = $Voisins.V1; $v2 = $Voisins.V2; $v3 = $Voisins.V3
+    $courant = $Affectations.Clone()
+
+    for ($iter = 0; $iter -lt $Iterations; $iter++) {
+        $suivant = $courant.Clone()
+        for ($i = 0; $i -lt $n; $i++) {
+            $cas = 0
+            $l1 = -1; $l2 = -1; $l3 = -1
+            if ($v1[$i] -ge 0) { $l1 = $courant[$v1[$i]]; $cas++ }
+            if ($v2[$i] -ge 0) { $l2 = $courant[$v2[$i]]; $cas++ }
+            if ($v3[$i] -ge 0) { $l3 = $courant[$v3[$i]]; $cas++ }
+            if ($cas -lt 2) { continue }
+
+            $modeEtiquette = -1; $modeCompte = 0
+            if ($cas -eq 2) {
+                if ($l1 -ge 0 -and $l1 -eq $l2) { $modeEtiquette = $l1; $modeCompte = 2 }
+                elseif ($l1 -ge 0 -and $l1 -eq $l3) { $modeEtiquette = $l1; $modeCompte = 2 }
+                elseif ($l2 -ge 0 -and $l2 -eq $l3) { $modeEtiquette = $l2; $modeCompte = 2 }
+            } else {
+                if ($l1 -eq $l2 -and $l2 -eq $l3) { $modeEtiquette = $l1; $modeCompte = 3 }
+                elseif ($l1 -eq $l2) { $modeEtiquette = $l1; $modeCompte = 2 }
+                elseif ($l1 -eq $l3) { $modeEtiquette = $l1; $modeCompte = 2 }
+                elseif ($l2 -eq $l3) { $modeEtiquette = $l2; $modeCompte = 2 }
+            }
+
+            if ($modeCompte -ge 2 -and $modeEtiquette -ne $courant[$i]) {
+                $suivant[$i] = $modeEtiquette
+            }
+            if ($i % 50000 -eq 0) { Pomper-MessagesUI }
+        }
+        $courant = $suivant
+    }
+    return $courant
+}
+
 # 21/10/2026, cause racine du rejet du .3mf par Bambu Studio ("chargement echoue" / "pas de
 # donnees geometriques") sur le vrai fichier de Tomyn : [System.Text.Encoding]::UTF8 de .NET
 # ecrit un BOM (3 octets EF BB BF) en tete de fichier avec WriteAllText - confirme en inspectant
@@ -4228,6 +4308,8 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
     $donnees = Lire-ObjColoreParSommet $CheminObj
     $couleursTriangles = Obtenir-CouleursTriangles $donnees
     $groupes = Grouper-CouleursKMeans $couleursTriangles $NombreCouleursMax
+    $voisinsTriangles = Obtenir-VoisinsTriangles $donnees
+    $groupes.Affectations = Lisser-AffectationsCouleurs $voisinsTriangles $groupes.Affectations
 
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("obj3mf_" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path (Join-Path $dossierTemp "3D") -Force | Out-Null

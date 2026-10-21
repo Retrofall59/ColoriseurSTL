@@ -1,5 +1,34 @@
 # Changelog
 
+## Windows (21/10/2026, amélioration) : couleurs "à l'arrache" - lissage par vote majoritaire + nombre de couleurs configurable
+
+Retour de Tomyn apres avoir enfin pu ouvrir un .3mf peint : "les couleurs sont pas tres bien
+definies, on dirait qu'il a fait ca a l'arrache". Deux changements :
+
+- Le nombre de couleurs pour la colorisation Tripo utilise desormais le reglage "Nombre de
+  couleurs" de l'interface (`$numCouleurs`, deja utilise pour Meshy) au lieu d'un `8` fixe code
+  en dur.
+- Les couleurs de sommet exportees par Tripo integrent l'ombrage du rendu (pas des couleurs
+  "materiau" plates), donc la simple moyenne par triangle + k-means produisait des affectations
+  bruitees : des triangles isoles mal classes au milieu d'une zone par ailleurs uniforme. Ajout
+  d'un lissage par vote majoritaire entre triangles adjacents (partageant une arete) : un
+  triangle isole adopte la couleur de ses voisins si au moins 2 de ses (jusqu'a 3) voisins la
+  partagent - les vraies frontieres de couleur, qui ont toujours une majorite de voisins du meme
+  cote, ne sont pas effacees.
+- Adjacence calculee en O(n) via un hachage d'aretes (pas de liste d'aretes materialisee), et
+  lissage par comparaisons manuelles (pas de pipeline `Group-Object`/`Where-Object` par triangle,
+  bien trop lent a l'echelle du million de triangles).
+- Teste : 3 fixtures dediees (triangle isole corrige vers la couleur majoritaire des voisins ;
+  triangles deja corrects inchanges ; vraie frontiere de couleur preservee), plus la suite
+  complete existante (cube, index negatifs, pas de BOM, slashs du zip) rejouee contre le code tel
+  qu'il est livre dans `Coloriser-STL-GUI.ps1`.
+- Performance : +14s sur le vrai fichier de Tomyn (706567 sommets / 1413194 triangles) par
+  rapport a la version sans lissage - 74s a 87,7s au total, toujours tres en dessous du seuil qui
+  bloquait l'UI avant la reecriture complete du moteur.
+- Honnetete : le lissage reduit mathematiquement le bruit visible (triangles isoles corriges),
+  mais je n'ai pas de moyen de verifier le rendu visuel final dans Bambu Studio depuis ici - reste
+  a confirmer chez Tomyn si le resultat parait moins "a l'arrache".
+
 ## Windows (21/10/2026, correctif) : antislashs dans le zip .3mf (CreateFromDirectory sous Windows) + .rels manquant
 
 Après le correctif du BOM, Tomyn a généré un **nouveau** `.3mf` (nouvelle colorisation Tripo,
