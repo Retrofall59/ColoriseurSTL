@@ -209,6 +209,67 @@
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            app:cardCornerRadius="14dp"
+            app:cardElevation="4dp"
+            app:cardBackgroundColor="@color/carte_blanc">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ma config"
+                    android:textColor="@color/texte_principal"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <!-- 21/10/2026, porte depuis la version Windows (Sauvegarder ma config / Restaurer
+                     ma config) - SauvegardeConfig.kt. N'inclut pas les clés API (jamais exportées). -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="Favoris de prompts et historique des lots - pour ne pas tout reperdre en changeant de téléphone. Ne contient jamais les clés API."
+                    android:textColor="@color/texte_secondaire"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnSauvegarderConfig"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="Sauvegarder ma config..."
+                        android:textAllCaps="false" />
+
+                    <Button
+                        android:id="@+id/btnRestaurerConfig"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:text="Restaurer ma config..."
+                        android:textAllCaps="false" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             app:cardCornerRadius="14dp"
             app:cardElevation="4dp"
             app:cardBackgroundColor="@color/carte_blanc">

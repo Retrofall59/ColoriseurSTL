@@ -9,9 +9,47 @@ import android.widget.ImageButton
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
+
+    // 21/10/2026, porte depuis la version Windows (Sauvegarder ma config.../Restaurer ma
+    // config..., Obtenir-FichiersConfigConnus) - trouve en continuant la comparaison
+    // Windows/Android (pas un bug, Tomyn a dit "go" pour la porter). Voir SauvegardeConfig.kt
+    // pour le detail de ce qui est inclus (jamais les cles API).
+    private val choixEmplacementSauvegarde = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val octets = SauvegardeConfig.exporter(filesDir)
+            contentResolver.openOutputStream(uri)?.use { it.write(octets) }
+            Toast.makeText(this, "Config sauvegardée.", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Echec de la sauvegarde : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val choixFichierARestaurer = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val octets = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (octets == null) {
+                Toast.makeText(this, "Impossible de lire ce fichier.", Toast.LENGTH_LONG).show()
+                return@registerForActivityResult
+            }
+            val restaures = SauvegardeConfig.importer(filesDir, octets)
+            if (restaures.isEmpty()) {
+                Toast.makeText(this, "Rien à restaurer dans ce fichier (pas une sauvegarde ColoriseurSTL ?).", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Config restaurée : ${restaures.joinToString(", ")}.", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Echec de la restauration : ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,6 +99,19 @@ class SettingsActivity : AppCompatActivity() {
             GestionnaireParametres.ecrireCleApi(this, editCleApi.text.toString().trim())
             GestionnaireParametres.ecrireCleApiTripo(this, editCleApiTripo.text.toString().trim())
             Toast.makeText(this, "Clés API enregistrées.", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<Button>(R.id.btnSauvegarderConfig).setOnClickListener {
+            if (SauvegardeConfig.fichiersConnus(filesDir).isEmpty()) {
+                Toast.makeText(this, "Rien à sauvegarder pour l'instant (aucun favori ni historique encore créé).", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val horodatage = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date())
+            choixEmplacementSauvegarde.launch("coloriser-stl-config_$horodatage.zip")
+        }
+
+        findViewById<Button>(R.id.btnRestaurerConfig).setOnClickListener {
+            choixFichierARestaurer.launch(arrayOf("application/zip", "application/octet-stream"))
         }
 
         val versionInstallee = try {

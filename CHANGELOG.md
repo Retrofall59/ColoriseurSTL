@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.26 (build 26)
+
+**"Sauvegarder ma config..." / "Restaurer ma config..."** portés depuis la version Windows
+(`Obtenir-FichiersConfigConnus`) - trouvés en continuant la comparaison systématique
+Windows/Android, pas un bug mais une vraie fonctionnalité manquante (Tomyn a dit "go").
+
+- Nouveau bouton "Sauvegarder ma config..." (écran Paramètres) : exporte en ZIP les favoris de
+  prompts et l'historique des lots - pour ne pas tout reperdre en changeant de téléphone ou en
+  réinstallant l'appli. Les clés API ne sont JAMAIS incluses dans l'export.
+- Nouveau bouton "Restaurer ma config..." : réimporte un ZIP de sauvegarde (écrase les fichiers
+  existants) ; ignore sans planter tout ZIP qui n'est pas une sauvegarde de cette appli.
+- Périmètre volontairement plus restreint que côté Windows : seuls les fichiers du stockage
+  PRIVÉ de l'appli sont inclus (ceux réellement perdus à la désinstallation) -
+  `historique_fichiers.csv` vit déjà dans le dossier de sortie choisi par l'utilisateur, donc
+  hors d'atteinte d'une désinstallation, contrairement à Windows où tout vit au même endroit.
+- Nouveau module `SauvegardeConfig.kt` (pur Kotlin, sans dépendance Android). Vérifié par
+  exécution JVM réelle avec de vrais fichiers temporaires : 11 assertions (export/import,
+  fichier non-connu jamais exporté/importé, écrasement, ZIP étranger sans effet) - toutes
+  passent. App entière recompilée avec les stubs (0 erreur).
+
 ## v0.25 (build 25)
 
 **Complète le réessai réseau de la 0.24** (même chantier, deux manques trouvés en relisant
