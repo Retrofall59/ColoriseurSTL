@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.24 (build 24)
+
+**Écart de fiabilité trouvé en comparant avec la version Windows** (pas demandé par Tomyn, trouvé
+en continuant la comparaison systématique Windows/Android) : la version Windows protège quasiment
+CHAQUE appel réseau (polling, envois, téléchargements - 20 points d'appel au total) avec un
+mécanisme de réessai (`Invoquer-AvecReessaiReseau`, 3 tentatives, 4s d'intervalle) qui ne retente
+QUE sur une vraie coupure réseau (timeout, connexion refusée/réinitialisée, DNS, erreur serveur
+5xx) et jamais sur une vraie erreur API (mauvaise clé, requête invalide, etc.). La version Android
+n'avait AUCUN réessai nulle part : le moindre accroc réseau (fréquent en mobile, contrairement à
+un PC filaire) faisait échouer tout le traitement direct, sans seconde chance.
+
+- Nouveau module `ReessaiReseau.kt` (pur Kotlin, sans dépendance Android) portant la même logique
+  que côté Windows : 3 tentatives, 4s entre chaque, uniquement sur erreur transitoire (timeout,
+  connexion coupée/refusée/réinitialisée, DNS, HTTP 5xx) - jamais sur du 4xx.
+- Branché sur les 5 points d'appel réseau centraux d'Android (Meshy `requete()` + `telecharger()`,
+  Tripo `requeteJson()` + `uploaderVersUrlPresignee()` + `telecharger()`) : couvre de fait TOUS les
+  appels Meshy/Tripo (polling de tâche compris, qui repasse par ces mêmes fonctions), comme les 20
+  points d'appel côté Windows.
+- Vérifié par exécution JVM réelle (pas juste compilation) : 13 assertions sur la classification
+  transitoire/réelle et le comportement de `executer()` (réussite directe, réessai puis succès,
+  pas de réessai sur 4xx, épuisement des tentatives) - toutes passent. App entière recompilée avec
+  les stubs (0 erreur).
+
 ## v0.23 (build 23)
 
 **Encore un écart trouvé en comparant avec la version Windows** : l'historique PAR FICHIER

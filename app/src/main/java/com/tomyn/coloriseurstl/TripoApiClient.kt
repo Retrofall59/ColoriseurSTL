@@ -97,37 +97,41 @@ object TripoApiClient {
         return ResultatImageModel(idTache, tache.optDouble("credits_consumed", 0.0))
     }
 
-    private fun requeteJson(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject {
-        val url = URL("$BASE_URL$chemin")
-        val connexion = url.openConnection() as HttpURLConnection
-        try {
-            connexion.requestMethod = methode
-            connexion.setRequestProperty("Authorization", "Bearer $cleApi")
-            connexion.connectTimeout = 30000
-            connexion.readTimeout = 30000
+    // 21/10/2026, porte depuis Windows (Invoquer-AvecReessaiReseau), meme correctif que cote
+    // MeshyApiClient.kt - voir ReessaiReseau.kt pour le detail (reessaie seulement sur erreur
+    // reseau transitoire, jamais sur une vraie erreur API).
+    private fun requeteJson(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject =
+        ReessaiReseau.executer {
+            val url = URL("$BASE_URL$chemin")
+            val connexion = url.openConnection() as HttpURLConnection
+            try {
+                connexion.requestMethod = methode
+                connexion.setRequestProperty("Authorization", "Bearer $cleApi")
+                connexion.connectTimeout = 30000
+                connexion.readTimeout = 30000
 
-            if (corps != null) {
-                connexion.doOutput = true
-                connexion.setRequestProperty("Content-Type", "application/json")
-                OutputStreamWriter(connexion.outputStream, Charsets.UTF_8).use { it.write(corps.toString()) }
+                if (corps != null) {
+                    connexion.doOutput = true
+                    connexion.setRequestProperty("Content-Type", "application/json")
+                    OutputStreamWriter(connexion.outputStream, Charsets.UTF_8).use { it.write(corps.toString()) }
+                }
+
+                val codeStatut = connexion.responseCode
+                val flux = if (codeStatut in 200..299) connexion.inputStream else connexion.errorStream
+                val reponseTexte = BufferedReader(InputStreamReader(flux, Charsets.UTF_8)).use { it.readText() }
+
+                if (codeStatut !in 200..299) {
+                    val message = try { JSONObject(reponseTexte).optString("message", reponseTexte) } catch (e: Exception) { reponseTexte }
+                    throw ErreurApi("HTTP $codeStatut : $message")
+                }
+                val reponse = JSONObject(reponseTexte)
+                // La reponse Tripo enveloppe les donnees dans un champ "data" (confirme en test
+                // reel), contrairement a Meshy qui renvoie directement l'objet a plat.
+                reponse.optJSONObject("data") ?: reponse
+            } finally {
+                connexion.disconnect()
             }
-
-            val codeStatut = connexion.responseCode
-            val flux = if (codeStatut in 200..299) connexion.inputStream else connexion.errorStream
-            val reponseTexte = BufferedReader(InputStreamReader(flux, Charsets.UTF_8)).use { it.readText() }
-
-            if (codeStatut !in 200..299) {
-                val message = try { JSONObject(reponseTexte).optString("message", reponseTexte) } catch (e: Exception) { reponseTexte }
-                throw ErreurApi("HTTP $codeStatut : $message")
-            }
-            val reponse = JSONObject(reponseTexte)
-            // La reponse Tripo enveloppe les donnees dans un champ "data" (confirme en test
-            // reel), contrairement a Meshy qui renvoie directement l'objet a plat.
-            return reponse.optJSONObject("data") ?: reponse
-        } finally {
-            connexion.disconnect()
         }
-    }
 
     /**
      * Upload brut d'un tableau d'octets vers une URL presignee (S3). setFixedLengthStreamingMode
@@ -137,21 +141,23 @@ object TripoApiClient {
      * envoie lui aussi un Content-Length exact - meme principe applique ici des le depart).
      */
     private fun uploaderVersUrlPresignee(urlPresignee: String, octets: ByteArray) {
-        val connexion = URL(urlPresignee).openConnection() as HttpURLConnection
-        try {
-            connexion.requestMethod = "PUT"
-            connexion.doOutput = true
-            connexion.setRequestProperty("Content-Type", "application/octet-stream")
-            connexion.setFixedLengthStreamingMode(octets.size)
-            connexion.connectTimeout = 30000
-            connexion.readTimeout = 60000
-            connexion.outputStream.use { it.write(octets) }
-            val codeStatut = connexion.responseCode
-            if (codeStatut !in 200..299) {
-                throw ErreurApi("echec de l'envoi du fichier vers l'URL presignee (HTTP $codeStatut)")
+        ReessaiReseau.executer {
+            val connexion = URL(urlPresignee).openConnection() as HttpURLConnection
+            try {
+                connexion.requestMethod = "PUT"
+                connexion.doOutput = true
+                connexion.setRequestProperty("Content-Type", "application/octet-stream")
+                connexion.setFixedLengthStreamingMode(octets.size)
+                connexion.connectTimeout = 30000
+                connexion.readTimeout = 60000
+                connexion.outputStream.use { it.write(octets) }
+                val codeStatut = connexion.responseCode
+                if (codeStatut !in 200..299) {
+                    throw ErreurApi("echec de l'envoi du fichier vers l'URL presignee (HTTP $codeStatut)")
+                }
+            } finally {
+                connexion.disconnect()
             }
-        } finally {
-            connexion.disconnect()
         }
     }
 
@@ -378,12 +384,12 @@ object TripoApiClient {
     }
 
     /** Telecharge un fichier distant (le ZIP de l'export OBJ, ou tout autre fichier) en octets bruts. */
-    fun telecharger(url: String): ByteArray {
+    fun telecharger(url: String): ByteArray = ReessaiReseau.executer {
         val connexion = URL(url).openConnection() as HttpURLConnection
         try {
             connexion.connectTimeout = 30000
             connexion.readTimeout = 60000
-            return connexion.inputStream.readBytes()
+            connexion.inputStream.readBytes()
         } finally {
             connexion.disconnect()
         }

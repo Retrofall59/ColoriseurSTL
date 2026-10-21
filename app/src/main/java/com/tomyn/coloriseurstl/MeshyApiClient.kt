@@ -75,34 +75,39 @@ object MeshyApiClient {
         fun surProgres(etape: String, statut: String, progres: Int)
     }
 
-    private fun requete(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject {
-        val url = URL("$BASE_URL$chemin")
-        val connexion = url.openConnection() as HttpURLConnection
-        try {
-            connexion.requestMethod = methode
-            connexion.setRequestProperty("Authorization", "Bearer $cleApi")
-            connexion.connectTimeout = 30000
-            connexion.readTimeout = 30000
+    // 21/10/2026, porte depuis Windows (Invoquer-AvecReessaiReseau) : reessaie jusqu'a 3 fois,
+    // 4s d'intervalle, mais UNIQUEMENT sur erreur reseau transitoire (voir ReessaiReseau.kt) -
+    // avant ce correctif, le moindre a-coup reseau mobile faisait echouer tout l'appel sans
+    // retenter, contrairement a Windows qui le fait sur quasiment chaque appel.
+    private fun requete(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject =
+        ReessaiReseau.executer {
+            val url = URL("$BASE_URL$chemin")
+            val connexion = url.openConnection() as HttpURLConnection
+            try {
+                connexion.requestMethod = methode
+                connexion.setRequestProperty("Authorization", "Bearer $cleApi")
+                connexion.connectTimeout = 30000
+                connexion.readTimeout = 30000
 
-            if (corps != null) {
-                connexion.doOutput = true
-                connexion.setRequestProperty("Content-Type", "application/json")
-                OutputStreamWriter(connexion.outputStream, Charsets.UTF_8).use { it.write(corps.toString()) }
+                if (corps != null) {
+                    connexion.doOutput = true
+                    connexion.setRequestProperty("Content-Type", "application/json")
+                    OutputStreamWriter(connexion.outputStream, Charsets.UTF_8).use { it.write(corps.toString()) }
+                }
+
+                val codeStatut = connexion.responseCode
+                val flux = if (codeStatut in 200..299) connexion.inputStream else connexion.errorStream
+                val reponseTexte = BufferedReader(InputStreamReader(flux, Charsets.UTF_8)).use { it.readText() }
+
+                if (codeStatut !in 200..299) {
+                    val message = try { JSONObject(reponseTexte).optString("message", reponseTexte) } catch (e: Exception) { reponseTexte }
+                    throw ErreurApi("HTTP $codeStatut : $message")
+                }
+                JSONObject(reponseTexte)
+            } finally {
+                connexion.disconnect()
             }
-
-            val codeStatut = connexion.responseCode
-            val flux = if (codeStatut in 200..299) connexion.inputStream else connexion.errorStream
-            val reponseTexte = BufferedReader(InputStreamReader(flux, Charsets.UTF_8)).use { it.readText() }
-
-            if (codeStatut !in 200..299) {
-                val message = try { JSONObject(reponseTexte).optString("message", reponseTexte) } catch (e: Exception) { reponseTexte }
-                throw ErreurApi("HTTP $codeStatut : $message")
-            }
-            return JSONObject(reponseTexte)
-        } finally {
-            connexion.disconnect()
         }
-    }
 
     /**
      * Construit une data URI "image/..." a partir des octets bruts d'une image (meme logique de
@@ -459,12 +464,12 @@ object MeshyApiClient {
     }
 
     /** Telecharge un fichier distant (le .3mf final, ou l'image d'apercu) en octets bruts. */
-    fun telecharger(url: String): ByteArray {
+    fun telecharger(url: String): ByteArray = ReessaiReseau.executer {
         val connexion = URL(url).openConnection() as HttpURLConnection
         try {
             connexion.connectTimeout = 30000
             connexion.readTimeout = 60000
-            return connexion.inputStream.readBytes()
+            connexion.inputStream.readBytes()
         } finally {
             connexion.disconnect()
         }
