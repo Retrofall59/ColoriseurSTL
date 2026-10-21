@@ -1,5 +1,53 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : Bambu Studio n'affichait que 4 couleurs - usurpation de metadonnees BambuStudio
+
+Suite au correctif precedent (seeding k-means), Tomyn a remonte que meme avec un fichier aux
+couleurs correctement variees, Bambu Studio continuait a n'afficher que 4 couleurs dans le
+viewport (4 ou 16 couleurs demandees, meme resultat), alors que le Melangeur en detectait bien 16
+dans le fichier. Il avait raison de corriger ma premiere explication (hypothese `<m:colorgroup>`/
+`pid`/`p1`) : "OUI MAIS AVEC MESHY PAS LE PROBLEME PK AVEC TRIPO IL YA LE PROBLEME DONC CE QUE TU
+DIS NA RIEN A VOIR" - si Meshy n'a jamais ce probleme via l'appli, l'explication "Bambu Studio
+ignore TOUJOURS les reglages d'un fichier tiers, point final" ne pouvait pas etre la bonne.
+
+- Cause reelle, trouvee en comparant octet pour octet un vrai .3mf Meshy fonctionnel (fourni par
+  Tomyn) a ma propre sortie : Bambu Studio applique `Metadata/project_settings.config` (la
+  palette de filaments) UNIQUEMENT si `3D/3dmodel.model` declare
+  `<metadata name="Application">BambuStudio-X.X.X.X</metadata>`. Sans cette declaration, Bambu
+  Studio charge "geometrie et couleurs uniquement" et retombe sur les 4 filaments par defaut du
+  projet en cours - c'est exactement le dialogue "configuration invalide, chargement des donnees
+  geometriques uniquement", documente et volontaire cote Bambu (trackers #7775, #2491), jamais un
+  bug chez moi. Le fichier Meshy fonctionne parce que Meshy, lui, se declare bien comme
+  BambuStudio - mon fichier Tripo ne le faisait pas.
+  - Piege en se declarant "BambuStudio-..." : `Metadata/model_settings.config` devient alors
+    OBLIGATOIRE - son absence ou une erreur dedans fait echouer le chargement ENTIER du fichier
+    ("Archive does not contain a valid model config"), pas juste la palette. D'ou la prudence du
+    correctif precedent qui n'avait pas ose toucher a ca sans connaitre le schema exact.
+  - Confirme aussi, en comparant au fichier Meshy : le mecanisme de peinture par triangle reste le
+    meme que deja implemente (`paint_color` en hexa, pas de `<m:colorgroup>`/`pid`/`p1` - zero
+    occurrence de `pid=` dans le vrai fichier Meshy, mon hypothese precedente etait fausse) ; les
+    couleurs de `project_settings.config` doivent etre en hexa RGBA 8 chiffres
+    (`#672A17FF`), pas RGB 6 chiffres comme avant.
+- Corrige : deux nouvelles fonctions, `Construire-ProjectSettingsBambu` (JSON complet a 36 cles,
+  calque sur le vrai fichier Meshy - couleurs RGBA, `filament_settings_id`, matrice/vecteur de
+  purge dimensionnes sur N couleurs, `printer_model`, etc.) et `Construire-ModelSettingsBambu`
+  (XML minimal mais valide : objet id=1, nombre de faces reel, plateau). `3D/3dmodel.model`
+  declare desormais `Application: BambuStudio-02.03.01.00` plus les metadonnees
+  `BambuStudio:3mfVersion`/`BambuStudio:MmPaintingVersion`.
+- Teste : nouveau test dedie (`test_schema_bambu.ps1`, bac a sable puis rejoue contre le code reel
+  extrait de `Coloriser-STL-GUI.ps1`) verifiant la presence et la coherence des deux fichiers de
+  metadonnees. Suite complete existante rejouee sans regression (cube, index negatifs, pas de BOM,
+  slashs du zip - ces deux derniers etendus pour couvrir le nouveau `model_settings.config`,
+  format RGBA). Bout en bout sur le vrai fichier de Tomyn (706567 sommets / 1413194 triangles,
+  k=16) : 89,3s, puis le .3mf resultant reverifie independamment avec Python (zipfile +
+  ElementTree + json) - 5 fichiers du paquet presents, aucun BOM, XML/JSON bien formes, 16
+  couleurs RGBA presentes, `model_settings.config` reference bien l'objet id=1 avec le bon nombre
+  de faces.
+- **Pas encore confirme dans Bambu Studio lui-meme** : comme tout ce qui touche a ce logiciel, je
+  n'ai pas d'acces direct a Bambu Studio depuis cet environnement - cette correction a ete validee
+  par analyse de fichier (structure, contenu, comparaison au fichier Meshy de reference) mais pas
+  par un chargement reel. A confirmer par Tomyn.
+
 ## Windows (21/10/2026, correctif) : palette k-means "trop approchante" - mauvaise initialisation des clusters
 
 Suite au lissage, Tomyn a teste avec 16 couleurs demandees sur un vrai modele Tripo (chien) :

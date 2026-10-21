@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 25, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 55, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4329,6 +4329,104 @@ $script:EncodageUtf8SansBOM = New-Object System.Text.UTF8Encoding($false)
 # $NombreCouleursMax teintes, et ecrit un .3mf peint directement exploitable dans Bambu
 # Studio (geometrie + attribut paint_color par triangle + palette filament_colour dans
 # Metadata/project_settings.config, meme schema que celui deja lu par le Melangeur).
+# 21/10/2026 : genere Metadata/project_settings.config dans le MEME format qu'un vrai export
+# BambuStudio (confirme en inspectant un .3mf Meshy fourni par Tomyn, qui s'ouvre sans probleme
+# dans Bambu Studio avec toutes ses couleurs) - necessaire car le fichier se declare maintenant
+# "Application: BambuStudio-..." (voir Convertir-ObjColoreVers3mfPeint), donc Bambu Studio traite
+# ce fichier comme un vrai projet BambuStudio et LIT reellement ce fichier (contrairement a avant).
+# Couleurs au format RGBA 8 chiffres (#RRGGBBFF) - confirme que c'est le format attendu (Meshy
+# utilise ce format, pas #RRGGBB a 6 chiffres).
+function Construire-ProjectSettingsBambu($HexCouleurs) {
+    $n = $HexCouleurs.Count
+    if ($n -eq 0) { $n = 1 }
+    $couleursRgba = @($HexCouleurs | ForEach-Object { "$_" + "FF" })
+    if ($couleursRgba.Count -eq 0) { $couleursRgba = @("#CCCCCCFF") }
+
+    $matriceFlush = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $n; $i++) {
+        for ($j = 0; $j -lt $n; $j++) {
+            $valeurFlush = "280"
+            if ($i -eq $j) { $valeurFlush = "0" }
+            [void]$matriceFlush.Add($valeurFlush)
+        }
+    }
+    $vecteurFlush = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt (2 * $n); $i++) { [void]$vecteurFlush.Add("140") }
+
+    $repete = { param($valeur) @(1..$n | ForEach-Object { $valeur }) }
+
+    $config = [ordered]@{
+        filament_colour                       = $couleursRgba
+        filament_settings_id                  = (& $repete "Bambu PLA Basic @BBL X1C")
+        filament_type                         = (& $repete "PLA")
+        filament_minimal_purge_on_wipe_tower  = (& $repete "15")
+        filament_flow_ratio                   = (& $repete "0.98")
+        filament_diameter                     = (& $repete "1.75")
+        wipe                                   = (& $repete "1")
+        wipe_distance                         = (& $repete "2")
+        retract_length_toolchange             = (& $repete "2")
+        retract_restart_extra_toolchange      = (& $repete "0")
+        standby_temperature_delta             = "-5"
+        enable_prime_tower                    = "1"
+        prime_tower_width                     = "20"
+        prime_tower_brim_width                = "3"
+        prime_volume                          = "20"
+        flush_into_infill                     = "0"
+        flush_into_objects                    = "0"
+        flush_into_support                    = "1"
+        flush_multiplier                      = "1"
+        flush_volumes_matrix                  = $matriceFlush.ToArray()
+        flush_volumes_vector                  = $vecteurFlush.ToArray()
+        wipe_tower_x                          = @("15")
+        wipe_tower_y                          = @("145")
+        wipe_tower_rotation_angle             = "0"
+        wipe_tower_no_sparse_layers           = "0"
+        wipe_speed                            = "80%"
+        single_extruder_multi_material        = "1"
+        print_sequence                        = "by layer"
+        printer_model                         = "Bambu Lab A1"
+        printer_settings_id                   = "Bambu Lab A1 0.4 nozzle"
+        nozzle_diameter                       = @("0.4")
+        print_settings_id                     = "0.20mm Standard @BBL A1"
+        layer_change_gcode                    = "; layer change`nG92 E0`n"
+        from                                   = "project"
+        name                                   = "project_settings"
+        version                                = "02.03.01.00"
+    }
+    return ($config | ConvertTo-Json -Depth 5)
+}
+
+# 21/10/2026 : genere Metadata/model_settings.config, desormais OBLIGATOIRE des que le fichier se
+# declare "Application: BambuStudio-..." - sans ce fichier (ou avec un contenu que Bambu Studio
+# n'arrive pas a parser), le chargement du .3mf echoue EN ENTIER ("Archive does not contain a
+# valid model config"), confirme dans le code source reel de Bambu Studio. Structure copiee de
+# celle d'un vrai .3mf Meshy fonctionnel fourni par Tomyn (object id=1 ici, pas de composants
+# separes puisqu'on n'a qu'un seul objet dans un seul fichier).
+function Construire-ModelSettingsBambu([int]$NombreTriangles) {
+    return @"
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="1">
+    <metadata key="name" value="Model"/>
+    <metadata key="extruder" value="1"/>
+    <metadata face_count="$NombreTriangles"/>
+  </object>
+  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value=""/>
+    <metadata key="locked" value="false"/>
+    <model_instance>
+      <metadata key="object_id" value="1"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="1"/>
+    </model_instance>
+  </plate>
+  <assemble>
+  </assemble>
+</config>
+"@
+}
+
 function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8) {
     $donnees = Lire-ObjColoreParSommet $CheminObj
     $couleursTriangles = Obtenir-CouleursTriangles $donnees
@@ -4341,10 +4439,30 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
     New-Item -ItemType Directory -Path (Join-Path $dossierTemp "_rels") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $dossierTemp "Metadata") -Force | Out-Null
 
+    $hexCouleurs = New-Object System.Collections.Generic.List[string]
+    for ($c = 0; $c -lt $groupes.CentresR.Count; $c++) {
+        [void]$hexCouleurs.Add((Obtenir-HexDepuisRGB24 $groupes.CentresR[$c] $groupes.CentresG[$c] $groupes.CentresB[$c]))
+    }
+
     try {
         $sb = New-Object System.Text.StringBuilder
         [void]$sb.Append('<?xml version="1.0" encoding="UTF-8"?>')
-        [void]$sb.Append('<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">')
+        # 21/10/2026, retour de Tomyn (confirme avec un vrai .3mf Meshy fourni par lui, qui NE
+        # pose PAS ce probleme, compare octet pour octet a ma sortie Tripo) : Bambu Studio
+        # n'affichait que les 4 filaments deja presents dans le projet, quel que soit le nombre de
+        # couleurs demande. Premiere piste (colorgroup/pid/p1 standard 3MF) fausse - le fichier
+        # Meshy n'en contient PAS du tout. La vraie difference : le fichier Meshy declare
+        # <metadata name="Application">BambuStudio-02.03.01.00</metadata> - il se fait carrement
+        # passer pour un fichier genere par Bambu Studio lui-meme (met m_is_bbl_3mf=true cote
+        # Bambu Studio), ce qui fait que project_settings.config (palette filament_colour) EST
+        # bien lu et applique. En contrepartie, une fois m_is_bbl_3mf=true, un
+        # Metadata/model_settings.config valide devient OBLIGATOIRE (son absence/un parse rate
+        # fait echouer le chargement ENTIER - confirme dans le code source reel de Bambu Studio) :
+        # on l'ecrit desormais aussi, avec la meme structure que le fichier Meshy fonctionnel.
+        [void]$sb.Append('<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">')
+        [void]$sb.Append('<metadata name="Application">BambuStudio-02.03.01.00</metadata>')
+        [void]$sb.Append('<metadata name="BambuStudio:3mfVersion">2</metadata>')
+        [void]$sb.Append('<metadata name="BambuStudio:MmPaintingVersion">1</metadata>')
         [void]$sb.Append('<resources><object id="1" type="model"><mesh><vertices>')
         $nSommets = $donnees.VX.Count
         for ($i = 0; $i -lt $nSommets; $i++) {
@@ -4374,15 +4492,18 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         $rels = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'
         [System.IO.File]::WriteAllText((Join-Path $dossierTemp "_rels/.rels"), $rels, $script:EncodageUtf8SansBOM)
 
-        # Metadata/project_settings.config - meme schema que les vrais .3mf Bambu Studio,
-        # pour que le Melangeur (Obtenir-CouleursFichier3MF) et le reste du pipeline
-        # existant le lisent sans rien changer de leur cote.
-        $hexCouleurs = New-Object System.Collections.Generic.List[string]
-        for ($c = 0; $c -lt $groupes.CentresR.Count; $c++) {
-            [void]$hexCouleurs.Add((Obtenir-HexDepuisRGB24 $groupes.CentresR[$c] $groupes.CentresG[$c] $groupes.CentresB[$c]))
-        }
-        $configJson = @{ filament_colour = $hexCouleurs.ToArray() } | ConvertTo-Json -Compress
+        # Metadata/project_settings.config - meme schema qu'un vrai export Bambu Studio (confirme
+        # en comparant a un .3mf Meshy fonctionnel fourni par Tomyn), pour que Bambu Studio
+        # l'applique reellement (voir commentaire plus haut) ET pour que le Melangeur
+        # (Obtenir-CouleursFichier3MF) continue de le lire sans rien changer de son cote.
+        $configJson = Construire-ProjectSettingsBambu $hexCouleurs
         [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, $script:EncodageUtf8SansBOM)
+
+        # Obligatoire des que le fichier se declare "BambuStudio-..." (voir commentaire plus haut) -
+        # sans ca, Bambu Studio refuse de charger le fichier EN ENTIER ("Archive does not contain a
+        # valid model config"), confirme dans son code source reel.
+        $modelSettingsXml = Construire-ModelSettingsBambu $donnees.T1.Count
+        [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/model_settings.config"), $modelSettingsXml, $script:EncodageUtf8SansBOM)
 
         if (Test-Path -LiteralPath $CheminSortie3mf) { Remove-Item -LiteralPath $CheminSortie3mf -Force }
         # 21/10/2026 : CreateFromDirectory nomme chaque entree du zip avec le separateur de
