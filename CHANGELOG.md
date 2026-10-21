@@ -1,5 +1,24 @@
 # Changelog
 
+## Windows (22/10/2026, correctif) : .3mf peint Tripo coupe en deux par le plateau Bambu Studio
+
+Apres le correctif d'echelle (ci-dessous), Tomyn a teste avec un nouveau modele (voiture) :
+screenshot Bambu Studio montrant l'objet coupe en deux par le plateau (la moitie basse invisible,
+sous le niveau du plateau) avec l'avertissement "Les objets suivants sont places au-dessus...".
+
+- Cause : l'export Tripo CENTRE le maillage sur l'origine (verifie sur le vrai fichier du chien :
+  Z de -63,2 a +63,2mm apres mise a l'echelle) au lieu de le poser avec son point le plus bas a
+  Z=0, comme un objet pret a imprimer. La moitie du modele se retrouvait donc sous le plateau.
+- Corrige : recentrage de X et Y sur l'origine (deja a peu pres le cas, desormais garanti) et
+  translation de Z pour que le point le plus bas du maillage touche exactement 0.
+- Teste : nouveau test dedie (`test_pose_plateau.ps1`, bac a sable puis rejoue contre le code reel
+  extrait) sur un petit objet synthetique deliberement decentre en X/Y/Z - verifie Z minimum = 0 et
+  centrage X/Y symetrique. Suite complete existante rejouee sans regression. Bout en bout sur le
+  vrai fichier du chien : Z va desormais de 0 a 126,4mm (au lieu de -63,2 a +63,2), X/Y toujours
+  centres, 16 couleurs toujours presentes - reverifie independamment en Python.
+- **Pas encore confirme dans Bambu Studio lui-meme** (pas d'acces direct au logiciel) - a verifier
+  par Tomyn sur son prochain test.
+
 ## Windows (22/10/2026, correctif) : .3mf peint Tripo minuscule (puis demesure) sur le plateau Bambu Studio
 
 En testant le .3mf avec le correctif des metadonnees BambuStudio (16 couleurs bien affichees,

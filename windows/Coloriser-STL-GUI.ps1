@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 0, 55, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 1, 15, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4471,6 +4471,13 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
     $plusGrandCote = [Math]::Max(($xMax - $xMin), [Math]::Max(($yMax - $yMin), ($zMax - $zMin)))
     $tailleCibleMm = if ($TailleImpressionMm -gt 0) { $TailleImpressionMm } else { 150.0 }
     $echelle = if ($plusGrandCote -gt 0) { $tailleCibleMm / $plusGrandCote } else { 1.0 }
+    # 22/10/2026, bug remonte par Tomyn (screenshot Bambu Studio : voiture coupee en deux par le
+    # plateau, avertissement "objets places au-dessus") : l'export Tripo centre le maillage sur
+    # l'origine (ex. Z de -63 a +63mm pour le chien) au lieu de le poser sur Z=0 comme Bambu
+    # Studio l'attend pour un objet pose sur le plateau. Centre X/Y sur l'origine (deja a peu pres
+    # le cas, mais garanti desormais) et Z recale pour que le dessous du modele touche Z=0.
+    $centreX = ($xMin + $xMax) / 2.0
+    $centreY = ($yMin + $yMax) / 2.0
 
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("obj3mf_" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path (Join-Path $dossierTemp "3D") -Force | Out-Null
@@ -4502,13 +4509,15 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         [void]$sb.Append('<metadata name="BambuStudio:3mfVersion">2</metadata>')
         [void]$sb.Append('<metadata name="BambuStudio:MmPaintingVersion">1</metadata>')
         [void]$sb.Append('<resources><object id="1" type="model"><mesh><vertices>')
-        # Mise a l'echelle vers $tailleCibleMm (plus grand cote) - voir le commentaire detaille
-        # plus haut sur la normalisation 1x1x1 de Tripo et le champ $numTailleImpression reutilise.
+        # Mise a l'echelle vers $tailleCibleMm (plus grand cote) + recentrage X/Y et pose sur Z=0 -
+        # voir le commentaire detaille plus haut sur la normalisation 1x1x1 de Tripo, le champ
+        # $numTailleImpression reutilise, et le centrage sur l'origine qui faisait flotter/couper
+        # le modele en deux sur le plateau.
         $nSommets = $donnees.VX.Count
         for ($i = 0; $i -lt $nSommets; $i++) {
-            $xStr = ($donnees.VX[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $yStr = ($donnees.VY[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $zStr = ($donnees.VZ[$i] * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $xStr = (($donnees.VX[$i] - $centreX) * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $yStr = (($donnees.VY[$i] - $centreY) * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $zStr = (($donnees.VZ[$i] - $zMin) * $echelle).ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
             [void]$sb.Append("<vertex x=`"$xStr`" y=`"$yStr`" z=`"$zStr`"/>")
             if ($i % 50000 -eq 0) { Pomper-MessagesUI }
         }
