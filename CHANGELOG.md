@@ -1,5 +1,38 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : le .3mf généré ne s'ouvrait pas dans Bambu Studio
+
+Bug remonté par Tomyn sur son premier vrai test : le `.3mf` généré automatiquement se créait bien
+sur le disque mais Bambu Studio refusait de l'ouvrir ("Le chargement du fichier modèle a échoué."
+puis "Le fichier ne contient pas de données géométriques." sur deux tentatives).
+
+Recherche effectuée dans le vrai parseur C++ de Bambu Studio (`bbs_3mf.cpp`, dépôt
+`bambulab/BambuStudio`) pour comprendre pourquoi, plutôt que de retenter à l'aveugle :
+`[Content_Types].xml` et les espaces de noms XML ne sont jamais lus à l'import (écartés comme
+cause) ; en revanche, **un seul triangle référençant un index de sommet hors bornes fait rejeter
+tout le fichier**, sans indication claire côté utilisateur.
+
+Cause racine trouvée en relisant mon propre code : le format OBJ autorise des index de face
+**relatifs négatifs** (`f -1 -2 -3` = les 3 derniers sommets définis jusque-là dans le fichier) —
+un cas déjà géré correctement par le rendu de vignette existant de l'appli (`RenduSTL.ChargerObj`,
+en C#), mais oublié dans le nouveau convertisseur OBJ→3MF : un index négatif y était traité comme
+positif, produisant un index de sommet complètement faux, **sans aucune erreur** (pas d'exception,
+juste une géométrie corrompue qui passait inaperçue jusqu'à l'ouverture dans Bambu Studio).
+
+- Corrigé : résolution des index négatifs identique à celle déjà utilisée ailleurs dans l'appli.
+- Ajout d'un filet de sécurité indépendant : tout triangle qui référencerait malgré tout un index
+  hors bornes (pour une autre raison imprévue) est désormais écarté et journalisé, au lieu de
+  produire un `.3mf` que Bambu Studio rejetterait en bloc sans explication.
+- **Vérifié par exécution réelle** : nouveaux tests reproduisant exactement ce cas (face exprimée
+  avec des index négatifs vs. positifs équivalents → même géométrie ; triangle avec un index très
+  hors bornes mélangé à un triangle valide → seul le triangle valide survit, fichier quand même
+  généré). Les 19 assertions de correction + le test de charge à 300 000 triangles restent tous
+  verts.
+- **Ce qui reste incertain** : cette correction explique un bug réel et probable, mais je n'ai pas
+  pu confirmer qu'elle était bien LA cause exacte du rejet observé chez Tomyn, faute d'accès à son
+  fichier `.obj` original ou au message d'erreur détaillé de Bambu Studio (qui, d'après le code
+  source, donne normalement le numéro de ligne XML fautif). À confirmer par un nouvel essai réel.
+
 ## Windows (21/10/2026, correctif) : le .3mf généré automatiquement était invisible dans l'appli
 
 Bug remonté par Tomyn : après le correctif de performance ci-dessous, le `.3mf` peint se générait

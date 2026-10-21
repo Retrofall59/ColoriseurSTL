@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 13, 0, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 22, 0, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4041,7 +4041,17 @@ function Lire-ObjColoreParSommet([string]$CheminObj) {
                 $jeton = $parties[$k + 1]
                 $posSlash = $jeton.IndexOf('/')
                 $texteIndex = if ($posSlash -ge 0) { $jeton.Substring(0, $posSlash) } else { $jeton }
-                $indices[$k] = [int]$texteIndex - 1
+                $indiceBrut = [int]$texteIndex
+                # 21/10/2026, bug trouve suite a l'echec d'ouverture du premier .3mf genere chez
+                # Tomyn dans Bambu Studio ("chargement echoue" / "pas de donnees geometriques") :
+                # le format OBJ autorise des index RELATIFS negatifs ("f -1 -2 -3" = les 3
+                # derniers sommets definis jusqu'ici), deja geres par le rendu de vignette
+                # existant (RenduSTL.ChargerObj, "sommets.Count + indice") mais oublies ici - un
+                # index negatif etait traite comme positif, produisant un index de sommet
+                # completement faux, de maniere silencieuse (pas d'exception). Confirme par
+                # recherche dans le vrai parseur de Bambu Studio (bbs_3mf.cpp) : UN SEUL triangle
+                # avec un index hors bornes fait rejeter TOUT le fichier au chargement.
+                $indices[$k] = if ($indiceBrut -gt 0) { $indiceBrut - 1 } else { $vx.Count + $indiceBrut }
             }
             # Triangulation en eventail si plus de 3 sommets (quad/polygone).
             for ($k = 1; $k -lt $nbSommetsFace - 1; $k++) {
@@ -4053,10 +4063,33 @@ function Lire-ObjColoreParSommet([string]$CheminObj) {
     if ($vx.Count -eq 0) { throw "aucun sommet lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
     if ($t1.Count -eq 0) { throw "aucun triangle lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
 
+    # Filet de securite : Bambu Studio rejette tout le fichier des qu'UN SEUL triangle reference
+    # un index de sommet hors bornes (confirme par lecture du vrai parseur bbs_3mf.cpp). Plutot
+    # que de risquer de livrer un .3mf invalide pour une seule face fautive parmi potentiellement
+    # plusieurs millions, on ecarte ici les triangles invalides et on le journalise, au lieu de
+    # laisser Bambu Studio decouvrir le probleme et rejeter tout le fichier sans dire pourquoi.
+    $nbSommets = $vx.Count
+    $t1Valides = New-Object System.Collections.Generic.List[int]
+    $t2Valides = New-Object System.Collections.Generic.List[int]
+    $t3Valides = New-Object System.Collections.Generic.List[int]
+    $nbTrianglesInvalides = 0
+    for ($i = 0; $i -lt $t1.Count; $i++) {
+        $a = $t1[$i]; $b = $t2[$i]; $c = $t3[$i]
+        if ($a -ge 0 -and $a -lt $nbSommets -and $b -ge 0 -and $b -lt $nbSommets -and $c -ge 0 -and $c -lt $nbSommets) {
+            [void]$t1Valides.Add($a); [void]$t2Valides.Add($b); [void]$t3Valides.Add($c)
+        } else {
+            $nbTrianglesInvalides++
+        }
+    }
+    if ($nbTrianglesInvalides -gt 0) {
+        Ecrire-Journal "  -> ATTENTION : $nbTrianglesInvalides triangle(s) avec un index de sommet hors bornes ont ete ignores (sur $($t1.Count) au total)."
+    }
+    if ($t1Valides.Count -eq 0) { throw "tous les triangles referencent des index de sommet hors bornes - OBJ probablement corrompu : $CheminObj" }
+
     return [PSCustomObject]@{
         VX = $vx.ToArray(); VY = $vy.ToArray(); VZ = $vz.ToArray()
         VR = $vr.ToArray(); VG = $vg.ToArray(); VB = $vb.ToArray()
-        T1 = $t1.ToArray(); T2 = $t2.ToArray(); T3 = $t3.ToArray()
+        T1 = $t1Valides.ToArray(); T2 = $t2Valides.ToArray(); T3 = $t3Valides.ToArray()
     }
 }
 
