@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 22, 30, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 23, 0, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4278,7 +4278,35 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, $script:EncodageUtf8SansBOM)
 
         if (Test-Path -LiteralPath $CheminSortie3mf) { Remove-Item -LiteralPath $CheminSortie3mf -Force }
-        [System.IO.Compression.ZipFile]::CreateFromDirectory($dossierTemp, $CheminSortie3mf)
+        # 21/10/2026 : CreateFromDirectory nomme chaque entree du zip avec le separateur de
+        # chemin de l'OS - sous Windows ca donne des ANTISLASHS ("3D\3dmodel.model"), ce qui
+        # viole le format OPC/.3mf (qui exige des slashs "/" dans les chemins internes) et
+        # empeche Bambu Studio de retrouver "3D/3dmodel.model" -> "le chargement du fichier
+        # modele a echoue" / "le fichier ne contient pas de donnees geometriques". Bug confirme
+        # en inspectant au niveau des octets un vrai .3mf genere par Tomyn sous Windows (les
+        # entrees s'appelaient bien "3D\3dmodel.model" etc.) - invisible depuis mon
+        # environnement de test Linux, ou CreateFromDirectory utilise deja des slashs par
+        # defaut. On construit donc le zip a la main pour forcer des slashs "/" partout, quel
+        # que soit l'OS qui execute ce script.
+        $fluxZip = [System.IO.File]::Open($CheminSortie3mf, [System.IO.FileMode]::Create)
+        try {
+            $archiveZip = New-Object System.IO.Compression.ZipArchive($fluxZip, [System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+                $longueurRacine = $dossierTemp.Length
+                # -Force indispensable : ".rels" commence par un point et est marque "cache"
+                # (attribut Hidden) par .NET - sans -Force, Get-ChildItem l'ignore silencieusement
+                # et le .3mf se retrouve sans _rels/.rels, un autre rejet garanti par Bambu Studio.
+                foreach ($fichierAEmpaqueter in (Get-ChildItem -Path $dossierTemp -Recurse -File -Force)) {
+                    $cheminRelatif = $fichierAEmpaqueter.FullName.Substring($longueurRacine).TrimStart('\', '/') -replace '\\', '/'
+                    $entreeZip = $archiveZip.CreateEntry($cheminRelatif, [System.IO.Compression.CompressionLevel]::Optimal)
+                    $fluxEntree = $entreeZip.Open()
+                    try {
+                        $fluxSource = [System.IO.File]::OpenRead($fichierAEmpaqueter.FullName)
+                        try { $fluxSource.CopyTo($fluxEntree) } finally { $fluxSource.Dispose() }
+                    } finally { $fluxEntree.Dispose() }
+                }
+            } finally { $archiveZip.Dispose() }
+        } finally { $fluxZip.Dispose() }
     } finally {
         Remove-Item -Path $dossierTemp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -4538,7 +4566,10 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     $cheminSortie3mfReussi = $null
     try {
         $cheminSortie3mf = Join-Path $dossierResultat ($fichierObj.BaseName + ".3mf")
-        $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf 8
+        # 21/10/2026 : utilise le reglage "Nombre de couleurs" de l'interface (deja utilise pour
+        # Meshy, voir $numCouleurs plus haut dans le script) au lieu d'un 8 fixe code en dur - pas
+        # de raison que ce reglage n'influence pas aussi le regroupement cote Tripo.
+        $infoConversion = Convertir-ObjColoreVers3mfPeint $fichierObj.FullName $cheminSortie3mf ([int]$numCouleurs.Value)
         Ecrire-Journal "  -> .3mf peint genere automatiquement : $($infoConversion.NombreCouleurs) couleur(s), $($infoConversion.NombreTriangles) triangles ($cheminSortie3mf)"
         $cheminSortie3mfReussi = $cheminSortie3mf
     } catch {

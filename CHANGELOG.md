@@ -1,5 +1,38 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : antislashs dans le zip .3mf (CreateFromDirectory sous Windows) + .rels manquant
+
+Après le correctif du BOM, Tomyn a généré un **nouveau** `.3mf` (nouvelle colorisation Tripo,
+pas l'ancien fichier) avec la version corrigée de l'appli, et Bambu Studio a renvoyé
+**exactement les mêmes erreurs** ("le chargement du fichier modèle a échoué" / "le fichier ne
+contient pas de données géométriques"). Il m'a renvoyé l'`.obj` et le `.3mf` de cette nouvelle
+tentative :
+
+- En inspectant les noms d'entrée bruts du zip (`python3 -c "import zipfile; ..."`), les 3
+  fichiers du dossier `3D/`, `Metadata/` et `_rels/` étaient nommés avec des **antislashs** :
+  `3D\3dmodel.model`, `Metadata\project_settings.config`, `_rels\.rels`. Le format OPC/.3mf exige
+  des slashs `/` dans les chemins internes du paquet — avec des antislashs, Bambu Studio ne
+  retrouve jamais `3D/3dmodel.model` et traite l'archive comme vide de géométrie.
+- Cause : `[System.IO.Compression.ZipFile]::CreateFromDirectory()` nomme chaque entrée avec le
+  séparateur de chemin de l'OS qui l'exécute. Sous Linux (mon environnement de test), ça produit
+  des slashs par défaut — le bug était donc invisible dans tous mes tests précédents. Sous
+  Windows (la machine de Tomyn), ça produit des antislashs.
+- Corrigé : le zip est maintenant construit à la main avec `System.IO.Compression.ZipArchive`,
+  en forçant explicitement des slashs `/` dans chaque nom d'entrée, quel que soit l'OS.
+- Second bug trouvé en écrivant le test pour celui-ci : `Get-ChildItem -Recurse -File` (sans
+  `-Force`) ignore silencieusement `_rels/.rels`, car un fichier commençant par un point est
+  marqué "caché" par .NET — le `.3mf` se retrouvait donc sans ses relations internes, un autre
+  motif de rejet à lui seul. Corrigé avec `-Force`.
+- Nouveau test (`test_slashs_zip.ps1`, pas encore dans ce dépôt — vit dans mon bac à sable de
+  session) qui vérifie explicitement les noms d'entrée bruts du zip (pas seulement que le contenu
+  se relit correctement, ce qui masquait le bug).
+- **Vérifié directement sur le `.obj` réel envoyé par Tomyn pour cette nouvelle tentative**
+  (706 567 sommets / 1 413 194 triangles), avec le code extrait tel quel de
+  `Coloriser-STL-GUI.ps1` : conversion en ~74s, `.3mf` résultant avec les 4 entrées nommées avec
+  des slashs, sans BOM, XML intégralement reparsable, 1 seul `<object>` référencé correctement
+  par `<build><item>`. C'est la vérification la plus poussée possible sans Bambu Studio
+  lui-même — reste à confirmer l'ouverture chez Tomyn.
+
 ## Windows (21/10/2026, correctif confirmé) : BOM UTF-8 en tête de fichier, cause réelle du rejet
 
 Suite du correctif précédent (index OBJ négatifs) : Tomyn a régénéré un `.3mf` avec ce correctif,
