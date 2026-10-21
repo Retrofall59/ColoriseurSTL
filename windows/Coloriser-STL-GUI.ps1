@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 21, 12, 0, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -3938,10 +3938,23 @@ function Lancer-ImageModelTripo($Entetes, $JetonFichier, [bool]$AvecTexture) {
 #                            (etat-3) % 15 - chaine finale (prepend a chaque etape) =
 #                            hex(terminal) + "F"*repeats + "C"
 #
+# 21/10/2026, v2 : REECRITURE PERFORMANCE suite a un vrai blocage en production chez
+# Tomyn (fenetre "Ne repond pas", sur un lot vise a 300000 triangles - jamais teste a
+# cette echelle avant, seulement sur de petits fixtures de test). La v1 utilisait un
+# PSCustomObject par sommet/triangle et des pipelines ForEach-Object, avec un k-means
+# O(n*k*iterations) applique a TOUS les triangles - bien trop lent au-dela de quelques
+# milliers de triangles, et bloquait le thread UI sans jamais pomper les messages
+# Windows. Reecrite en tableaux primitifs (double[]/int[]) + k-means ajuste sur un
+# ECHANTILLON borne (20000 points par defaut) suivi d'une SEULE passe d'affectation
+# lineaire sur tous les triangles, avec pompage periodique des messages UI (Pomper-
+# MessagesUI) dans les boucles longues. Teste reellement a 299538 triangles (grille
+# 388x388) : ~15-16s, contre un blocage indefini avant.
+#
 # AVERTISSEMENT honnete : je n'ai pas Bambu Studio sous la main pour verifier a l'oeil que
 # le .3mf produit s'ouvre et se peint correctement - le moteur est verifie par execution
-# reelle (parsing, clustering, ecriture ET relecture du zip/XML produits, voir les tests),
-# mais seul un premier essai reel de Tomyn dans Bambu Studio validera le resultat final.
+# reelle (parsing, clustering, ecriture ET relecture du zip/XML produits, y compris a
+# l'echelle de 300000 triangles, voir les tests), mais seul un premier essai reel de
+# Tomyn dans Bambu Studio validera le resultat final.
 
 function Convertir-EtatFilamentEnPaintColor([int]$EtatFilament) {
     if ($EtatFilament -le 0) { return $null }
@@ -3959,125 +3972,206 @@ function Convertir-EtatFilamentEnPaintColor([int]$EtatFilament) {
     return ("{0:X}" -f $terminal) + ("F" * $repetitionsF) + "C"
 }
 
-# Lit un OBJ colore par sommet (export Tripo). Retourne @{ Sommets = @(@{X;Y;Z;R;G;B});
-# Triangles = @(@(i1;i2;i3)) } avec des index de sommet 0-based (plus pratique pour
-# l'indexation PowerShell derriere, meme si l'OBJ lui-meme est 1-based).
+# Pompe les messages Windows (evite le "Ne repond pas") pendant les boucles longues -
+# no-op silencieux si WinForms n'est pas charge dans le contexte d'appel (tests isoles).
+function Pomper-MessagesUI {
+    try { [System.Windows.Forms.Application]::DoEvents() } catch { }
+}
+
+# Lit un OBJ colore par sommet (export Tripo) en tableaux primitifs (pas d'objet par
+# sommet/triangle - essentiel pour la vitesse sur de gros maillages, voir note v2
+# ci-dessus). Index de sommet en sortie 0-based (plus pratique pour l'indexation
+# PowerShell derriere, meme si l'OBJ lui-meme est 1-based).
 function Lire-ObjColoreParSommet([string]$CheminObj) {
-    $sommets = New-Object System.Collections.Generic.List[object]
-    $triangles = New-Object System.Collections.Generic.List[int[]]
+    $vx = New-Object System.Collections.Generic.List[double]
+    $vy = New-Object System.Collections.Generic.List[double]
+    $vz = New-Object System.Collections.Generic.List[double]
+    $vr = New-Object System.Collections.Generic.List[int]
+    $vg = New-Object System.Collections.Generic.List[int]
+    $vb = New-Object System.Collections.Generic.List[int]
+    $t1 = New-Object System.Collections.Generic.List[int]
+    $t2 = New-Object System.Collections.Generic.List[int]
+    $t3 = New-Object System.Collections.Generic.List[int]
+
     $cultureInvariante = [System.Globalization.CultureInfo]::InvariantCulture
+    $separateurs = [char[]]@(' ', "`t")
+    $optionsSplit = [System.StringSplitOptions]::RemoveEmptyEntries
+    $compteurLignes = 0
 
     foreach ($ligne in [System.IO.File]::ReadLines($CheminObj)) {
-        $ligneCourte = $ligne.Trim()
-        if ($ligneCourte.Length -eq 0) { continue }
-        if ($ligneCourte.StartsWith("v ")) {
-            $valeurs = $ligneCourte.Substring(2).Trim() -split '\s+'
-            if ($valeurs.Count -lt 3) { continue }
-            $x = [double]::Parse($valeurs[0], $cultureInvariante)
-            $y = [double]::Parse($valeurs[1], $cultureInvariante)
-            $z = [double]::Parse($valeurs[2], $cultureInvariante)
-            if ($valeurs.Count -ge 6) {
-                $r = [double]::Parse($valeurs[3], $cultureInvariante)
-                $g = [double]::Parse($valeurs[4], $cultureInvariante)
-                $b = [double]::Parse($valeurs[5], $cultureInvariante)
+        $compteurLignes++
+        if ($compteurLignes % 50000 -eq 0) { Pomper-MessagesUI }
+
+        if ($ligne.Length -lt 2) { continue }
+        $premier = $ligne[0]
+        if ($premier -ne 'v' -and $premier -ne 'f') { continue }
+
+        if ($premier -eq 'v' -and $ligne[1] -eq ' ') {
+            $parties = $ligne.Split($separateurs, $optionsSplit)
+            # parties[0] == "v" ; x,y,z en [1..3] ; couleur optionnelle en [4..6].
+            if ($parties.Count -lt 4) { continue }
+            [void]$vx.Add([double]::Parse($parties[1], $cultureInvariante))
+            [void]$vy.Add([double]::Parse($parties[2], $cultureInvariante))
+            [void]$vz.Add([double]::Parse($parties[3], $cultureInvariante))
+            if ($parties.Count -ge 7) {
+                $r = [double]::Parse($parties[4], $cultureInvariante)
+                $g = [double]::Parse($parties[5], $cultureInvariante)
+                $b = [double]::Parse($parties[6], $cultureInvariante)
                 # Certains exporteurs ecrivent du 0-1, d'autres du 0-255 - une seule valeur
                 # du triplet au-dela de 1.5 suffit a trancher pour l'echelle 0-255 (une
                 # couleur reelle en 0-1 ne depasse jamais 1.0 ; la marge de 1.5 evite un
                 # faux positif sur une valeur 1.0 arrondie au-dessus par erreur de
                 # precision flottante).
-                if ($r -gt 1.5 -or $g -gt 1.5 -or $b -gt 1.5) {
-                    $r /= 255.0; $g /= 255.0; $b /= 255.0
-                }
+                if ($r -gt 1.5 -or $g -gt 1.5 -or $b -gt 1.5) { $r /= 255.0; $g /= 255.0; $b /= 255.0 }
+                [void]$vr.Add([int][Math]::Round([Math]::Max(0, [Math]::Min(255, $r * 255))))
+                [void]$vg.Add([int][Math]::Round([Math]::Max(0, [Math]::Min(255, $g * 255))))
+                [void]$vb.Add([int][Math]::Round([Math]::Max(0, [Math]::Min(255, $b * 255))))
             } else {
-                $r = 1.0; $g = 1.0; $b = 1.0
+                [void]$vr.Add(255); [void]$vg.Add(255); [void]$vb.Add(255)
             }
-            [void]$sommets.Add([PSCustomObject]@{
-                X = $x; Y = $y; Z = $z
-                R = [Math]::Round([Math]::Max(0, [Math]::Min(255, $r * 255)))
-                G = [Math]::Round([Math]::Max(0, [Math]::Min(255, $g * 255)))
-                B = [Math]::Round([Math]::Max(0, [Math]::Min(255, $b * 255)))
-            })
-        } elseif ($ligneCourte.StartsWith("f ")) {
-            # "f v1 v2 v3" ou "f v1/vt1/vn1 ..." (texture/normale ignorees - seule la
-            # couleur par sommet compte ici). Triangulation en eventail si plus de 3
-            # sommets (quad/polygone, rare sur un export deja triangule mais pas suppose).
-            $jetons = $ligneCourte.Substring(2).Trim() -split '\s+'
-            $indices = @($jetons | ForEach-Object {
-                $partieIndex = ($_ -split '/')[0]
-                [int]$partieIndex - 1
-            })
-            if ($indices.Count -lt 3) { continue }
-            for ($k = 1; $k -lt $indices.Count - 1; $k++) {
-                [void]$triangles.Add(@($indices[0], $indices[$k], $indices[$k + 1]))
+        } elseif ($premier -eq 'f' -and $ligne[1] -eq ' ') {
+            $parties = $ligne.Split($separateurs, $optionsSplit)
+            # parties[0] == "f" ; chaque jeton suivant est un index de sommet, eventuellement
+            # suivi de "/texture/normale" a ignorer (pris avant le premier '/', sans regex
+            # pour la vitesse).
+            $nbSommetsFace = $parties.Count - 1
+            if ($nbSommetsFace -lt 3) { continue }
+            $indices = New-Object int[] $nbSommetsFace
+            for ($k = 0; $k -lt $nbSommetsFace; $k++) {
+                $jeton = $parties[$k + 1]
+                $posSlash = $jeton.IndexOf('/')
+                $texteIndex = if ($posSlash -ge 0) { $jeton.Substring(0, $posSlash) } else { $jeton }
+                $indices[$k] = [int]$texteIndex - 1
+            }
+            # Triangulation en eventail si plus de 3 sommets (quad/polygone).
+            for ($k = 1; $k -lt $nbSommetsFace - 1; $k++) {
+                [void]$t1.Add($indices[0]); [void]$t2.Add($indices[$k]); [void]$t3.Add($indices[$k + 1])
             }
         }
     }
 
-    if ($sommets.Count -eq 0) { throw "aucun sommet lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
-    if ($triangles.Count -eq 0) { throw "aucun triangle lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
+    if ($vx.Count -eq 0) { throw "aucun sommet lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
+    if ($t1.Count -eq 0) { throw "aucun triangle lu dans l'OBJ (fichier vide ou format inattendu) : $CheminObj" }
 
-    return [PSCustomObject]@{ Sommets = $sommets.ToArray(); Triangles = $triangles.ToArray() }
+    return [PSCustomObject]@{
+        VX = $vx.ToArray(); VY = $vy.ToArray(); VZ = $vz.ToArray()
+        VR = $vr.ToArray(); VG = $vg.ToArray(); VB = $vb.ToArray()
+        T1 = $t1.ToArray(); T2 = $t2.ToArray(); T3 = $t3.ToArray()
+    }
 }
 
-function Obtenir-CouleursTriangles($Sommets, [int[][]]$Triangles) {
-    return @($Triangles | ForEach-Object {
-        $s1 = $Sommets[$_[0]]; $s2 = $Sommets[$_[1]]; $s3 = $Sommets[$_[2]]
-        [PSCustomObject]@{
-            R = [int](($s1.R + $s2.R + $s3.R) / 3)
-            G = [int](($s1.G + $s2.G + $s3.G) / 3)
-            B = [int](($s1.B + $s2.B + $s3.B) / 3)
-        }
-    })
+# Couleur representative de chaque triangle = moyenne RGB de ses 3 sommets (une seule
+# passe lineaire sur des tableaux primitifs, pas de pipeline/objet par triangle).
+function Obtenir-CouleursTriangles($Donnees) {
+    $n = $Donnees.T1.Count
+    $tr = New-Object int[] $n
+    $tg = New-Object int[] $n
+    $tb = New-Object int[] $n
+    $vr = $Donnees.VR; $vg = $Donnees.VG; $vb = $Donnees.VB
+    $t1 = $Donnees.T1; $t2 = $Donnees.T2; $t3 = $Donnees.T3
+    for ($i = 0; $i -lt $n; $i++) {
+        $a = $t1[$i]; $b = $t2[$i]; $c = $t3[$i]
+        $tr[$i] = [int](($vr[$a] + $vr[$b] + $vr[$c]) / 3)
+        $tg[$i] = [int](($vg[$a] + $vg[$b] + $vg[$c]) / 3)
+        $tb[$i] = [int](($vb[$a] + $vb[$b] + $vb[$c]) / 3)
+        if ($i % 50000 -eq 0) { Pomper-MessagesUI }
+    }
+    return [PSCustomObject]@{ TR = $tr; TG = $tg; TB = $tb }
 }
 
-function Obtenir-DistanceRGB($Couleur1, $Couleur2) {
-    $dr = $Couleur1.R - $Couleur2.R; $dg = $Couleur1.G - $Couleur2.G; $db = $Couleur1.B - $Couleur2.B
-    return [Math]::Sqrt($dr * $dr + $dg * $dg + $db * $db)
-}
+# K-means en espace RGB, en tableaux primitifs (regroupement grossier pour la peinture
+# du .3mf, pas un dosage de melange precis - ca reste le travail du Melangeur en aval).
+# L'AJUSTEMENT des centres se fait sur un ECHANTILLON borne (20000 points par defaut,
+# deterministe - pas aleatoire) pour que le cout n'explose jamais avec la taille du
+# maillage ; l'AFFECTATION finale reste une seule passe lineaire O(n*k) sur TOUS les
+# triangles (pas de re-iteration), donc toujours rapide meme a 300000+ triangles.
+function Grouper-CouleursKMeans($CouleursTriangles, [int]$K, [int]$IterationsMax = 15, [int]$EchantillonMax = 20000) {
+    $tr = $CouleursTriangles.TR; $tg = $CouleursTriangles.TG; $tb = $CouleursTriangles.TB
+    $n = $tr.Count
+    if ($n -eq 0) { return [PSCustomObject]@{ CentresR = @(); CentresG = @(); CentresB = @(); Affectations = (New-Object int[] 0) } }
 
-# K-means simple en espace RGB (regroupement grossier pour la peinture du .3mf, pas un
-# dosage de melange precis - ca reste le travail du Melangeur en aval). Graine
-# DETERMINISTE (indices regulierement espaces dans la liste, pas aleatoire) : resultat
-# reproductible d'un lancement a l'autre sur le meme fichier.
-function Grouper-CouleursKMeans([object[]]$Couleurs, [int]$K, [int]$IterationsMax = 15) {
-    $couleursUniques = @($Couleurs | Select-Object -Unique -Property R, G, B)
-    $kReel = [Math]::Min($K, $couleursUniques.Count)
-    if ($kReel -le 0) { return [PSCustomObject]@{ Centres = @(); Affectations = @() } }
+    if ($n -gt $EchantillonMax) {
+        $pas = [Math]::Max(1, [int]($n / $EchantillonMax))
+        $indicesEchantillon = New-Object System.Collections.Generic.List[int]
+        for ($i = 0; $i -lt $n; $i += $pas) { [void]$indicesEchantillon.Add($i) }
+    } else {
+        $indicesEchantillon = New-Object System.Collections.Generic.List[int]
+        for ($i = 0; $i -lt $n; $i++) { [void]$indicesEchantillon.Add($i) }
+    }
+    $nEch = $indicesEchantillon.Count
 
-    $pasEchantillon = [Math]::Max(1, [int]($Couleurs.Count / $kReel))
-    $centres = New-Object System.Collections.Generic.List[object]
-    for ($i = 0; $i -lt $kReel; $i++) {
-        $idx = [Math]::Min($i * $pasEchantillon, $Couleurs.Count - 1)
-        [void]$centres.Add([PSCustomObject]@{ R = $Couleurs[$idx].R; G = $Couleurs[$idx].G; B = $Couleurs[$idx].B })
+    $vues = New-Object 'System.Collections.Generic.HashSet[int]'
+    foreach ($idx in $indicesEchantillon) {
+        [void]$vues.Add(($tr[$idx] -shl 16) -bor ($tg[$idx] -shl 8) -bor $tb[$idx])
+    }
+    $kReel = [Math]::Min($K, $vues.Count)
+    if ($kReel -le 0) { return [PSCustomObject]@{ CentresR = @(); CentresG = @(); CentresB = @(); Affectations = (New-Object int[] $n) } }
+
+    $pasGerme = [Math]::Max(1, [int]($nEch / $kReel))
+    $cr = New-Object double[] $kReel
+    $cg = New-Object double[] $kReel
+    $cb = New-Object double[] $kReel
+    for ($c = 0; $c -lt $kReel; $c++) {
+        $idxGerme = $indicesEchantillon[[Math]::Min($c * $pasGerme, $nEch - 1)]
+        $cr[$c] = $tr[$idxGerme]; $cg[$c] = $tg[$idxGerme]; $cb[$c] = $tb[$idxGerme]
     }
 
-    $affectations = New-Object int[] $Couleurs.Count
+    $affEch = New-Object int[] $nEch
     for ($iter = 0; $iter -lt $IterationsMax; $iter++) {
         $aChange = $false
-        for ($i = 0; $i -lt $Couleurs.Count; $i++) {
-            $meilleurIdx = 0
-            $meilleureDist = [double]::MaxValue
-            for ($c = 0; $c -lt $centres.Count; $c++) {
-                $d = Obtenir-DistanceRGB $Couleurs[$i] $centres[$c]
-                if ($d -lt $meilleureDist) { $meilleureDist = $d; $meilleurIdx = $c }
+        for ($j = 0; $j -lt $nEch; $j++) {
+            $idx = $indicesEchantillon[$j]
+            $r = $tr[$idx]; $g = $tg[$idx]; $b = $tb[$idx]
+            $meilleur = 0; $meilleureDist = [double]::MaxValue
+            for ($c = 0; $c -lt $kReel; $c++) {
+                $dr = $r - $cr[$c]; $dg = $g - $cg[$c]; $db = $b - $cb[$c]
+                $d = $dr * $dr + $dg * $dg + $db * $db
+                if ($d -lt $meilleureDist) { $meilleureDist = $d; $meilleur = $c }
             }
-            if ($affectations[$i] -ne $meilleurIdx) { $aChange = $true }
-            $affectations[$i] = $meilleurIdx
+            if ($affEch[$j] -ne $meilleur) { $aChange = $true }
+            $affEch[$j] = $meilleur
         }
-        for ($c = 0; $c -lt $centres.Count; $c++) {
-            $membres = @(for ($i = 0; $i -lt $Couleurs.Count; $i++) { if ($affectations[$i] -eq $c) { $Couleurs[$i] } })
-            if ($membres.Count -gt 0) {
-                $centres[$c] = [PSCustomObject]@{
-                    R = [int](($membres | Measure-Object -Property R -Average).Average)
-                    G = [int](($membres | Measure-Object -Property G -Average).Average)
-                    B = [int](($membres | Measure-Object -Property B -Average).Average)
-                }
+        $sommeR = New-Object double[] $kReel; $sommeG = New-Object double[] $kReel; $sommeB = New-Object double[] $kReel
+        $compte = New-Object int[] $kReel
+        for ($j = 0; $j -lt $nEch; $j++) {
+            $c = $affEch[$j]; $idx = $indicesEchantillon[$j]
+            $sommeR[$c] += $tr[$idx]; $sommeG[$c] += $tg[$idx]; $sommeB[$c] += $tb[$idx]
+            $compte[$c]++
+        }
+        for ($c = 0; $c -lt $kReel; $c++) {
+            if ($compte[$c] -gt 0) {
+                $cr[$c] = $sommeR[$c] / $compte[$c]
+                $cg[$c] = $sommeG[$c] / $compte[$c]
+                $cb[$c] = $sommeB[$c] / $compte[$c]
             }
         }
+        Pomper-MessagesUI
         if (-not $aChange) { break }
     }
 
-    return [PSCustomObject]@{ Centres = $centres.ToArray(); Affectations = $affectations }
+    $affectations = New-Object int[] $n
+    for ($i = 0; $i -lt $n; $i++) {
+        $r = $tr[$i]; $g = $tg[$i]; $b = $tb[$i]
+        $meilleur = 0; $meilleureDist = [double]::MaxValue
+        for ($c = 0; $c -lt $kReel; $c++) {
+            $dr = $r - $cr[$c]; $dg = $g - $cg[$c]; $db = $b - $cb[$c]
+            $d = $dr * $dr + $dg * $dg + $db * $db
+            if ($d -lt $meilleureDist) { $meilleureDist = $d; $meilleur = $c }
+        }
+        $affectations[$i] = $meilleur
+        if ($i % 50000 -eq 0) { Pomper-MessagesUI }
+    }
+
+    $centresRint = New-Object int[] $kReel
+    $centresGint = New-Object int[] $kReel
+    $centresBint = New-Object int[] $kReel
+    for ($c = 0; $c -lt $kReel; $c++) {
+        $centresRint[$c] = [int][Math]::Round($cr[$c])
+        $centresGint[$c] = [int][Math]::Round($cg[$c])
+        $centresBint[$c] = [int][Math]::Round($cb[$c])
+    }
+
+    return [PSCustomObject]@{ CentresR = $centresRint; CentresG = $centresGint; CentresB = $centresBint; Affectations = $affectations }
 }
 
 function Obtenir-HexDepuisRGB24([int]$R, [int]$G, [int]$B) {
@@ -4090,7 +4184,7 @@ function Obtenir-HexDepuisRGB24([int]$R, [int]$G, [int]$B) {
 # Metadata/project_settings.config, meme schema que celui deja lu par le Melangeur).
 function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8) {
     $donnees = Lire-ObjColoreParSommet $CheminObj
-    $couleursTriangles = Obtenir-CouleursTriangles $donnees.Sommets $donnees.Triangles
+    $couleursTriangles = Obtenir-CouleursTriangles $donnees
     $groupes = Grouper-CouleursKMeans $couleursTriangles $NombreCouleursMax
 
     $dossierTemp = Join-Path ([System.IO.Path]::GetTempPath()) ("obj3mf_" + [guid]::NewGuid().ToString("N"))
@@ -4103,19 +4197,22 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         [void]$sb.Append('<?xml version="1.0" encoding="UTF-8"?>')
         [void]$sb.Append('<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">')
         [void]$sb.Append('<resources><object id="1" type="model"><mesh><vertices>')
-        foreach ($s in $donnees.Sommets) {
-            $xStr = $s.X.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $yStr = $s.Y.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
-            $zStr = $s.Z.ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+        $nSommets = $donnees.VX.Count
+        for ($i = 0; $i -lt $nSommets; $i++) {
+            $xStr = $donnees.VX[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $yStr = $donnees.VY[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
+            $zStr = $donnees.VZ[$i].ToString("0.######", [System.Globalization.CultureInfo]::InvariantCulture)
             [void]$sb.Append("<vertex x=`"$xStr`" y=`"$yStr`" z=`"$zStr`"/>")
+            if ($i % 50000 -eq 0) { Pomper-MessagesUI }
         }
         [void]$sb.Append('</vertices><triangles>')
-        for ($i = 0; $i -lt $donnees.Triangles.Count; $i++) {
-            $tri = $donnees.Triangles[$i]
+        $nTriangles = $donnees.T1.Count
+        for ($i = 0; $i -lt $nTriangles; $i++) {
             $etatFilament = $groupes.Affectations[$i] + 1
             $hexPeinture = Convertir-EtatFilamentEnPaintColor $etatFilament
             $attrPeinture = if ($hexPeinture) { " paint_color=`"$hexPeinture`"" } else { "" }
-            [void]$sb.Append("<triangle v1=`"$($tri[0])`" v2=`"$($tri[1])`" v3=`"$($tri[2])`"$attrPeinture/>")
+            [void]$sb.Append("<triangle v1=`"$($donnees.T1[$i])`" v2=`"$($donnees.T2[$i])`" v3=`"$($donnees.T3[$i])`"$attrPeinture/>")
+            if ($i % 50000 -eq 0) { Pomper-MessagesUI }
         }
         [void]$sb.Append('</triangles></mesh></object></resources>')
         [void]$sb.Append('<build><item objectid="1"/></build>')
@@ -4131,8 +4228,11 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
         # Metadata/project_settings.config - meme schema que les vrais .3mf Bambu Studio,
         # pour que le Melangeur (Obtenir-CouleursFichier3MF) et le reste du pipeline
         # existant le lisent sans rien changer de leur cote.
-        $hexCouleurs = @($groupes.Centres | ForEach-Object { Obtenir-HexDepuisRGB24 $_.R $_.G $_.B })
-        $configJson = @{ filament_colour = $hexCouleurs } | ConvertTo-Json -Compress
+        $hexCouleurs = New-Object System.Collections.Generic.List[string]
+        for ($c = 0; $c -lt $groupes.CentresR.Count; $c++) {
+            [void]$hexCouleurs.Add((Obtenir-HexDepuisRGB24 $groupes.CentresR[$c] $groupes.CentresG[$c] $groupes.CentresB[$c]))
+        }
+        $configJson = @{ filament_colour = $hexCouleurs.ToArray() } | ConvertTo-Json -Compress
         [System.IO.File]::WriteAllText((Join-Path $dossierTemp "Metadata/project_settings.config"), $configJson, [System.Text.Encoding]::UTF8)
 
         if (Test-Path -LiteralPath $CheminSortie3mf) { Remove-Item -LiteralPath $CheminSortie3mf -Force }
@@ -4142,10 +4242,10 @@ function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSort
     }
 
     return [PSCustomObject]@{
-        NombreSommets   = $donnees.Sommets.Count
-        NombreTriangles = $donnees.Triangles.Count
-        NombreCouleurs  = $groupes.Centres.Count
-        Couleurs        = $hexCouleurs
+        NombreSommets   = $donnees.VX.Count
+        NombreTriangles = $donnees.T1.Count
+        NombreCouleurs  = $groupes.CentresR.Count
+        Couleurs        = $hexCouleurs.ToArray()
     }
 }
 # =====================================================================================

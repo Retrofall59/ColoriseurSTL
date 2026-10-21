@@ -1,5 +1,34 @@
 # Changelog
 
+## Windows (21/10/2026, correctif) : blocage de l'appli sur un gros maillage ("Ne répond pas")
+
+Bug remonté par Tomyn en conditions réelles, sur un lot visant 300 000 triangles : juste après
+"Conversion terminée" / "Enregistré : ..." dans le journal, l'appli s'est figée (barre de titre
+"Ne répond pas") — exactement au moment où le nouveau convertisseur OBJ→3MF (ci-dessous)
+démarrait.
+
+Cause racine : le moteur de conversion (v1) utilisait un objet PowerShell par sommet/triangle et
+des pipelines `ForEach-Object`, avec un k-means recalculé sur **tous** les triangles à chaque
+itération — jamais testé au-delà de petits fixtures de quelques triangles. À l'échelle réelle
+(150 000+ sommets, 300 000 triangles), ce code est des ordres de grandeur trop lent, et comme il
+tournait sur le thread principal sans jamais rendre la main à Windows, la fenêtre se figeait.
+
+**Correctif : réécriture complète du moteur pour la performance**, sans changer le comportement
+observable :
+- tableaux primitifs (`double[]`/`int[]`) au lieu d'un objet par sommet/triangle ;
+- le k-means ajuste ses centres sur un **échantillon borné** (20 000 points par défaut,
+  déterministe), puis fait une **seule passe linéaire** sur tous les triangles pour l'affectation
+  finale — coût indépendant du nombre d'itérations, toujours rapide quelle que soit la taille du
+  maillage ;
+- pompage périodique des messages Windows (`Application::DoEvents`) dans les boucles longues
+  (parsing, clustering, écriture XML), pour que l'appli ne soit plus jamais signalée "Ne répond
+  pas" même sur un gros fichier.
+- **Vérifié par exécution réelle sur un maillage de 299 538 triangles / 150 544 sommets** (grille
+  régulière générée spécifiquement pour reproduire l'échelle du cas de Tomyn) : conversion
+  complète (parsing + clustering + écriture + relecture réelle du zip/XML produit) en ~16
+  secondes, contre un blocage indéfini avant. Les 19 assertions de correction déjà écrites restent
+  toutes vertes sur le nouveau moteur.
+
 ## Windows (21/10/2026) : conversion automatique de l'OBJ Tripo en .3mf peint
 
 Bug remonté par Tomyn : utiliser "Suggérer un trio pour ce fichier..." (Mélangeur) sur un `.obj`
