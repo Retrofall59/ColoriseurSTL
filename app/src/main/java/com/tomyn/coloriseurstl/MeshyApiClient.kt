@@ -80,7 +80,12 @@ object MeshyApiClient {
     // avant ce correctif, le moindre a-coup reseau mobile faisait echouer tout l'appel sans
     // retenter, contrairement a Windows qui le fait sur quasiment chaque appel.
     private fun requete(methode: String, chemin: String, cleApi: String, corps: JSONObject? = null): JSONObject =
-        ReessaiReseau.executer {
+        ReessaiReseau.executer(
+            estAnnule = { EtatTraitement.annulationDemandee },
+            surTentativeEchouee = { tentative, max, message, delai ->
+                EtatTraitement.ecrireJournal("    ($chemin : erreur reseau transitoire, tentative $tentative/$max - '$message' - nouvel essai dans ${delai / 1000}s)")
+            }
+        ) {
             val url = URL("$BASE_URL$chemin")
             val connexion = url.openConnection() as HttpURLConnection
             try {
@@ -464,7 +469,12 @@ object MeshyApiClient {
     }
 
     /** Telecharge un fichier distant (le .3mf final, ou l'image d'apercu) en octets bruts. */
-    fun telecharger(url: String): ByteArray = ReessaiReseau.executer {
+    fun telecharger(url: String): ByteArray = ReessaiReseau.executer(
+        estAnnule = { EtatTraitement.annulationDemandee },
+        surTentativeEchouee = { tentative, max, message, delai ->
+            EtatTraitement.ecrireJournal("    (telechargement : erreur reseau transitoire, tentative $tentative/$max - '$message' - nouvel essai dans ${delai / 1000}s)")
+        }
+    ) {
         val connexion = URL(url).openConnection() as HttpURLConnection
         try {
             connexion.connectTimeout = 30000

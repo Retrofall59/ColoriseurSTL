@@ -24,6 +24,15 @@ object ReessaiReseau {
 
     const val TENTATIVES_PAR_DEFAUT = 3
     const val DELAI_MS_PAR_DEFAUT = 4000L
+    private const val PAS_ATTENTE_ANNULATION_MS = 200L
+
+    /**
+     * Meme marqueur que cote Windows ($script:ANNULATION_MARQUEUR / "ANNULATION_DEMANDEE") -
+     * ColorisationService.kt reconnait deja ce message partout ailleurs dans le pipeline
+     * (`if (e.message == "ANNULATION_DEMANDEE") ...`), donc jeter cette exception depuis ici
+     * s'integre sans rien changer cote appelant.
+     */
+    class AnnulationDemandeeException : Exception("ANNULATION_DEMANDEE")
 
     // Equivalent du regex Windows $script:REGEX_ERREUR_RESEAU_TRANSITOIRE, adapte au texte des
     // messages produits par requete()/requeteJson()/telecharger() ici (ex: "HTTP 503 : ...") et
@@ -51,26 +60,43 @@ object ReessaiReseau {
      * Execute [bloc], en reessayant jusqu'a [tentatives] fois (avec [delaiMs] entre chaque) si et
      * seulement si l'erreur rencontree est transitoire. Relance immediatement toute autre erreur.
      * A appeler depuis un thread d'arriere-plan (bloquant, comme les appels reseau sous-jacents).
+     *
+     * [estAnnule] est reverifie avant chaque tentative ET toutes les ~200ms pendant l'attente
+     * entre deux tentatives (comme la boucle DoEvents cote Windows) - une annulation demandee par
+     * l'utilisateur pendant les 4s d'attente interrompt immediatement plutot que de patienter pour
+     * rien. [surTentativeEchouee] permet a l'appelant de logguer la tentative manquee (tentative,
+     * total, message, delai avant le prochain essai) - ReessaiReseau reste sans dependance Android
+     * (donc testable par vraie execution JVM) en laissant le "ou" du log a l'appelant.
      */
     fun <T> executer(
         tentatives: Int = TENTATIVES_PAR_DEFAUT,
         delaiMs: Long = DELAI_MS_PAR_DEFAUT,
+        estAnnule: () -> Boolean = { false },
+        surTentativeEchouee: (tentative: Int, max: Int, messageErreur: String, delaiMs: Long) -> Unit = { _, _, _, _ -> },
         bloc: () -> T
     ): T {
         var derniereErreur: Exception? = null
         for (tentative in 1..tentatives) {
+            if (estAnnule()) throw AnnulationDemandeeException()
             try {
                 return bloc()
+            } catch (e: AnnulationDemandeeException) {
+                throw e
             } catch (e: Exception) {
                 derniereErreur = e
                 if (tentative >= tentatives || !estErreurTransitoire(e)) {
                     throw e
                 }
-                try {
-                    Thread.sleep(delaiMs)
-                } catch (ie: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    throw e
+                surTentativeEchouee(tentative, tentatives, e.message ?: e.toString(), delaiMs)
+                val finAttente = System.currentTimeMillis() + delaiMs
+                while (System.currentTimeMillis() < finAttente) {
+                    if (estAnnule()) throw AnnulationDemandeeException()
+                    try {
+                        Thread.sleep(PAS_ATTENTE_ANNULATION_MS)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw e
+                    }
                 }
             }
         }

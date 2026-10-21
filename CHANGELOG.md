@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.25 (build 25)
+
+**Complète le réessai réseau de la 0.24** (même chantier, deux manques trouvés en relisant
+`Invoquer-AvecReessaiReseau` côté Windows de plus près) :
+
+- Chaque tentative manquée est maintenant écrite dans le journal visible de l'appli ("... : erreur
+  réseau transitoire, tentative 2/3 - '...' - nouvel essai dans 4s"), comme côté Windows
+  (`Ecrire-Journal`) - avant, le réessai était silencieux : aucune trace dans l'appli qu'un
+  accroc réseau avait eu lieu.
+- L'annulation demandée par l'utilisateur est maintenant revérifiée pendant l'attente entre deux
+  tentatives (toutes les ~200ms, comme la boucle `DoEvents` côté Windows) : annuler un lot
+  n'attend plus bêtement les 4s d'un réessai en cours avant de s'arrêter.
+- Vérifié par exécution JVM réelle : 9 nouvelles assertions (annulation avant/pendant l'attente,
+  callback de log appelé avec les bons paramètres) - 22 assertions au total, toutes passent. App
+  entière recompilée avec les stubs (0 erreur).
+
 ## v0.24 (build 24)
 
 **Écart de fiabilité trouvé en comparant avec la version Windows** (pas demandé par Tomyn, trouvé
