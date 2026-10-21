@@ -494,12 +494,24 @@
             android:textSize="16sp"
             android:visibility="gone" />
 
+        <!-- 21/10/2026, porte depuis la version Windows (Afficher-ProgressionEnCours) - utile sur
+             les gros lots (200+ fichiers) envoyes par le collegue dessinateur de Tomyn, ou la
+             seule barre de progression ne dit pas combien de temps il reste a attendre. -->
+        <TextView
+            android:id="@+id/texteEtaLot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/texte_secondaire"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <ProgressBar
             android:id="@+id/barreProgression"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="4dp"
             android:layout_marginBottom="14dp"
             android:max="100"
             android:visibility="gone" />

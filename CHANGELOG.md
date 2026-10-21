@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.27 (build 27)
+
+**Temps restant estimé pendant un lot**, porté depuis la version Windows (`Obtenir-TexteEtaLot` /
+`Afficher-ProgressionEnCours`) - demandé par Tomyn : son collègue dessinateur lui envoie souvent
+des dossiers de 200+ fichiers, où la seule barre de progression ne dit pas combien de temps il
+reste à attendre.
+
+- Nouvelle ligne de statut au-dessus de la barre de progression pendant un lot : "Fichier X/Y -
+  écoulé : MM:SS - reste ~N min - N credit(s) dépensés" - même recette que côté Windows (moyenne
+  glissante : temps écoulé / fichiers déjà faits × fichiers restants). Vide tant qu'aucun fichier
+  n'est encore terminé (pas d'estimation fiable sur un seul point de mesure), comme côté Windows.
+- Nouveau module `EstimateurEtaLot.kt` (pur Kotlin, sans dépendance Android). Vérifié par
+  exécution JVM réelle : 18 assertions, y compris les cas limites exacts (60s, 3600s - bascule
+  entre "min" et "h" au bon seuil) - toutes passent. App entière recompilée avec les stubs
+  (0 erreur).
+
 ## v0.26 (build 26)
 
 **"Sauvegarder ma config..." / "Restaurer ma config..."** portés depuis la version Windows

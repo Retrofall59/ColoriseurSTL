@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnAnnuler: Button
     private lateinit var btnRelancerEchecs: Button
     private lateinit var barreProgression: ProgressBar
+    private lateinit var texteEtaLot: TextView
     private lateinit var texteEstimationCout: TextView
     private lateinit var texteCompteurGalerie: TextView
     private lateinit var galerieFichiers: GridLayout
@@ -198,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         btnAnnuler = findViewById(R.id.btnAnnuler)
         btnRelancerEchecs = findViewById(R.id.btnRelancerEchecs)
         barreProgression = findViewById(R.id.barreProgression)
+        texteEtaLot = findViewById(R.id.texteEtaLot)
         texteEstimationCout = findViewById(R.id.texteEstimationCout)
         texteCompteurGalerie = findViewById(R.id.texteCompteurGalerie)
         galerieFichiers = findViewById(R.id.galerieFichiers)
@@ -1231,6 +1233,17 @@ class MainActivity : AppCompatActivity() {
             barreProgression.visibility = View.VISIBLE
             barreProgression.max = maxOf(EtatTraitement.totalFichiersLot, 1)
             barreProgression.progress = EtatTraitement.indexFichierCourant
+
+            // 21/10/2026, porte depuis la version Windows (Afficher-ProgressionEnCours) - demande
+            // par Tomyn pour les gros lots (200+ fichiers) de son collegue dessinateur.
+            if (EtatTraitement.debutTraitement > 0) {
+                val secondesEcoulees = (System.currentTimeMillis() - EtatTraitement.debutTraitement) / 1000.0
+                texteEtaLot.text = EstimateurEtaLot.ligneStatut(
+                    EtatTraitement.indexFichierCourant, EtatTraitement.totalFichiersLot,
+                    secondesEcoulees, EtatTraitement.creditsReelsLot, EtatTraitement.etapeTexte
+                )
+                texteEtaLot.visibility = View.VISIBLE
+            }
         }
 
         // Detecte la transition "en cours" -> "termine" pour remettre l'interface a jour une
@@ -1241,6 +1254,7 @@ class MainActivity : AppCompatActivity() {
             btnLancer.visibility = View.VISIBLE
             btnAnnuler.visibility = View.GONE
             barreProgression.visibility = View.GONE
+            texteEtaLot.visibility = View.GONE
             btnRelancerEchecs.visibility = if (dernierLotEchecs.isNotEmpty()) View.VISIBLE else View.GONE
             mettreAJourEstimation()
 
