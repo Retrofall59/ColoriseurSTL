@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 9, 45, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 10, 5, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4914,15 +4914,36 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     $descriptionGeneree = Generer-DescriptionMakerWorld $FichierStl.BaseName $Prompt
     try { Set-Content -Path (Join-Path $dossierResultat "description_makerworld.txt") -Value $descriptionGeneree.Texte -Encoding UTF8 } catch { }
 
-    # 22/10/2026 : une seule vignette desormais - celle du .3mf (deliverable final) s'il a ete
-    # genere, sinon celle de l'OBJ (seul resultat restant, cas d'echec de conversion ci-dessus).
-    # Avant, les DEUX vignettes etaient ajoutees systematiquement (OBJ toujours visible, .3mf en
-    # plus si reussi) - c'est justement cette double presence qui laissait l'OBJ trainer comme
-    # option visible/cliquable a cote du .3mf.
+    # 22/10/2026, suite a la question de Tomyn ("pourquoi le .3mf Meshy a un apercu, alors ?") :
+    # le .3mf Meshy n'est pas rendu par notre code non plus (notre rendu maison ne sait pas lire
+    # le .3mf, voir Ajouter-Vignette/Obtenir-Miniature) - c'est une image TOUTE FAITE que Meshy
+    # renvoie lui-meme dans sa reponse ("thumbnail_url", deja utilise plus bas dans ce fichier pour
+    # Meshy). Verifie dans la doc officielle Tripo (developers.tripo3d.com/en/docs/models-texture,
+    # section "Task result") : Tripo fournit exactement le meme genre de champ cote "output" de ses
+    # taches - "rendered_image_url". Jusqu'ici jamais recupere, d'ou l'absence d'image pour nos
+    # resultats Tripo (OBJ comme .3mf). Tente dans l'ordre de la tache la plus "finale" (donc la
+    # plus fidele au rendu colore) a la moins finale : texturation (le cas normal, avec prompt),
+    # sinon conversion OBJ (qui peut aussi exposer ce champ), sinon Image to 3D (cas sans prompt,
+    # ou la texturation est sautee - $sauterTexturation plus haut). Toutes ces variables peuvent
+    # etre $null selon le chemin emprunte (acces de propriete sur $null sans danger en PowerShell,
+    # pas de Set-StrictMode dans ce script) ; Obtenir-ImageDepuisUrl renvoie $null au moindre echec
+    # (URL absente, telechargement rate...), auquel cas on retombe sur l'image de remplacement
+    # habituelle - comportement strictement au pire aussi bon qu'avant.
+    $urlApercuTripo = if ($tacheTexture.output.rendered_image_url) { $tacheTexture.output.rendered_image_url }
+        elseif ($tacheConvert.output.rendered_image_url) { $tacheConvert.output.rendered_image_url }
+        elseif ($tacheImageModel.output.rendered_image_url) { $tacheImageModel.output.rendered_image_url }
+        else { $null }
+    $imageApercuTripo = if ($urlApercuTripo) { Obtenir-ImageDepuisUrl $urlApercuTripo } else { $null }
+
+    # Une seule vignette desormais - celle du .3mf (deliverable final) s'il a ete genere, sinon
+    # celle de l'OBJ (seul resultat restant, cas d'echec de conversion ci-dessus). Avant, les DEUX
+    # vignettes etaient ajoutees systematiquement (OBJ toujours visible, .3mf en plus si reussi) -
+    # c'est justement cette double presence qui laissait l'OBJ trainer comme option
+    # visible/cliquable a cote du .3mf.
     if ($cheminSortie3mfReussi) {
-        Ajouter-Vignette $GalerieCible $cheminSortie3mfReussi $null -texteDescription $descriptionGeneree.Texte
+        Ajouter-Vignette $GalerieCible $cheminSortie3mfReussi $imageApercuTripo -texteDescription $descriptionGeneree.Texte
     } else {
-        Ajouter-Vignette $GalerieCible $fichierObj.FullName $null -texteDescription $descriptionGeneree.Texte
+        Ajouter-Vignette $GalerieCible $fichierObj.FullName $imageApercuTripo -texteDescription $descriptionGeneree.Texte
     }
     [System.Windows.Forms.Application]::DoEvents()
 

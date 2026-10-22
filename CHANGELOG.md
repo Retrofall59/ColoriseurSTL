@@ -1,5 +1,27 @@
 # Changelog
 
+## Windows (22/10/2026, amelioration) : vraie vignette pour les resultats Tripo (.3mf inclus)
+
+Suite a la question de Tomyn ("pourquoi le .3mf Meshy a un apercu, alors ?") apres le retrait de
+l'OBJ ci-dessous : le .3mf Meshy n'est en realite pas rendu par notre propre code non plus (notre
+rendu maison ne sait pas lire le format .3mf, trop complexe) - Meshy renvoie lui-meme une image
+toute faite dans sa reponse API (`thumbnail_url`), deja recuperee et reutilisee telle quelle.
+
+- Verifie dans la documentation officielle Tripo (developers.tripo3d.com/en/docs/models-texture,
+  section "Task result") : Tripo expose le meme genre de champ, `output.rendered_image_url`,
+  jamais recupere jusqu'ici cote Tripo - d'ou l'absence totale d'image (OBJ comme .3mf) sur ces
+  resultats, independamment du retrait de l'OBJ.
+- Ajoute : recuperation de ce champ (avec repli en cascade entre les trois taches Tripo possibles
+  selon le chemin emprunte - texturation, conversion OBJ, ou Image to 3D si la texturation a ete
+  sautee, voir `$sauterTexturation`) et telechargement via `Obtenir-ImageDepuisUrl` (fonction
+  deja utilisee pour Meshy), passee desormais a la vignette du resultat final.
+- Comportement au pire inchange : si le champ est absent ou le telechargement echoue, on retombe
+  sur l'image de remplacement habituelle (accès de propriete sur une tache $null/non definie
+  volontairement sans danger en PowerShell, aucun `Set-StrictMode` dans ce script).
+- Teste : simulation isolee de la cascade de repli entre les trois taches (tache prioritaire
+  absente -> suivante, tout absent -> pas d'exception, tache prioritaire presente -> bien
+  choisie en premier). Suite de verification de syntaxe du fichier complet.
+
 ## Windows (22/10/2026, changement) : l'OBJ intermediaire Tripo n'est plus laisse dans le resultat
 
 Apres le correctif d'orientation ci-dessous, la voiture est enfin bien posee et orientee dans
