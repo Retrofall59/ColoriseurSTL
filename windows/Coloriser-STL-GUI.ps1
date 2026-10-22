@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 9, 15, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 9, 45, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4865,7 +4865,6 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
     if (-not $fichierObj) {
         throw "le ZIP recu de Tripo ne contient aucun fichier .obj (contenu extrait dans $dossierResultat)"
     }
-    Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir le fichier $($fichierObj.Name) dans Bambu Studio)"
 
     # 21/10/2026, demande explicite de Tomyn : convertir automatiquement l'OBJ colore par
     # sommet en .3mf peint, directement a cote de l'OBJ (pas un outil/bouton separe). En
@@ -4885,32 +4884,54 @@ function Coloriser-UnFichierTripo($FichierStl, $Prompt, $CleApi, $DossierSortie,
         Ecrire-Journal "  -> ECHEC de la conversion automatique en .3mf peint (l'OBJ colore reste disponible) : $_"
     }
 
+    # 22/10/2026, demande explicite de Tomyn : l'OBJ laisse a cote du .3mf dans le dossier de
+    # resultat posait un vrai probleme d'usage, pas juste cosmetique - notre galerie generait une
+    # miniature rendue (donc "parlante") pour l'OBJ mais pas pour le .3mf (format .3mf trop
+    # complexe pour notre rendu maison, voir Ajouter-Vignette/Obtenir-Miniature), et le message de
+    # journal d'alors disait meme explicitement d'ouvrir l'OBJ dans Bambu Studio. Resultat : un
+    # utilisateur lambda ouvrait naturellement l'OBJ (celui qui "se voit"), tombait sur
+    # l'assistant d'import OBJ natif de Bambu Studio - dont la detection du nombre de couleurs
+    # s'est averee peu fiable sur les fichiers Tripo (enquete statistique approfondie menee en
+    # amont, aucun levier trouve cote fichier - tres probablement un comportement interne/ferme de
+    # Bambu Studio, hors de portee d'un correctif ici) - au lieu du .3mf, deja correctement
+    # colorise et pose, genere juste a cote. Plutot que d'essayer encore de corriger le
+    # comportement de l'assistant OBJ de Bambu Studio (deja explore sans succes), on supprime
+    # purement l'ambiguite : l'OBJ intermediaire est efface des que la conversion en .3mf reussit,
+    # il ne reste plus qu'un seul fichier dans le dossier de resultat. L'OBJ n'est conserve que si
+    # la conversion a echoue (seul resultat exploitable dans ce cas, comportement inchange).
+    if ($cheminSortie3mfReussi) {
+        try { Remove-Item -Path $fichierObj.FullName -Force -ErrorAction Stop } catch {
+            Ecrire-Journal "  -> Impossible de supprimer l'OBJ intermediaire ($($fichierObj.Name)) : $_"
+        }
+        Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir $([System.IO.Path]::GetFileName($cheminSortie3mfReussi)) dans Bambu Studio)"
+    } else {
+        Ecrire-Journal "  -> Enregistre : $dossierResultat (ouvrir le fichier $($fichierObj.Name) dans Bambu Studio)"
+    }
+
     # 13/10/2026 : titre + description prets a coller dans le formulaire de depot MakerWorld (voir
     # Generer-DescriptionMakerWorld) - fichier texte a cote du resultat, et bouton "Copier
     # description" sur la vignette correspondante.
     $descriptionGeneree = Generer-DescriptionMakerWorld $FichierStl.BaseName $Prompt
     try { Set-Content -Path (Join-Path $dossierResultat "description_makerworld.txt") -Value $descriptionGeneree.Texte -Encoding UTF8 } catch { }
 
-    Ajouter-Vignette $GalerieCible $fichierObj.FullName $null -texteDescription $descriptionGeneree.Texte
-    [System.Windows.Forms.Application]::DoEvents()
-
-    # 21/10/2026, bug remonte par Tomyn : le .3mf genere automatiquement ci-dessus etait bien sur
-    # le disque, mais totalement invisible dans l'onglet Resultats (seul l'OBJ y avait une
-    # vignette) - rien ne signalait sa presence sans aller fouiller dans l'Explorateur Windows.
-    # Deuxieme vignette, juste a cote de celle de l'OBJ, des que la conversion a reussi - elle
-    # recupere au passage le bouton "Analyser les couleurs..." (vers le Melangeur) et "Couleurs..."
-    # deja prevus pour tout resultat .3mf (voir $estResultat3mf dans Ajouter-Vignette), pas
-    # disponibles sur la vignette OBJ puisque ces outils ne lisent que des .3mf.
+    # 22/10/2026 : une seule vignette desormais - celle du .3mf (deliverable final) s'il a ete
+    # genere, sinon celle de l'OBJ (seul resultat restant, cas d'echec de conversion ci-dessus).
+    # Avant, les DEUX vignettes etaient ajoutees systematiquement (OBJ toujours visible, .3mf en
+    # plus si reussi) - c'est justement cette double presence qui laissait l'OBJ trainer comme
+    # option visible/cliquable a cote du .3mf.
     if ($cheminSortie3mfReussi) {
         Ajouter-Vignette $GalerieCible $cheminSortie3mfReussi $null -texteDescription $descriptionGeneree.Texte
-        [System.Windows.Forms.Application]::DoEvents()
+    } else {
+        Ajouter-Vignette $GalerieCible $fichierObj.FullName $null -texteDescription $descriptionGeneree.Texte
     }
+    [System.Windows.Forms.Application]::DoEvents()
 
     # Credits reellement consommes sur les TROIS etapes facturees : import (5), texturation (10)
     # et conversion (confirmes par Tomyn le 07/10/2026 - l'import n'est pas gratuit, contrairement
     # a ce qui etait suppose avant).
     $creditsTotal = $creditsImport + $creditsTexture + $creditsConvert
-    Enregistrer-HistoriqueFichier $FichierStl.Name "Tripo" $creditsTotal $fichierObj.FullName
+    $cheminHistorique = if ($cheminSortie3mfReussi) { $cheminSortie3mfReussi } else { $fichierObj.FullName }
+    Enregistrer-HistoriqueFichier $FichierStl.Name "Tripo" $creditsTotal $cheminHistorique
     return $creditsTotal
 }
 

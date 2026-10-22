@@ -1,5 +1,32 @@
 # Changelog
 
+## Windows (22/10/2026, changement) : l'OBJ intermediaire Tripo n'est plus laisse dans le resultat
+
+Apres le correctif d'orientation ci-dessous, la voiture est enfin bien posee et orientee dans
+Bambu Studio. Mais Tomyn souligne un probleme plus general et deja souleve en amont de session
+(assistant d'import OBJ de Bambu Studio qui ne detecte souvent qu'1 couleur sur les 16 presentes
+sur les .obj Tripo, enquete statistique approfondie menee sans trouver de levier exploitable
+cote fichier) : dans le dossier de resultat, l'OBJ intermediaire ET le .3mf final cohabitaient
+tous les deux, avec une vignette "parlante" (rendu 3D reel) pour l'OBJ mais pas pour le .3mf
+(notre rendu maison ne sait pas lire le format .3mf, trop complexe - voir Ajouter-Vignette). Le
+message du journal disait meme explicitement d'ouvrir l'OBJ dans Bambu Studio. Un utilisateur
+lambda ouvrait donc naturellement l'OBJ (celui qui s'affiche), tombait sur l'assistant d'import
+natif de Bambu Studio et son detourage de couleurs peu fiable - au lieu du .3mf, deja correctement
+colorise et pose, genere juste a cote.
+
+- Decision de Tomyn plutot que de continuer a chercher un correctif cote assistant OBJ de Bambu
+  Studio (deja explore sans succes, tres probablement un comportement interne/ferme hors de
+  portee d'ici) : supprimer purement l'ambiguite en ne laissant plus qu'un seul fichier dans le
+  dossier de resultat.
+- Corrige (`Coloriser-UnFichierTripo`) : l'OBJ intermediaire est desormais efface automatiquement
+  des que la conversion en .3mf reussit - il ne reste plus que le .3mf (et la description
+  MakerWorld). Une seule vignette est ajoutee (le .3mf si la conversion a reussi, sinon l'OBJ en
+  secours - comportement inchange dans ce cas d'echec). Le message de journal et l'historique
+  pointent desormais vers le fichier reellement conserve.
+- Teste : simulation isolee des deux branches (conversion reussie / echouee) verifiant la
+  suppression de l'OBJ, le choix de la vignette et le chemin enregistre dans l'historique - les
+  deux cas passent. Verification de syntaxe du fichier complet.
+
 ## Windows (22/10/2026, correctif) : .3mf peint Tripo couche/de travers sur le plateau (axe Y-up/Z-up)
 
 Apres le correctif de centrage sur le plateau ci-dessous, Tomyn a teste avec la nouvelle version
