@@ -29,7 +29,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # les faire". A METTRE A JOUR MANUELLEMENT a chaque nouvelle session de modifications (c'est le
 # seul moyen simple de savoir si "cette copie-ci" est a jour sans dependre du SHA exact du commit,
 # qu'on ne connait pas encore au moment d'ecrire le script).
-$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 1, 45, 0)
+$script:VERSION_BUILD_COLORISER = [DateTime]::new(2026, 10, 22, 9, 15, 0)
 
 # --- Rendu STL maison : lit le fichier (binaire ou ASCII), projette en vue isometrique fixe,
 # ombrage simple par triangle, algorithme du peintre pour l'occultation. Pas de vraie camera 3D
@@ -4443,6 +4443,24 @@ function Construire-ModelSettingsBambu([int]$NombreTriangles) {
 
 function Convertir-ObjColoreVers3mfPeint([string]$CheminObj, [string]$CheminSortie3mf, [int]$NombreCouleursMax = 8, [double]$TailleImpressionMm = 0) {
     $donnees = Lire-ObjColoreParSommet $CheminObj
+
+    # 22/10/2026, bug remonte par Tomyn (screenshot Bambu Studio : voiture couchee/de travers sur
+    # le plateau, meme apres les correctifs de centrage/pose/echelle ci-dessous). Verifie sur le
+    # vrai .obj Tripo (DeLorean) en isolant les sommets sombres (pneus/dessous de caisse, RVB <
+    # 0.12) : ils se regroupent nettement du cote NEGATIF de l'axe Y du fichier source (median
+    # -0,10 sur une plage de -0,26 a +0,26), pas de Z - preuve que Tripo (export Blender) sort
+    # l'objet en Y-up (Y = la verticale), alors que 3mf/Bambu Studio attend du Z-up (Z = la
+    # verticale). Le code copiait jusqu'ici Y->Y et Z->Z sans rotation : la largeur de la voiture
+    # (Z source) se retrouvait verticale, et la hauteur reelle (Y source) a l'horizontale - d'ou
+    # le modele couche. Corrige par une rotation de -90 degres autour de X (rotation rigide,
+    # ne deforme ni ne retourne le maillage en miroir) : nouveau Y = -ancien Z, nouveau Z = ancien
+    # Y, X inchange.
+    for ($i = 0; $i -lt $donnees.VY.Count; $i++) {
+        $zAvant = $donnees.VZ[$i]
+        $donnees.VZ[$i] = $donnees.VY[$i]
+        $donnees.VY[$i] = -$zAvant
+    }
+
     $couleursTriangles = Obtenir-CouleursTriangles $donnees
     $groupes = Grouper-CouleursKMeans $couleursTriangles $NombreCouleursMax
     $voisinsTriangles = Obtenir-VoisinsTriangles $donnees

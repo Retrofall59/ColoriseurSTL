@@ -1,5 +1,32 @@
 # Changelog
 
+## Windows (22/10/2026, correctif) : .3mf peint Tripo couche/de travers sur le plateau (axe Y-up/Z-up)
+
+Apres le correctif de centrage sur le plateau ci-dessous, Tomyn a teste avec la nouvelle version
+(DeLorean) : la voiture est maintenant bien sur le plateau mais couchee/de travers au lieu
+d'etre debout sur ses roues.
+
+- Diagnostic verifie sur le vrai fichier .obj fourni par Tomyn (pas une hypothese en l'air,
+  contrairement au `pbr=false` abandonne plus bas) : en isolant les sommets sombres du maillage
+  (pneus et dessous de caisse, couleur proche du noir), ils se regroupent nettement du cote
+  negatif de l'axe **Y** du fichier source (mediane -0,10 sur une plage -0,26/+0,26), pas de Z.
+  Preuve que l'export Tripo (via Blender, confirme par l'en-tete `# Blender 5.0.1`) sort le
+  maillage en **Y-up** (convention par defaut de l'exporteur OBJ de Blender), alors que le
+  format 3mf/Bambu Studio attend du **Z-up**. Le convertisseur copiait jusqu'ici Y->Y et Z->Z
+  sans rotation : la largeur de la voiture (Z source) se retrouvait verticale, et sa vraie
+  hauteur (Y source) a l'horizontale.
+- Corrige par une rotation rigide de -90 degres autour de l'axe X (ne deforme ni ne retourne le
+  maillage en miroir) : nouveau Y = -ancien Z, nouveau Z = ancien Y, X inchange. Appliquee juste
+  apres la lecture de l'.obj, avant tous les autres calculs (echelle, centrage, groupement de
+  couleurs).
+- Teste : nouveau test dedie (`test_rotation_y_up.ps1`, objet synthetique "haut" en Y) verifiant
+  que l'etendue principale bascule correctement sur Z apres conversion - bac a sable puis rejoue
+  contre le code reel extrait. Suite complete rejouee sans regression. Reverifie bout en bout sur
+  le vrai fichier DeLorean de Tomyn : les sommets sombres (pneus) se retrouvent desormais a basse
+  altitude sur Z (mediane 23,5mm sur une hauteur totale de 78mm), confirmant que la voiture est
+  bien orientee debout sur ses roues.
+- **Pas encore confirme dans Bambu Studio lui-meme** - a verifier par Tomyn sur son prochain test.
+
 ## Windows (22/10/2026, correctif) : .3mf peint Tripo flotte a cote du plateau Bambu Studio
 
 Apres le correctif de centrage/pose ci-dessous, Tomyn a teste avec la nouvelle version : le
